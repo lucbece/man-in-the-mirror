@@ -12,9 +12,20 @@ the song. The icon is original artwork, not Araki's.
 Ships with a local web control panel for the token, the intervals, and the
 sound library — no editing config files by hand.
 
-## Quick start (Windows — no setup)
+## Quick start (no setup)
 
-Double-click **`ManInTheMirror.exe`**. It:
+Grab your platform's zip from the
+[latest release](https://github.com/lucbece/man-in-the-mirror/releases/latest):
+
+| You're on | Download |
+| --- | --- |
+| Windows (most PCs) | `ManInTheMirror-windows-x64.zip` |
+| Windows on ARM | `ManInTheMirror-windows-arm64.zip` |
+| macOS (Apple silicon) | `ManInTheMirror-macos-arm64.zip` |
+| macOS (Intel) | `ManInTheMirror-macos-intel.zip` |
+| Linux | `ManInTheMirror-linux-x64.zip` |
+
+Unzip it anywhere and double-click **`ManInTheMirror`** (`.exe` on Windows). It:
 
 1. finds Node, or downloads a private copy into `runtime/` if the machine has
    none (nothing is installed system-wide, no admin rights, no PATH changes)
@@ -22,17 +33,22 @@ Double-click **`ManInTheMirror.exe`**. It:
 3. starts the bot
 4. waits for the control panel to come up, then opens it in your browser
 
-Keep the `.exe` inside the project folder — it finds `package.json` from its own
-location, so either the root or `dist/` works. Ctrl+C in the black window stops
-the bot. Delete the folder and nothing is left behind.
+The zip already has the launcher sitting next to `package.json`, which is how it
+finds the project — so keep them together. Ctrl+C in the black window stops the
+bot. Delete the folder and nothing is left behind.
 
 > Windows SmartScreen will warn on first run ("Windows protected your PC")
 > because the binary isn't code-signed — **More info → Run anyway**. Some
 > antivirus tools also flag unsigned Go binaries that download files. Signing it
 > properly needs a paid certificate.
+>
+> macOS blocks it as an unidentified developer: right-click → **Open**, or
+> `xattr -d com.apple.quarantine ManInTheMirror`.
 
-Same binary for macOS and Linux: `dist/man-in-the-mirror-linux`,
-`dist/man-in-the-mirror-macos-arm64`, `dist/man-in-the-mirror-macos-intel`.
+The binaries aren't in the repo — they're built artifacts, so they live on the
+[releases page](https://github.com/lucbece/man-in-the-mirror/releases) instead of
+in git history. Building them yourself is one command, see
+[Rebuilding the launcher](#rebuilding-the-launcher).
 
 ## Quick start (from a terminal)
 
