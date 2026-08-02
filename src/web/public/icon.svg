@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Man in the Mirror">
+  <title>Man in the Mirror</title>
+  <defs>
+    <linearGradient id="frame" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0" stop-color="#f6e39b" />
+      <stop offset="0.45" stop-color="#d4af37" />
+      <stop offset="1" stop-color="#8a6a18" />
+    </linearGradient>
+    <linearGradient id="glass" x1="0.1" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#39406b" />
+      <stop offset="0.55" stop-color="#1b1f33" />
+      <stop offset="1" stop-color="#0d0f17" />
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.28" />
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0" />
+    </linearGradient>
+    <clipPath id="inner">
+      <path d="M32 9c9 0 15.5 6.8 15.5 15.5V50h-31V24.5C16.5 15.8 23 9 32 9z" />
+    </clipPath>
+  </defs>
+
+  <!-- arched frame -->
+  <path
+    d="M32 2.5c12.4 0 21.5 9.3 21.5 22v29.9a5.6 5.6 0 0 1-5.6 5.6H16.1a5.6 5.6 0 0 1-5.6-5.6V24.5c0-12.7 9.1-22 21.5-22z"
+    fill="url(#frame)"
+  />
+
+  <!-- glass -->
+  <path d="M32 9c9 0 15.5 6.8 15.5 15.5V50h-31V24.5C16.5 15.8 23 9 32 9z" fill="url(#glass)" />
+
+  <g clip-path="url(#inner)">
+    <!-- the figure, and the half of it the mirror keeps -->
+    <g fill="#e9ecf7" opacity="0.92">
+      <circle cx="26.5" cy="24" r="4.6" />
+      <path d="M26.5 30.2c-4.3 0-7.4 2.8-8 7L17 50h19l-1.5-12.8c-.6-4.2-3.7-7-8-7z" />
+    </g>
+    <g fill="#d4af37" opacity="0.5">
+      <circle cx="38.5" cy="24" r="4.6" />
+      <path d="M38.5 30.2c-4.3 0-7.4 2.8-8 7L29 50h19l-1.5-12.8c-.6-4.2-3.7-7-8-7z" />
+    </g>
+
+    <!-- the seam between the two worlds -->
+    <rect x="31.4" y="9" width="1.2" height="41" fill="#0b0d14" opacity="0.75" />
+
+    <!-- glass sheen -->
+    <path d="M16.5 44 47.5 13v10L21 50h-4.5z" fill="url(#sheen)" />
+  </g>
+
+  <!-- frame inner bevel -->
+  <path
+    d="M32 9c9 0 15.5 6.8 15.5 15.5V50h-31V24.5C16.5 15.8 23 9 32 9z"
+    fill="none"
+    stroke="#6b520f"
+    stroke-opacity="0.7"
+    stroke-width="1.4"
+  />
+</svg>

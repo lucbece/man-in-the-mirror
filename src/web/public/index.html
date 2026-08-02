@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Man in the Mirror — Control Panel</title>
+    <link rel="stylesheet" href="style.css" />
+    <link rel="icon" type="image/svg+xml" href="icon.svg" />
+  </head>
+  <body>
+    <header>
+      <h1>
+        <img src="icon.svg" alt="" class="logo" width="34" height="34" />
+        <span>
+          Man in the Mirror
+          <small>Michael Jackson, uninvited, in your voice channel</small>
+        </span>
+      </h1>
+      <div id="botStatus" class="status">
+        <span class="dot" data-state="stopped"></span>
+        <span class="label">loading…</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="card">
+        <h2>Connection</h2>
+        <p class="hint">
+          The bot needs its own account on Discord, and a token that proves it's
+          yours. Two minutes, one page:
+        </p>
+
+        <ol class="steps">
+          <li>
+            Open the
+            <a
+              href="https://discord.com/developers/applications"
+              target="_blank"
+              rel="noopener noreferrer"
+              >Discord Developer Portal</a
+            >
+            and click <strong>New Application</strong>. The name you give it is the
+            name people see in the member list.
+          </li>
+          <li>
+            Open the <strong>Bot</strong> tab → <strong>Reset Token</strong> →
+            <strong>Copy</strong>. Discord shows the token once and never again; if
+            you lose it, just reset for a new one.
+          </li>
+          <li>Paste it below and hit <strong>Save &amp; apply</strong>.</li>
+          <li>
+            Back in the portal, open <strong>Installation</strong> and enable the
+            <code>bot</code> and <code>applications.commands</code> scopes plus the
+            <strong>Connect</strong> and <strong>Speak</strong> permissions. Open the
+            link it generates to invite the bot to your server.
+          </li>
+        </ol>
+
+        <form id="connectionForm">
+          <label>
+            Bot token
+            <input
+              type="password"
+              name="token"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="paste a new token to replace the stored one"
+            />
+            <small id="tokenHint" class="hint"></small>
+          </label>
+
+          <label>
+            Guild ID <span class="optional">optional</span>
+            <input
+              type="text"
+              name="guildId"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="registers slash commands instantly on one server"
+            />
+            <small class="hint">
+              Your server's ID — worth setting, because
+              <code>/mj</code> shows up straight away instead of taking up to an hour.
+              To find it: Discord → <strong>Settings</strong> →
+              <strong>Advanced</strong> → turn on <strong>Developer Mode</strong>, then
+              right-click your server icon → <strong>Copy Server ID</strong>.
+            </small>
+          </label>
+
+          <div class="row">
+            <button type="submit" class="primary">Save &amp; apply</button>
+            <button type="button" data-bot="start">Start bot</button>
+            <button type="button" data-bot="stop" class="danger">Stop bot</button>
+          </div>
+        </form>
+
+        <p class="hint caution">
+          No privileged intents needed — leave those toggles alone. The token is
+          saved to <code>data/config.json</code>, readable only by you on
+          macOS/Linux; on Windows it inherits the folder's permissions. You can set
+          <code>DISCORD_TOKEN</code> / <code>DISCORD_GUILD_ID</code> in a
+          <code>.env</code> file instead, but anything saved here wins.
+        </p>
+      </section>
+
+      <section class="card">
+        <h2>Behaviour</h2>
+        <form id="behaviourForm">
+          <div class="grid">
+            <label>
+              Min gap (seconds)
+              <input type="number" name="minIntervalSeconds" min="1" max="3600" required />
+            </label>
+            <label>
+              Max gap (seconds)
+              <input type="number" name="maxIntervalSeconds" min="1" max="3600" required />
+            </label>
+          </div>
+
+          <label>
+            Volume <output id="volumeOut">60%</output>
+            <input type="range" name="volume" min="0" max="200" step="5" />
+          </label>
+
+          <label class="check">
+            <input type="checkbox" name="autoStart" />
+            Start the scheduler as soon as the bot joins
+          </label>
+          <label class="check">
+            <input type="checkbox" name="playOnJoin" />
+            Play one sound immediately on join
+          </label>
+          <label class="check">
+            <input type="checkbox" name="pauseWhenAlone" />
+            Skip playback when nobody is in the channel
+          </label>
+
+          <label>
+            Control panel port
+            <input type="number" name="webPort" min="1" max="65535" />
+            <small class="hint">Takes effect after restarting the process.</small>
+          </label>
+
+          <div class="row">
+            <button type="submit" class="primary">Save</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2>Voice</h2>
+        <div id="sessions" class="sessions"></div>
+        <div id="joinArea">
+          <div class="grid">
+            <label>
+              Server
+              <select id="guildSelect"></select>
+            </label>
+            <label>
+              Voice channel
+              <select id="channelSelect"></select>
+            </label>
+          </div>
+          <div class="row">
+            <button type="button" id="joinBtn" class="primary">Join channel</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Sounds <span id="soundCount" class="badge">0</span></h2>
+        <p class="hint">
+          Drop audio files here, or copy them into <code id="soundsDir"></code>.
+        </p>
+        <div id="dropzone" class="dropzone">
+          <input type="file" id="fileInput" multiple hidden />
+          <span>Drag &amp; drop audio files, or <button type="button" id="browseBtn" class="linklike">browse</button></span>
+        </div>
+        <ul id="soundList" class="sound-list"></ul>
+      </section>
+
+      <section class="card" id="sourcesCard">
+        <h2>Where to get clips</h2>
+        <p class="hint">
+          Grab short vocal ad-libs — the yelps, the grunts, the "hee-hee". Each link
+          opens a Michael Jackson soundboard; download the MP3s, then drop them in the
+          box above or stage them in <code>incoming/</code> and run
+          <code>npm run prep</code>.
+        </p>
+
+        <div class="links">
+          <a
+            class="chip"
+            href="https://www.myinstants.com/en/search/?name=michael+jackson"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Myinstants <small>biggest collection</small>
+          </a>
+          <a
+            class="chip"
+            href="https://www.101soundboards.com/boards/10028-michael-jackson-soundboard"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            101soundboards <small>full board</small>
+          </a>
+          <a
+            class="chip"
+            href="https://soundbuttonspro.net/michael-jackson-sound-buttons/"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Sound Buttons Pro <small>the classic ad-libs</small>
+          </a>
+          <a
+            class="chip"
+            href="https://www.voicy.network/official-soundboards/celebrities/michael-jackson-hehe"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Voicy <small>individual clips</small>
+          </a>
+        </div>
+
+        <p class="hint">
+          Aim for 8–15 clips of varied length and energy — below that the randomness
+          starts repeating noticeably. Skip anything over ~6 seconds; those talk over
+          people instead of interrupting them.
+        </p>
+        <p class="hint caution">
+          These are copyrighted recordings. Fine for a private server — don't
+          redistribute them or commit them to a public repo.
+        </p>
+      </section>
+    </main>
+
+    <div id="toast" class="toast" hidden></div>
+    <script src="app.js"></script>
+  </body>
+</html>
