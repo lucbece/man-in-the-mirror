@@ -5,14 +5,17 @@
 A Discord bot that sits in a voice channel, listens to the conversation, and
 answers out loud when you address it.
 
-It stays quiet by default. Recent audio is held in memory so it has context when
-you ask it something — and that audio is only ever turned into text at the
-moment you ask, which is what keeps it cheap.
+Say its name mid-sentence — *"che, espejo, ¿qué opinás?"* — and it answers. No
+command to type, no button. It keeps the last minute and a half of conversation
+in memory so it knows what you're talking about, and it can look things up when
+the answer isn't something it could know.
 
-> **This branch is a work in progress.** Listening and transcription work.
-> The wake word, the answering, and the speaking do not exist yet — see
-> [docs/voice-agent-plan.md](docs/voice-agent-plan.md) for the plan and where
-> it currently stands. `main` still holds the original soundboard.
+Hearing, thinking and speaking are three independent choices: each can run
+through an API or on your own machine, mixed however you like.
+
+> **Preview.** Working end to end and in daily use, but rough edges remain —
+> see [docs/voice-agent-plan.md](docs/voice-agent-plan.md). `main` still holds
+> the original Michael Jackson soundboard.
 
 ## Download
 
@@ -55,28 +58,34 @@ in Discord while you're in a voice channel.
 
 No privileged intents are required.
 
-## How listening works
+## How it hears you
 
 ```
 Discord voice receive (one Opus stream per speaker)
         │
-        └─► ring buffer, last ~3 min per speaker   [memory only, free]
-
-  on request ─► transcribe, in parallel chunks
-             ─► speaker-laballed transcript
+        ├─► transcribed in the background, seconds after it's said
+        │        │
+        │        └─► was its name in there?  ─► think ─► speak
+        │
+        └─► rolling window of the last ~90s, in memory
 ```
 
-Nothing is transcribed while the bot is idle. The buffer holds raw audio, and it
-only becomes text when you ask for it — that is the entire cost strategy, and it
-is worth roughly 10–30× versus transcribing continuously.
-
-Discord gives one audio stream per speaker, so you get speaker labels for free
-with no diarization:
+Discord sends one audio stream per speaker, so speaker labels come free — no
+diarization to get wrong:
 
 ```
 [21:14:02] Luc: ...the dayZ servers were down all weekend
 [21:14:09] Marco: that's not what he said though
 ```
+
+Noticing it's been addressed is a string match over text that already exists,
+which is why there's no wake-word engine here: no native dependency, no model
+download, and it works in whatever language you happen to be speaking. It
+answers to a list of names, matched loosely, anywhere in a sentence.
+
+Pick a name that survives transcription. "hey mirror" said inside a Spanish
+sentence came back from the recogniser as *"Amy"* and *"mi herrero"*; "espejo"
+lands every time.
 
 **Nothing is written to disk.** Audio lives in memory and ages out of the
 window. `/mj deaf` stops capture and wipes the buffer immediately.
@@ -86,23 +95,37 @@ what actually prevents Discord sending it audio. Discord shows a deafened icon
 next to it in the member list, so its state is visible without taking this
 README's word for it.
 
-## Transcription
+## Three choices, made separately
 
-Two routes, same interface — it's a hardware question, not a quality one.
-whisper.cpp runs the same Whisper model the API does.
+Everything is configured in the control panel. Measured on a laptop with no
+GPU, so treat these as the pessimistic case:
 
-| Your machine | Recommended |
-| --- | --- |
-| Discrete NVIDIA GPU (≥6 GB VRAM) or Apple Silicon | Local — free, private, same quality |
-| Laptop or no discrete GPU | OpenAI API — local would mean a smaller, worse model |
+| | API | On this machine |
+| --- | --- | --- |
+| **Hearing** | OpenAI Whisper, ~1.0s | whisper.cpp — 2.4s on CPU, much faster on a GPU |
+| **Thinking** | OpenAI or Claude | — |
+| **Speaking** | OpenAI, ~2.6s and variable | Piper, ~0.5s and steady |
 
-Only the OpenAI route is implemented so far. Set the key in the panel, or as
-`OPENAI_API_KEY` in a `.env` file.
+Transcription is a hardware question rather than a quality one: whisper.cpp
+runs the same Whisper model the API does. With a discrete GPU, local wins on
+both speed and cost. Without one it is slower than the network round trip it
+replaces, so the API stays the default.
 
-Cost with the API is roughly 2–4 cents per question on a busy channel, and $0
-locally. Note it scales with *speech*, not wall-clock: streams are per speaker
-and they overlap, so three minutes of conversation can be five or six minutes of
-audio.
+Speaking is the opposite — local already wins on a laptop, and wins more on
+consistency than on speed: 692/703/723ms across runs, where the API ranged from
+1.1s to 4.1s for the same sentence.
+
+Brains, measured with web search enabled:
+
+| | chat | judgement | with search |
+| --- | --- | --- | --- |
+| `gpt-4.1` | 1.5s | 1.8s | 3.3s |
+| `claude-sonnet-5` | 2.5s | 3.9s | 6.7s |
+| `claude-opus-5` | 2.4s | 5.1s | 13.1s |
+
+Claude reasons visibly better; OpenAI searches far faster. Pick by which you
+care about. Anything past about four seconds and the conversation has moved on
+without it.
 
 ## Slash commands
 
@@ -112,10 +135,14 @@ audio.
 | `/mj leave` | Disconnect |
 | `/mj listen` | Start listening — un-deafens and begins buffering |
 | `/mj deaf` | Stop listening and wipe the buffer |
-| `/mj transcript` | Transcribe what was said recently |
-| `/mj shush` | Cut the agent off mid-sentence |
+| `/mj ask <question>` | Ask it something without saying its name |
+| `/mj transcript` | Read back what it heard recently |
+| `/mj shush` | Cut it off mid-sentence |
 | `/mj status` | Connection, listening state, buffer contents |
-| `/mj volume <percent>` | Speaking volume, 0–200% |
+
+Volume is Discord's own: right-click the bot in the member list. That's
+per-listener, and it avoids a decode/re-encode round trip that would slow every
+reply down.
 
 ## Configuration
 
@@ -128,12 +155,20 @@ but anything saved through the UI wins.
 | --- | --- | --- | --- |
 | `token` | `DISCORD_TOKEN` | — | Bot token |
 | `guildId` | `DISCORD_GUILD_ID` | — | Registers slash commands on one server instantly instead of globally (global registration can take an hour to appear) |
-| `agentEnabled` | — | `false` | Whether the bot listens. Off means self-deafened |
-| `bufferSeconds` | `BUFFER_SECONDS` | `180` | How much conversation to hold in memory |
-| `wakePhrase` | — | `hey mirror` | Not wired up yet |
-| `sttProvider` | — | `openai` | `openai` or `local` (local not implemented) |
-| `openaiApiKey` | `OPENAI_API_KEY` | — | Needed for the OpenAI transcription route |
-| `volume` | `VOLUME` | `0.6` | Speaking volume, 0.0–2.0 |
+| `agentEnabled` | — | `false` | Whether it listens. Off means self-deafened |
+| `bufferSeconds` | `BUFFER_SECONDS` | `90` | How much conversation to hold in memory |
+| `agentNames` | — | `mirror, espejo` | Names it answers to, comma-separated |
+| `wakeEnabled` | — | `true` | Answer when addressed, not only via `/mj ask` |
+| `eagerTranscription` | — | `true` | Transcribe as people speak. Required for the name to work |
+| `sttProvider` | — | `openai` | `openai` or `local` |
+| `sttLocalModel` | — | `ggml-base` | `ggml-base`, `ggml-small`, `ggml-large-v3-turbo` |
+| `brainProvider` | — | `anthropic` | `anthropic` or `openai` |
+| `brainModel` | — | *(blank)* | Blank uses the provider default |
+| `webSearch` | — | `true` | Let it look things up |
+| `ttsProvider` | — | `openai` | `openai` or `local` (Piper) |
+| `ttsVoice` / `ttsLocalVoice` | — | `onyx` / `es_ES-davefx-medium` | Voice per provider |
+| `openaiApiKey` | `OPENAI_API_KEY` | — | Hearing and speaking; also thinking if chosen |
+| `anthropicApiKey` | `ANTHROPIC_API_KEY` | — | Only if Claude is the brain |
 | `webPort` | `WEB_PORT` | `3000` | Needs a process restart to change |
 | — | `WEB_HOST` | `127.0.0.1` | The panel has no auth — only expose it beyond localhost behind something that does |
 
@@ -151,7 +186,14 @@ src/
   voice/manager.js    session registry
   agent/buffer.js     rolling in-memory window of utterances
   agent/audio.js      Opus → 16kHz mono WAV, decoded only on demand
-  agent/stt.js        transcription providers
+  agent/eager.js      background transcription queue
+  agent/wake.js       noticing its name, fuzzily, anywhere in a sentence
+  agent/stt.js        hearing — API or whisper.cpp
+  agent/brain.js      thinking — Claude or OpenAI, both with web search
+  agent/tts.js        speaking — API or Piper
+  agent/filler.js     "dame un segundo" while it searches
+  agent/whisper.js    whisper.cpp runtime, downloaded on demand
+  agent/piper.js      Piper runtime, downloaded on demand
   web/server.js       control panel API
 ```
 
