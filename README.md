@@ -16,7 +16,7 @@ moment you ask, which is what keeps it cheap.
 
 ## Download
 
-**[⬇ v0.2.0-preview — the voice agent](https://github.com/lucbece/man-in-the-mirror/releases/tag/v0.2.0-preview)**
+**[⬇ v0.2.1-preview — the voice agent](https://github.com/lucbece/man-in-the-mirror/releases/tag/v0.2.1-preview)**
 
 | You're on | File |
 | --- | --- |
