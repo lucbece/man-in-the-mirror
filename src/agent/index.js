@@ -8,6 +8,7 @@ import { AudioPlayerStatus, entersState } from '@discordjs/voice';
 
 import { createBrain, clampForSpeech, BrainError } from './brain.js';
 import { createTts, toAudioResource } from './tts.js';
+import { guessLanguage, takeFiller } from './filler.js';
 import { formatTranscript, transcribeBuffer } from './stt.js';
 
 /** Guard against a stuck stage wedging the session forever. */
@@ -44,25 +45,50 @@ export async function ask(session, { question, askedBy }) {
     }
     timings.transcribeMs = Date.now() - t0;
 
-    // 2. Think.
+    // 2. Think. If it goes off to search, fill the silence it just created —
+    //    but only then, and only with audio rendered ahead of time. Anything
+    //    else would lengthen the wait to announce the wait.
     const t1 = Date.now();
     const brain = createBrain();
-    const raw = await brain.answer({ transcript, question, askedBy });
+    const raw = await brain.answer(
+      { transcript, question, askedBy },
+      {
+        onSearchStart: () => {
+          timings.searchedAtMs = Date.now() - t1;
+          const filler = takeFiller(guessLanguage(question));
+          if (!filler) return;
+          try {
+            session.player.play(toAudioResource(filler.audio));
+            timings.filler = filler.line;
+          } catch (err) {
+            console.warn(`[filler] could not play: ${err.message}`);
+          }
+        },
+      },
+    );
     timings.thinkMs = Date.now() - t1;
 
     const spoken = clampForSpeech(raw);
     if (!spoken) throw new BrainError('The model returned nothing to say.');
 
-    // 3. Speak.
+    // 3. Speak. Streamed rather than buffered: playback starts on the first
+    //    bytes instead of waiting for the whole file, which is about a second
+    //    of silence removed.
     const t2 = Date.now();
     const tts = createTts();
-    const mp3 = await tts.synthesize(spoken);
+    const audio = await tts.synthesizeStream(spoken);
     timings.speakMs = Date.now() - t2;
+
+    // If a filler is still playing, let it finish its sentence — cutting it
+    // off is more jarring than the half-second it costs to wait.
+    if (timings.filler && session.speaking) {
+      await entersState(session.player, AudioPlayerStatus.Idle, 4_000).catch(() => {});
+    }
 
     // Never talk over ourselves — a second answer starting mid-sentence is
     // worse than a slightly delayed one.
     session.player.stop(true);
-    session.player.play(toAudioResource(mp3));
+    session.player.play(toAudioResource(audio));
 
     try {
       await entersState(session.player, AudioPlayerStatus.Playing, 5_000);
@@ -75,7 +101,10 @@ export async function ask(session, { question, askedBy }) {
       `[agent] answered in ${(timings.totalMs / 1000).toFixed(1)}s ` +
         `(heard ${(timings.transcribeMs / 1000).toFixed(1)}s, ` +
         `thought ${(timings.thinkMs / 1000).toFixed(1)}s, ` +
-        `voiced ${(timings.speakMs / 1000).toFixed(1)}s)`,
+        `voiced ${(timings.speakMs / 1000).toFixed(1)}s)` +
+        (timings.filler
+          ? ` · searched at ${(timings.searchedAtMs / 1000).toFixed(1)}s, said "${timings.filler}"`
+          : ''),
     );
 
     return {

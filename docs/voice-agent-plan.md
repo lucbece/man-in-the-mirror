@@ -1,20 +1,24 @@
 # Voice agent — design plan
 
-Status: **phases 1 and 2 built, not yet tested against a live channel.**
+Status: **all four phases built and working in a live channel.** It hears,
+notices when it's addressed by name, answers out loud, and can look things up.
 Branch: `feat/voice-agent`. The Michael Jackson soundboard has been removed from
 this branch entirely — `main` still has it.
 
 | Phase | State |
 | --- | --- |
-| 1 — hear | Built. Receive, buffer, transcribe on demand. |
-| 2 — think and speak | Built. `/mj ask` answers out loud. |
-| 3 — wake word | Not started. |
-| 4 — panel | Built alongside 1 and 2. |
+| 1 — hear | Built. Per-speaker capture, transcribed in the background. |
+| 2 — think and speak | Built. Claude or OpenAI, either with web search. |
+| 3 — being addressed | Built, and without the native dependency the plan assumed. |
+| 4 — panel | Built alongside the rest. |
+| next — speech to speech | Not started. See "Worth doing later" at the end. |
 
-Both built phases are verified as far as they can be without API keys: 23 unit
-tests pass (`npm test`), all failure paths give readable errors. The live test —
-does transcription actually hold up with six people in two languages — is still
-outstanding.
+Verified in a real channel with four people switching between Spanish and
+English. 58 unit tests (`npm test`), none needing live credentials.
+
+The open problem is latency, not correctness: about five seconds from the end
+of your sentence to the start of its reply. Everything under "Worth doing
+later" exists because of that.
 
 Give the bot ears and a voice. It sits silently in the channel, hears the
 conversation, and answers out loud when someone says the wake word.
@@ -289,3 +293,91 @@ hardens.
   needs continuous transcription — the expensive mode.
 - Buffer length: 3 minutes is a guess. Longer costs more per invocation and
   adds transcription latency.
+
+
+---
+
+# Worth doing later
+
+## Speech to speech, instead of three round trips
+
+The latency floor here is architectural, not a slow provider. Every reply
+crosses the network three times in series, and each leg starts cold:
+
+```
+hablás
+  ↓ 0.5s   silence detection            (local)
+  ↓ 1.0s   Whisper                      (HTTP)
+  ↓ 0.9s   wait in case they continue   (local)
+  ↓ 1.5s   the model thinks             (HTTP)
+  ↓ 1.1s   text to speech               (HTTP)
+suena  ≈ 5s
+```
+
+A realtime speech-to-speech model collapses all of it: one WebSocket, audio in
+and audio out, the model detecting end-of-turn itself and starting to speak
+before it has finished deciding what to say. That's roughly **half a second**
+instead of five — the difference between sending three letters and being on a
+phone call.
+
+`gpt-realtime` and friends are reachable on the account already in use.
+
+### What it costs
+
+- **One provider does everything.** The "bring your own brain" split — the
+  thing that made swapping Claude for OpenAI a radio button — does not survive.
+  An Anthropic key has no place in that pipeline.
+- **Less control.** Today we read the transcript, decide whether we were
+  addressed, slot in a filler, and clamp the reply length. All of that moves
+  inside the model.
+- **Priced per minute of audio heard**, not per answer given. That is exactly
+  the always-on cost model the rolling buffer exists to avoid.
+- **Being addressed gets harder.** Name detection is currently a string match
+  over text we already have. There, you either decide when to open the mic or
+  pay to let it listen continuously.
+
+### How to approach it
+
+As its own branch and its own honest comparison, the way the wake word was
+done — not as a tuning pass on this one. A minimal prototype behind a separate
+command, same bot and same channel, so the two experiences can be felt back to
+back rather than argued about.
+
+Do it *after* this pipeline is stable. It is one config change away from
+acceptable: `gpt-4.1` answers in 1.5–3.3s, and the streamed TTS and tightened
+timers have not yet been tried in a live channel.
+
+## Measured latency by brain
+
+Same three questions, same prompt, one run each. Useful mostly as a reminder
+that reasoning quality and response time pull in opposite directions.
+
+| Brain | chat | judgement | with search |
+| --- | --- | --- | --- |
+| `gpt-4.1` | 1.5s | 1.8s | 3.3s |
+| `claude-haiku-4-5` | 1.2s | 2.0s | no search tool |
+| `claude-sonnet-5` | 2.1s | 6.6s | 18.5s |
+| `claude-opus-5` | 3.4s | 9.0s | 14.6s |
+
+Claude reasons visibly better — asked about renting in Palermo versus buying in
+Villa Crespo, it raised Argentine rent indexation and said Palermo's
+appreciation had already happened, neither of which OpenAI mentioned. At nine
+to eighteen seconds that is a form, not a conversation.
+
+Two traps found while measuring, both now handled per model: Haiku 4.5 rejects
+`effort`, and Sonnet 5 rejects `fallbacks`. Both were being sent
+unconditionally, which broke precisely the two fast models worth considering.
+
+## Smaller things
+
+- **Local Whisper** on a machine with a GPU. Saves roughly a second per
+  utterance; the API's time is mostly network, not compute. Worth more on the
+  desktop with the 4070 Ti than on a laptop.
+- **Local TTS** (Piper and similar). The current ~2s of synthesis is mostly
+  fixed overhead, so a local voice could cut it to a few hundred milliseconds —
+  at a clear cost in how the voice sounds.
+- **Screen-share audio** ends up in the transcript. A video playing is speech
+  nobody said, and we pay to transcribe it. Labelling the speaker as sharing,
+  or an explicit per-person ignore, are both small.
+- **More tools.** Web search is one; the mechanism repeats for anything else.
+  This is a capability axis, unrelated to latency.

@@ -305,9 +305,36 @@
     <section class="card">
       <h2>Speaking</h2>
       <form id="speakingForm">
-        <label>
-          Voice
+        <div class="choices">
+          <label class="choice">
+            <input type="radio" name="ttsProvider" value="openai" />
+            <span>
+              <strong>OpenAI</strong>
+              <small>Voz más natural. ~2.6s, y variable.</small>
+            </span>
+          </label>
+          <label class="choice">
+            <input type="radio" name="ttsProvider" value="local" />
+            <span>
+              <strong>En esta máquina</strong>
+              <small>~0.5s, gratis y constante. Voz más sintética.</small>
+            </span>
+          </label>
+        </div>
+
+        <label id="openaiVoiceRow">
+          Voz de OpenAI
           <select name="ttsVoice" id="voiceSelect"></select>
+        </label>
+
+        <label id="localVoiceRow">
+          Voz local
+          <select name="ttsLocalVoice" id="localVoiceSelect"></select>
+          <small class="hint">
+            La primera vez descarga el sintetizador y la voz (unos 65MB) a
+            <code>runtime/</code>. Nada se instala en el sistema; borrás la
+            carpeta y no queda rastro.
+          </small>
         </label>
 
         <p class="hint caution">

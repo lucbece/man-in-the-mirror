@@ -9,6 +9,9 @@ const els = {
   brainAdvice: $('#brainAdvice'),
   anthropicKeyHint: $('#anthropicKeyHint'),
   voiceSelect: $('#voiceSelect'),
+  localVoiceSelect: $('#localVoiceSelect'),
+  openaiVoiceRow: $('#openaiVoiceRow'),
+  localVoiceRow: $('#localVoiceRow'),
   speakingForm: $('#speakingForm'),
   tokenHint: $('#tokenHint'),
   keyHint: $('#keyHint'),
@@ -157,11 +160,27 @@ function renderThinking(cfg) {
 function renderSpeaking(cfg) {
   const f = els.speakingForm.elements;
 
+  for (const radio of f.ttsProvider) radio.checked = radio.value === cfg.ttsProvider;
+
   const voices = cfg.voices ?? [];
   if (els.voiceSelect.options.length !== voices.length) {
     els.voiceSelect.replaceChildren(...voices.map((v) => new Option(v, v)));
   }
   els.voiceSelect.value = cfg.ttsVoice;
+
+  const localVoices = cfg.localVoices ?? [];
+  if (els.localVoiceSelect.options.length !== localVoices.length) {
+    els.localVoiceSelect.replaceChildren(
+      ...localVoices.map((v) => new Option(v.label, v.id)),
+    );
+  }
+  els.localVoiceSelect.value = cfg.ttsLocalVoice;
+
+  // Dim whichever voice list isn't in play, rather than hiding it — seeing the
+  // other option exists is the point of offering both.
+  const local = cfg.ttsProvider === 'local';
+  els.openaiVoiceRow.classList.toggle('dim', local);
+  els.localVoiceRow.classList.toggle('dim', !local);
 
   f.webPort.value = cfg.webPort;
 }
@@ -402,7 +421,9 @@ els.speakingForm.addEventListener('submit', (event) => {
   act(
     () =>
       post('/api/config', {
+        ttsProvider: [...f.ttsProvider].find((r) => r.checked)?.value ?? 'openai',
         ttsVoice: f.ttsVoice.value,
+        ttsLocalVoice: f.ttsLocalVoice.value,
         webPort: Number(f.webPort.value),
       }),
     'Saved.',

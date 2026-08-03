@@ -9,8 +9,16 @@
  */
 import { Readable } from 'node:stream';
 import { StreamType, createAudioResource } from '@discordjs/voice';
+import ffmpegPath from 'ffmpeg-static';
 
 import { config } from '../config.js';
+import {
+  DEFAULT_VOICE,
+  VOICES as LOCAL_VOICES,
+  ensurePiper,
+  ensureVoice,
+  speak,
+} from './piper.js';
 
 class TtsError extends Error {}
 
@@ -28,7 +36,7 @@ class OpenAiTts {
     return `OpenAI ${this.model} (${this.voice})`;
   }
 
-  async synthesize(text) {
+  async request(text) {
     const res = await fetch('https://api.openai.com/v1/audio/speech', {
       method: 'POST',
       headers: {
@@ -40,6 +48,7 @@ class OpenAiTts {
         voice: this.voice,
         input: text,
         response_format: 'opus',
+        stream_format: 'audio',
       }),
     });
 
@@ -47,12 +56,79 @@ class OpenAiTts {
       const detail = await res.text().catch(() => '');
       throw new TtsError(`OpenAI returned ${res.status}: ${detail.slice(0, 200)}`);
     }
+    return res;
+  }
 
+  /** Whole buffer. Used for the filler clips, which get cached to disk. */
+  async synthesize(text) {
+    const res = await this.request(text);
     return Buffer.from(await res.arrayBuffer());
+  }
+
+  /**
+   * A stream that can start playing before synthesis has finished.
+   *
+   * Measured on a two-sentence reply: the complete file lands at ~4.1s, but
+   * the first bytes arrive at ~3.0s. Playing as it arrives is a second of
+   * silence removed for free — the audio is already Ogg Opus, so Discord takes
+   * it straight through without waiting for the end of the file.
+   */
+  async synthesizeStream(text) {
+    const res = await this.request(text);
+    return Readable.fromWeb(res.body);
+  }
+}
+
+/**
+ * Speech synthesised on this machine.
+ *
+ * Slower to set up — a 5MB binary and a ~60MB voice, downloaded once into
+ * `runtime/` — and then consistently faster and free per use. The trade is the
+ * voice itself: the quick models sound more synthetic than the cloud ones, and
+ * the only Argentine voice available runs at cloud speed anyway.
+ */
+class LocalTts {
+  constructor({ voice }) {
+    this.voice = LOCAL_VOICES[voice] ? voice : DEFAULT_VOICE;
+    this.ready = null;
+  }
+
+  get label() {
+    return `Piper ${this.voice} (local)`;
+  }
+
+  /** Fetch binary and model on first use, once per process. */
+  async prepare() {
+    this.ready ??= (async () => ({
+      binary: await ensurePiper(),
+      model: await ensureVoice(this.voice),
+    }))();
+    return this.ready;
+  }
+
+  async synthesizeStream(text) {
+    const { binary, model } = await this.prepare();
+    return speak(text, {
+      binary,
+      model,
+      ffmpeg: ffmpegPath,
+      sampleRate: LOCAL_VOICES[this.voice].sampleRate,
+    });
+  }
+
+  /** Whole buffer, for the filler clips that get cached to disk. */
+  async synthesize(text) {
+    const stream = await this.synthesizeStream(text);
+    const chunks = [];
+    for await (const chunk of stream) chunks.push(chunk);
+    return Buffer.concat(chunks);
   }
 }
 
 export function createTts() {
+  if (config.get('ttsProvider') === 'local') {
+    return new LocalTts({ voice: config.get('ttsLocalVoice') });
+  }
   return new OpenAiTts({
     apiKey: config.get('openaiApiKey'),
     voice: config.get('ttsVoice'),
@@ -70,9 +146,9 @@ export function createTts() {
  * instead.
  */
 export function toAudioResource(audio) {
-  return createAudioResource(Readable.from(audio), {
-    inputType: StreamType.OggOpus,
-  });
+  // A Buffer needs wrapping; a stream is already one.
+  const stream = Buffer.isBuffer(audio) ? Readable.from(audio) : audio;
+  return createAudioResource(stream, { inputType: StreamType.OggOpus });
 }
 
 export { TtsError };

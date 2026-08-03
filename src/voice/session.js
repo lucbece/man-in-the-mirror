@@ -21,12 +21,15 @@ const WAKE_COOLDOWN_MS = 4_000;
 /**
  * How long to wait for more of the question after the speaker pauses.
  *
- * An utterance ends after 700ms of silence, which is shorter than the pause
- * people leave mid-sentence — so without this, "hey mirror, what do you think
- * about… the servers?" would be cut off at the ellipsis. Every further
+ * An utterance ends after half a second of silence, which is shorter than the
+ * pause people leave mid-sentence — so without this, "espejo, qué opinás
+ * de… los servidores?" would be cut off at the ellipsis. Every further
  * utterance from the same person restarts this clock.
+ *
+ * Every millisecond here is dead air before the reply, so it's as short as it
+ * can be while still surviving a breath.
  */
-const WAKE_GRACE_MS = 1_400;
+const WAKE_GRACE_MS = 900;
 
 /**
  * Longer wait when the phrase arrived with nothing after it. "Hey mirror…"

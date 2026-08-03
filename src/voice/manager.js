@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events';
 import { config } from '../config.js';
 import { VoiceSession } from './session.js';
 import { ask, AgentBusyError } from '../agent/index.js';
+import { warmFillers } from '../agent/filler.js';
 
 /** Tracks one VoiceSession per guild. */
 class SessionManager extends EventEmitter {
@@ -10,7 +11,13 @@ class SessionManager extends EventEmitter {
     super();
     this.sessions = new Map();
 
-    config.on('change', (values) => {
+    config.on('change', (values, previous) => {
+      const voiceChanged =
+        values.ttsProvider !== previous.ttsProvider ||
+        values.ttsVoice !== previous.ttsVoice ||
+        values.ttsLocalVoice !== previous.ttsLocalVoice;
+      if (voiceChanged) warmFillers().catch(() => {});
+
       for (const session of this.sessions.values()) {
         // Volume is worth applying mid-sentence.
         session.applyVolume(values.volume);

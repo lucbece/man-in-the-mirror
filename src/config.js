@@ -50,7 +50,9 @@ const DEFAULTS = {
   webSearch: true,
 
   // Speaking
-  ttsVoice: 'onyx',
+  ttsProvider: 'openai', // 'openai' | 'local' (Piper, runs on this machine)
+  ttsVoice: 'onyx', // OpenAI voice
+  ttsLocalVoice: 'es_ES-davefx-medium', // Piper voice
   volume: 0.6,
 
   // Web UI
@@ -70,6 +72,13 @@ const ENV_KEYS = {
 
 /** OpenAI's stock voices. */
 const VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
+
+/** Piper voices, described for the panel. Kept here to avoid a circular import. */
+const LOCAL_VOICE_INFO = [
+  { id: 'es_ES-davefx-medium', label: 'Español (España) — rápida' },
+  { id: 'en_US-lessac-medium', label: 'English (US) — fast' },
+  { id: 'es_AR-daniela-high', label: 'Español (Argentina) — acento rioplatense' },
+];
 
 const NUMERIC_KEYS = new Set(['volume', 'webPort', 'bufferSeconds']);
 const BOOLEAN_KEYS = new Set([
@@ -118,6 +127,7 @@ function clampConfig(cfg) {
   out.brainModel = out.brainModel.trim();
   if (!['anthropic', 'openai'].includes(out.brainProvider)) out.brainProvider = 'anthropic';
   if (!VOICES.includes(out.ttsVoice)) out.ttsVoice = 'onyx';
+  if (!['openai', 'local'].includes(out.ttsProvider)) out.ttsProvider = 'openai';
   out.agentNames = out.agentNames.trim().toLowerCase() || DEFAULTS.agentNames;
   if (!['openai', 'local'].includes(out.sttProvider)) out.sttProvider = 'openai';
 
@@ -179,6 +189,7 @@ class Config extends EventEmitter {
       hasAnthropicApiKey: Boolean(anthropicApiKey),
       anthropicApiKeyPreview: previewToken(anthropicApiKey),
       voices: VOICES,
+      localVoices: LOCAL_VOICE_INFO,
     };
   }
 

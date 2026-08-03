@@ -14,8 +14,15 @@ import { EndBehaviorType } from '@discordjs/voice';
 
 import { AudioBuffer, Utterance } from '../agent/buffer.js';
 
-/** Silence that ends an utterance. Long enough to survive a mid-sentence pause. */
-const SILENCE_MS = 700;
+/**
+ * Silence that ends an utterance.
+ *
+ * Sits directly on the critical path: nothing is transcribed, and no wake can
+ * fire, until this elapses. The pause-in-the-middle-of-a-sentence case is
+ * handled downstream by the wake grace window, so this can be tighter than it
+ * looks.
+ */
+const SILENCE_MS = 500;
 
 /** Ignore anything longer than this — almost certainly a stuck stream. */
 const MAX_UTTERANCE_MS = 60_000;

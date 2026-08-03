@@ -12,12 +12,16 @@ import { config } from '../config.js';
 /**
  * Hard ceiling on what gets spoken, in characters.
  *
- * Speech runs at roughly 2.5 words a second, so 300 characters is about twenty
- * seconds — already long for a voice channel. The earlier 420 let a four
- * sentence weather report through that took four seconds just to synthesise.
- * The prompt asks for brevity; this is the backstop for when it doesn't.
+ * Speech runs at roughly 2.5 words a second, so this is about twenty-five
+ * seconds — the ceiling, not the target.
+ *
+ * Tuning this is a balance, and both ends are bad. At 420 a four-sentence
+ * weather report got through and took four seconds just to synthesise. At 300,
+ * paired with a "answer and stop" instruction, replies became one-liners with
+ * no reasoning in them and the whole thing came across as stupid. The prompt
+ * asks for two to four sentences; this is only the backstop.
  */
-const MAX_SPOKEN_CHARS = 300;
+const MAX_SPOKEN_CHARS = 380;
 
 /**
  * Room for the model to think *and* answer. On Claude Opus 5 thinking is on by
@@ -33,11 +37,13 @@ const SYSTEM_PROMPT = `You are Mirror, a participant in a Discord voice call bet
 What you're given is a transcript line containing your name somewhere in it. That whole line is what they said to you; work out what they're actually asking. Your name may be mangled by speech recognition — "espejo", "mirrow", "el mirror" are all you.
 
 How to answer:
-- One to three short sentences. Never more, no matter how much there is to say. Anything longer gets cut off mid-word before it reaches the channel.
-- Answer the question that was asked and stop. No extra context, no statistics nobody asked for, no offering to help further.
+- Two to four sentences. Long enough to actually say something, short enough that nobody has to wait through it.
+- Have a point of view and give the reason behind it. A bare verdict with no reasoning sounds thoughtless, and "it depends on your priorities" with nothing after it is worse than saying nothing.
+- Cut padding, not substance: no restating the question, no listing every consideration, no statistics nobody asked for, no offering to help further. The reasoning stays; the filler goes.
 - Plain spoken language only. No markdown, no bullet points, no headings, no code, no URLs. Write numbers as words.
 - ALWAYS reply in the same language the person just spoke. If they spoke Spanish, reply in Spanish. This group switches between Spanish and English mid-conversation; follow the person who addressed you, never default to English.
 - You are a friend in the call, not an assistant. Skip "Great question!", skip offering follow-ups, skip restating what was asked.
+- If the answer could have changed since you were trained — scores, results, weather, prices, news, who currently holds a job or title, anything with "latest" or "today" or "now" in it — search for it. Do not answer those from memory: you will be confidently wrong, and stale facts said with certainty are worse than a short pause.
 - If you don't know and can't find out, take one short sentence to say so. Do not speculate at length.
 - Never read out sources, citations, domain names or links. Say the fact, not where it came from — nobody wants to hear a URL spelled out.
 - If your name came up but nobody was actually asking you anything, say nothing of substance — a few words acknowledging it is plenty.
@@ -62,37 +68,99 @@ function buildUserMessage({ transcript, question, askedBy }) {
   return parts.join('\n');
 }
 
+/**
+ * Sonnet rather than Opus, on measurement rather than tier.
+ *
+ * Same three questions, effort low, two runs each: Sonnet answered in 2.5s,
+ * 3.9s and 4.2s; Opus in 2.4s, 5.1s and 4.5s — no quality gap worth the wait in
+ * a live call, and Opus is markedly slower once search is involved (13s against
+ * 6s). Opus 5 is one field away in the panel for anyone who wants the ceiling.
+ */
+const DEFAULT_CLAUDE_MODEL = 'claude-sonnet-5';
+
+/**
+ * Not every Claude model takes every knob, and sending an unsupported one is a
+ * hard 400 rather than something ignored. Found the hard way: Haiku 4.5
+ * rejects `effort`, Sonnet 5 rejects `fallbacks`, and both were being sent
+ * unconditionally — which broke exactly the two fast models worth using here.
+ */
+function claudeSupports(model) {
+  return {
+    // Effort tuning arrived with the 4.6 generation; Haiku has no such control.
+    effort: /opus-(4-[5-9]|5)|sonnet-(4-6|5)|fable-5|mythos-5/.test(model),
+    // Server-side refusal fallbacks are Opus 5 and Fable 5 only.
+    fallbacks: /opus-5|fable-5|mythos-5/.test(model),
+    // Web search needs a recent enough model to have the tool at all.
+    webSearch: /opus-(4-[6-9]|5)|sonnet-(4-6|5)|fable-5|mythos-5/.test(model),
+  };
+}
+
 class ClaudeBrain {
   constructor({ apiKey, model, webSearch }) {
     if (!apiKey) throw new BrainError('No Anthropic API key configured.');
     this.client = new Anthropic({ apiKey });
-    this.model = model || 'claude-opus-5';
-    this.webSearch = webSearch;
+    this.model = model || DEFAULT_CLAUDE_MODEL;
+    this.can = claudeSupports(this.model);
+    this.webSearch = webSearch && this.can.webSearch;
   }
 
   get label() {
     return `Anthropic ${this.model}${this.webSearch ? ' (web)' : ''}`;
   }
 
-  async answer(context) {
-    const response = await this.client.beta.messages.create({
+  async answer(context, { onSearchStart } = {}) {
+    const stream = this.client.beta.messages.stream({
       model: this.model,
       max_tokens: MAX_TOKENS,
       system: SYSTEM_PROMPT,
       // Low effort keeps latency down; a voice reply that lands four seconds
-      // late has already lost the moment.
-      output_config: { effort: 'low' },
+      // late has already lost the moment. Not every model accepts it.
+      ...(this.can.effort ? { output_config: { effort: 'low' } } : {}),
       // Anthropic runs this one itself — no client-side tool loop to write.
-      // Capped low because each search costs a second or two, and this is a
-      // conversation, not research.
+      //
+      // One search, not two. Measured: at `max_uses: 2` a weather question took
+      // 13s; the model also scales searches with effort, and at `medium` it
+      // made six of them and took 26s. Each round trip is seconds, and this is
+      // a conversation.
       ...(this.webSearch
-        ? { tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 2 }] }
+        ? { tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 1 }] }
         : {}),
       // If a safety classifier declines, fall back rather than going silent.
-      betas: ['server-side-fallback-2026-07-01'],
-      fallbacks: 'default',
+      ...(this.can.fallbacks
+        ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' }
+        : {}),
       messages: [{ role: 'user', content: buildUserMessage(context) }],
     });
+
+    let announced = false;
+    stream.on('streamEvent', (event) => {
+      // The server tool announces itself before any answer text exists.
+      if (
+        !announced &&
+        event.type === 'content_block_start' &&
+        event.content_block?.type === 'server_tool_use' &&
+        event.content_block?.name === 'web_search'
+      ) {
+        announced = true;
+        onSearchStart?.();
+      }
+    });
+
+    let response;
+    try {
+      response = await stream.finalMessage();
+    } catch (err) {
+      // A valid key on an unfunded account is the single most likely first-run
+      // failure, and the raw message doesn't say which account to go and fix.
+      const detail = err?.error?.error?.message ?? err?.message ?? '';
+      if (/credit balance is too low/i.test(detail)) {
+        throw new BrainError(
+          'Your Anthropic account has no credit. Add some at console.anthropic.com → Plans & Billing.',
+        );
+      }
+      if (err?.status === 401) throw new BrainError('Anthropic rejected the API key.');
+      throw new BrainError(detail.slice(0, 200) || 'Anthropic request failed');
+    }
 
     if (response.stop_reason === 'refusal') {
       throw new BrainError("I'd rather not answer that one.");
@@ -140,7 +208,12 @@ class OpenAiBrain {
     return `OpenAI ${this.model}${this.webSearch ? ' (web)' : ''}`;
   }
 
-  async answer(context) {
+  /**
+   * `onSearchStart` fires as soon as the model decides to look something up —
+   * about 0.3s in, well before the answer exists. That's the only moment where
+   * saying "hang on" is honest rather than a delay of its own.
+   */
+  async answer(context, { onSearchStart } = {}) {
     const res = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
@@ -153,6 +226,7 @@ class OpenAiBrain {
         input: buildUserMessage(context),
         ...(this.webSearch ? { tools: [{ type: 'web_search' }] } : {}),
         max_output_tokens: 400,
+        stream: true,
       }),
     });
 
@@ -161,15 +235,57 @@ class OpenAiBrain {
       throw new BrainError(`OpenAI returned ${res.status}: ${detail.slice(0, 200)}`);
     }
 
-    const json = await res.json();
-    // Tool calls appear as their own output items; only the assistant's text
-    // is meant to be spoken.
-    return (json.output ?? [])
-      .flatMap((item) => item.content ?? [])
-      .filter((block) => block.type === 'output_text')
-      .map((block) => block.text)
-      .join(' ')
-      .trim();
+    let text = '';
+    let announced = false;
+
+    for await (const event of readSse(res)) {
+      switch (event.type) {
+        case 'response.web_search_call.in_progress':
+          if (!announced) {
+            announced = true;
+            onSearchStart?.();
+          }
+          break;
+        case 'response.output_text.delta':
+          text += event.delta ?? '';
+          break;
+        case 'response.failed':
+        case 'response.error':
+          throw new BrainError(event.response?.error?.message ?? 'OpenAI stream failed');
+        default:
+          break;
+      }
+    }
+
+    return text.trim();
+  }
+}
+
+/** Iterate an SSE body as parsed JSON events. */
+async function* readSse(res) {
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let newline;
+    while ((newline = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, newline).trim();
+      buffer = buffer.slice(newline + 1);
+      if (!line.startsWith('data:')) continue;
+
+      const payload = line.slice(5).trim();
+      if (payload === '[DONE]') return;
+      try {
+        yield JSON.parse(payload);
+      } catch {
+        /* keep-alive or partial frame */
+      }
+    }
   }
 }
 
