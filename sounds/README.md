@@ -1,7 +1,7 @@
 # Sounds
 
 Drop audio files in this folder — one clip per file. The bot picks from them at
-random and plays one every 30–120 seconds (configurable).
+random and plays one at random intervals, within a range you configure.
 
 Supported: `.mp3`, `.wav`, `.ogg`, `.oga`, `.opus`, `.m4a`, `.aac`, `.flac`, `.webm`
 

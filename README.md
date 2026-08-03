@@ -2,12 +2,9 @@
 
 <img src="src/web/public/icon.svg" width="88" align="right" alt="">
 
-A Discord bot that sits in a voice channel and drops a Michael Jackson sound
-every 30–120 seconds. The gap is re-rolled after every clip, so it never falls
-into a rhythm you can predict.
-
-Named after the Stand from JoJo's Bizarre Adventure Part 4 — itself named after
-the song. The icon is original artwork, not Araki's.
+A Discord bot that sits in a voice channel and drops a Michael Jackson sound at
+random intervals. The gap is re-rolled after every clip, so it never falls into
+a rhythm you can predict, and you set the range it draws from.
 
 Ships with a local web control panel for the token, the intervals, and the
 sound library — no editing config files by hand.
