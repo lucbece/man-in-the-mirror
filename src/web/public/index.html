@@ -203,11 +203,22 @@
           <label class="choice">
             <input type="radio" name="sttProvider" value="local" />
             <span>
-              <strong>Run locally</strong>
-              <small>Free, private, needs a capable GPU. Not implemented yet.</small>
+              <strong>En esta máquina</strong>
+              <small>Gratis y privado. Con GPU es más rápido; sin GPU, más lento.</small>
             </span>
           </label>
         </div>
+
+        <label id="sttModelRow">
+          Modelo local
+          <select name="sttLocalModel" id="sttModelSelect"></select>
+          <small class="hint">
+            Se descarga la primera vez a <code>runtime/</code>. Con una placa
+            NVIDIA elegí <code>large-v3-turbo</code> y se baja además la versión
+            CUDA del motor (646MB) para usar la GPU. Sin GPU, <code>base</code>
+            corre en CPU pero tarda más que la API.
+          </small>
+        </label>
 
         <label>
           OpenAI API key

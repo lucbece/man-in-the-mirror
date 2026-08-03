@@ -10,6 +10,8 @@ const els = {
   anthropicKeyHint: $('#anthropicKeyHint'),
   voiceSelect: $('#voiceSelect'),
   localVoiceSelect: $('#localVoiceSelect'),
+  sttModelSelect: $('#sttModelSelect'),
+  sttModelRow: $('#sttModelRow'),
   openaiVoiceRow: $('#openaiVoiceRow'),
   localVoiceRow: $('#localVoiceRow'),
   speakingForm: $('#speakingForm'),
@@ -122,17 +124,24 @@ function renderTranscription(cfg) {
     ? `A key is stored (${cfg.openaiApiKeyPreview}). Leave blank to keep it.`
     : 'No key stored yet.';
 
-  // The key only matters for the cloud provider.
+  const models = cfg.sttModels ?? [];
+  if (els.sttModelSelect.options.length !== models.length) {
+    els.sttModelSelect.replaceChildren(...models.map((m) => new Option(m.label, m.id)));
+  }
+  els.sttModelSelect.value = cfg.sttLocalModel;
+
+  // The key only matters for the cloud provider, the model only for the local one.
   const usingOpenAi = cfg.sttProvider === 'openai';
   f.openaiApiKey.closest('label').classList.toggle('dim', !usingOpenAi);
+  els.sttModelRow.classList.toggle('dim', usingOpenAi);
 
   if (usingOpenAi && !cfg.hasOpenaiApiKey) {
     els.sttAdvice.textContent =
-      'No key set, so transcription will fail. Paste an OpenAI key below, or switch to running locally once that lands.';
+      'Sin key la transcripción va a fallar. Pegá una de OpenAI abajo, o pasá a transcribir en esta máquina.';
     els.sttAdvice.classList.add('warn');
   } else {
     els.sttAdvice.textContent =
-      'Running locally is free and keeps audio on your machine, but Whisper’s full model wants a real GPU — on a laptop without one you’d drop to a smaller model that struggles with several people talking at once. The API sidesteps that.';
+      'Es una decisión de hardware, no de calidad: es el mismo modelo Whisper en los dos lados. Con una GPU, local es más rápido y gratis. Sin GPU es más lento que la API — medido en una laptop: 2.4s contra ~1s.';
     els.sttAdvice.classList.remove('warn');
   }
 }
@@ -390,7 +399,12 @@ els.transcriptionForm.addEventListener('submit', (event) => {
   const f = els.transcriptionForm.elements;
   const provider = [...f.sttProvider].find((r) => r.checked)?.value ?? 'openai';
   act(
-    () => post('/api/config', { sttProvider: provider, openaiApiKey: f.openaiApiKey.value }),
+    () =>
+      post('/api/config', {
+        sttProvider: provider,
+        sttLocalModel: f.sttLocalModel.value,
+        openaiApiKey: f.openaiApiKey.value,
+      }),
     'Saved.',
   ).then(() => {
     f.openaiApiKey.value = '';

@@ -8,6 +8,7 @@
  */
 import { config } from '../config.js';
 import { packetsToWav } from './audio.js';
+import { MODELS, ensureModel, ensureWhisper, transcribeWav } from './whisper.js';
 
 /** Below this an "utterance" is a cough or a mic bump. Not worth a request. */
 const MIN_UTTERANCE_MS = 300;
@@ -149,16 +150,45 @@ export function namePrompt() {
   return `Conversación en un canal de voz con un asistente llamado ${names.join(' o ')}.`;
 }
 
-/** Build the configured provider, or throw with something actionable. */
-export function createProvider() {
-  const provider = config.get('sttProvider');
-
-  if (provider === 'local') {
-    throw new SttError(
-      'Local transcription is not implemented yet — switch to the OpenAI provider.',
-    );
+/**
+ * Transcription on this machine, via whisper.cpp.
+ *
+ * Same model family the API runs, so quality is a hardware question rather
+ * than a quality one: with a GPU this is both faster and free, without one it
+ * is slower than the network round trip it replaces.
+ */
+class LocalWhisper {
+  constructor({ model }) {
+    this.model = MODELS[model] ? model : 'ggml-base';
+    this.ready = null;
   }
 
+  get label() {
+    return `whisper.cpp ${this.model} (local)`;
+  }
+
+  /** Fetch binary and model on first use, once per process. */
+  async prepare() {
+    this.ready ??= (async () => ({
+      binary: await ensureWhisper(),
+      model: await ensureModel(this.model),
+    }))();
+    return this.ready;
+  }
+
+  async transcribe(wav) {
+    const { binary, model } = await this.prepare();
+    // No language pin: this channel code-switches mid-sentence, and forcing
+    // one makes the other markedly worse.
+    return transcribeWav(wav, { binary, model, language: 'auto' });
+  }
+}
+
+/** Build the configured provider, or throw with something actionable. */
+export function createProvider() {
+  if (config.get('sttProvider') === 'local') {
+    return new LocalWhisper({ model: config.get('sttLocalModel') });
+  }
   return new OpenAiWhisper({ apiKey: config.get('openaiApiKey') });
 }
 

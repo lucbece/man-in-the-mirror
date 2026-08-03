@@ -36,7 +36,8 @@ const DEFAULTS = {
   eagerTranscription: true,
 
   // Transcription
-  sttProvider: 'openai', // 'openai' | 'local' (local not implemented yet)
+  sttProvider: 'openai', // 'openai' | 'local' (whisper.cpp on this machine)
+  sttLocalModel: 'ggml-base', // whisper.cpp model; the panel suggests one per machine
   openaiApiKey: '',
 
   // Thinking
@@ -72,6 +73,13 @@ const ENV_KEYS = {
 
 /** OpenAI's stock voices. */
 const VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
+
+/** whisper.cpp models, described for the panel. */
+const STT_MODELS = [
+  { id: 'ggml-base', label: 'base — 142MB, rápido en CPU' },
+  { id: 'ggml-small', label: 'small — 466MB, mejor sin GPU' },
+  { id: 'ggml-large-v3-turbo', label: 'large-v3-turbo — 1.6GB, para GPU' },
+];
 
 /** Piper voices, described for the panel. Kept here to avoid a circular import. */
 const LOCAL_VOICE_INFO = [
@@ -130,6 +138,7 @@ function clampConfig(cfg) {
   if (!['openai', 'local'].includes(out.ttsProvider)) out.ttsProvider = 'openai';
   out.agentNames = out.agentNames.trim().toLowerCase() || DEFAULTS.agentNames;
   if (!['openai', 'local'].includes(out.sttProvider)) out.sttProvider = 'openai';
+  if (!STT_MODELS.some((m) => m.id === out.sttLocalModel)) out.sttLocalModel = 'ggml-base';
 
   return out;
 }
@@ -190,6 +199,7 @@ class Config extends EventEmitter {
       anthropicApiKeyPreview: previewToken(anthropicApiKey),
       voices: VOICES,
       localVoices: LOCAL_VOICE_INFO,
+      sttModels: STT_MODELS,
     };
   }
 
