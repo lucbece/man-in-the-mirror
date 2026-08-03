@@ -89,11 +89,27 @@ export function isVoiceInstalled(name) {
   return fs.existsSync(path.join(VOICES_DIR, `${name}.onnx`));
 }
 
+/** Shared so concurrent callers wait on one download instead of racing it. */
+const inFlight = new Map();
+
 async function download(url, target) {
-  const res = await fetch(url, { redirect: 'follow' });
-  if (!res.ok) throw new Error(`${res.status} fetching ${url}`);
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.writeFileSync(target, Buffer.from(await res.arrayBuffer()));
+  if (fs.existsSync(target)) return target;
+  if (inFlight.has(target)) return inFlight.get(target);
+
+  const job = (async () => {
+    const res = await fetch(url, { redirect: 'follow' });
+    if (!res.ok) throw new Error(`${res.status} fetching ${url}`);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    // Rename into place, so a half-written file is never mistaken for a
+    // finished one — a partially downloaded model loads as a hard failure.
+    const partial = `${target}.part`;
+    fs.writeFileSync(partial, Buffer.from(await res.arrayBuffer()));
+    fs.renameSync(partial, target);
+    return target;
+  })().finally(() => inFlight.delete(target));
+
+  inFlight.set(target, job);
+  return job;
 }
 
 function run(command, args, options = {}) {
@@ -107,8 +123,17 @@ function run(command, args, options = {}) {
 }
 
 /** Fetch and unpack the Piper binary if it isn't already there. */
+let installing = null;
+
 export async function ensurePiper() {
   if (isPiperInstalled()) return piperBinary();
+  installing ??= installPiper().finally(() => {
+    installing = null;
+  });
+  return installing;
+}
+
+async function installPiper() {
 
   const asset = platformAsset();
   if (!asset) {

@@ -177,15 +177,47 @@ class LocalWhisper {
   }
 
   async transcribe(wav) {
-    const { binary, model } = await this.prepare();
+    let binary;
+    let model;
+    try {
+      ({ binary, model } = await this.prepare());
+    } catch (err) {
+      // Setup failing is not this clip's fault. Mark it fatal so the audio is
+      // kept rather than consumed — the first run downloads hundreds of
+      // megabytes, and everything said meanwhile would otherwise be lost.
+      this.ready = null; // let the next attempt retry
+      throw new SttError(`whisper.cpp no está listo: ${err.message}`, { fatal: true });
+    }
     // No language pin: this channel code-switches mid-sentence, and forcing
     // one makes the other markedly worse.
     return transcribeWav(wav, { binary, model, language: 'auto' });
   }
 }
 
-/** Build the configured provider, or throw with something actionable. */
+/**
+ * One provider per configuration, reused.
+ *
+ * Rebuilt only when the relevant settings change. Local providers hold a
+ * downloaded runtime behind them, so handing every utterance its own instance
+ * meant every utterance starting its own download.
+ */
+let cached = null;
+let cachedKey = '';
+
 export function createProvider() {
+  const key = [
+    config.get('sttProvider'),
+    config.get('sttLocalModel'),
+    config.get('openaiApiKey').slice(0, 8),
+  ].join('|');
+
+  if (cached && cachedKey === key) return cached;
+  cached = buildProvider();
+  cachedKey = key;
+  return cached;
+}
+
+function buildProvider() {
   if (config.get('sttProvider') === 'local') {
     return new LocalWhisper({ model: config.get('sttLocalModel') });
   }

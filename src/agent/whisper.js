@@ -105,11 +105,35 @@ export function isModelInstalled(name) {
   return fs.existsSync(path.join(MODELS_DIR, `${name}.bin`));
 }
 
+/**
+ * Downloads in flight, keyed by target path.
+ *
+ * Utterances arrive several at a time, and each one used to build its own
+ * provider and start its own download — four concurrent writes to the same
+ * 646MB file, which on Windows fails with EBUSY and EPERM rather than merely
+ * wasting bandwidth. Callers now share one download.
+ */
+const inFlight = new Map();
+
 async function download(url, target, label) {
-  const res = await fetch(url, { redirect: 'follow' });
-  if (!res.ok) throw new Error(`${res.status} fetching ${label}`);
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.writeFileSync(target, Buffer.from(await res.arrayBuffer()));
+  if (fs.existsSync(target)) return target;
+  if (inFlight.has(target)) return inFlight.get(target);
+
+  const job = (async () => {
+    const res = await fetch(url, { redirect: 'follow' });
+    if (!res.ok) throw new Error(`${res.status} fetching ${label}`);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+
+    // Write to a temp name and rename, so an interrupted download can never be
+    // mistaken for a complete one on the next run.
+    const partial = `${target}.part`;
+    fs.writeFileSync(partial, Buffer.from(await res.arrayBuffer()));
+    fs.renameSync(partial, target);
+    return target;
+  })().finally(() => inFlight.delete(target));
+
+  inFlight.set(target, job);
+  return job;
 }
 
 function run(command, args) {
@@ -122,9 +146,19 @@ function run(command, args) {
   });
 }
 
+let installing = null;
+
 export async function ensureWhisper() {
   const existing = whisperBinary();
   if (existing) return existing;
+  // Concurrent callers wait on the same install rather than racing it.
+  installing ??= installWhisper().finally(() => {
+    installing = null;
+  });
+  return installing;
+}
+
+async function installWhisper() {
 
   const asset = await platformAsset();
   if (!asset) {
@@ -192,7 +226,7 @@ export function transcribeWav(wav, { binary, model, language }) {
     ];
 
     const child = spawn(binary, args, {
-      stdio: ['ignore', 'pipe', 'ignore'],
+      stdio: ['ignore', 'pipe', 'pipe'],
       env: {
         ...process.env,
         LD_LIBRARY_PATH: `${path.dirname(binary)}:${process.env.LD_LIBRARY_PATH ?? ''}`,
@@ -200,14 +234,22 @@ export function transcribeWav(wav, { binary, model, language }) {
     });
 
     let out = '';
+    let err = '';
     child.stdout.on('data', (chunk) => (out += chunk));
-    child.on('error', (err) => {
+    child.stderr.on('data', (chunk) => (err += chunk));
+    child.on('error', (e) => {
       fs.rmSync(file, { force: true });
-      reject(err);
+      reject(e);
     });
     child.on('close', (code) => {
       fs.rmSync(file, { force: true });
-      if (code !== 0) return reject(new Error(`whisper-cli exited ${code}`));
+      if (code !== 0) {
+        // Without this the failure is just "exited 3", which says nothing about
+        // whether the model is corrupt, the GPU is missing a driver, or the
+        // audio was unreadable.
+        const detail = err.replace(/\s+/g, ' ').trim().slice(-300);
+        return reject(new Error(`whisper-cli exited ${code}${detail ? `: ${detail}` : ''}`));
+      }
       resolve(out.replace(/\s+/g, ' ').trim());
     });
   });
