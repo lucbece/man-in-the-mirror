@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 
 import { config } from '../config.js';
 import { VoiceSession } from './session.js';
+import { ask, AgentBusyError } from '../agent/index.js';
 
 /** Tracks one VoiceSession per guild. */
 class SessionManager extends EventEmitter {
@@ -9,9 +10,12 @@ class SessionManager extends EventEmitter {
     super();
     this.sessions = new Map();
 
-    // Volume is the one setting worth applying mid-clip.
     config.on('change', (values) => {
-      for (const session of this.sessions.values()) session.applyVolume(values.volume);
+      for (const session of this.sessions.values()) {
+        // Volume is worth applying mid-sentence.
+        session.applyVolume(values.volume);
+        session.receiver?.setWindow(values.bufferSeconds);
+      }
     });
   }
 
@@ -24,7 +28,7 @@ class SessionManager extends EventEmitter {
   }
 
   /** Join (or move to) a voice channel and return the ready session. */
-  async join(channel, { autoStart = config.get('autoStart') } = {}) {
+  async join(channel) {
     const existing = this.sessions.get(channel.guild.id);
     if (existing && !existing.destroyed) {
       if (existing.channelId === channel.id) return existing;
@@ -43,6 +47,20 @@ class SessionManager extends EventEmitter {
     });
     session.on('update', () => this.emit('update'));
 
+    // Someone said the wake phrase out loud. This is the whole point.
+    session.on('wake', async ({ question, askedBy, heard }) => {
+      console.log(`[wake] ${askedBy}: "${heard}"`);
+      try {
+        const result = await ask(session, { question, askedBy });
+        console.log(`[wake] answered: "${result.spoken}"`);
+      } catch (err) {
+        // Don't speak errors into the channel — that's worse than silence.
+        if (!(err instanceof AgentBusyError)) {
+          console.warn(`[wake] could not answer: ${err.message}`);
+        }
+      }
+    });
+
     try {
       await session.waitUntilReady();
     } catch (err) {
@@ -51,7 +69,6 @@ class SessionManager extends EventEmitter {
       throw new Error(`Could not connect to ${channel.name}: ${err.message}`);
     }
 
-    if (autoStart) session.start();
     this.emit('update');
     return session;
   }

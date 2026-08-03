@@ -3,20 +3,21 @@ const $ = (sel) => document.querySelector(sel);
 const els = {
   botStatus: $('#botStatus'),
   connectionForm: $('#connectionForm'),
-  behaviourForm: $('#behaviourForm'),
+  listeningForm: $('#listeningForm'),
+  transcriptionForm: $('#transcriptionForm'),
+  thinkingForm: $('#thinkingForm'),
+  brainAdvice: $('#brainAdvice'),
+  anthropicKeyHint: $('#anthropicKeyHint'),
+  voiceSelect: $('#voiceSelect'),
+  speakingForm: $('#speakingForm'),
   tokenHint: $('#tokenHint'),
-  volumeOut: $('#volumeOut'),
+  keyHint: $('#keyHint'),
+  sttAdvice: $('#sttAdvice'),
+  bufferOut: $('#bufferOut'),
   sessions: $('#sessions'),
   guildSelect: $('#guildSelect'),
   channelSelect: $('#channelSelect'),
   joinBtn: $('#joinBtn'),
-  soundList: $('#soundList'),
-  soundCount: $('#soundCount'),
-  soundsDir: $('#soundsDir'),
-  sourcesCard: $('#sourcesCard'),
-  dropzone: $('#dropzone'),
-  fileInput: $('#fileInput'),
-  browseBtn: $('#browseBtn'),
   toast: $('#toast'),
 };
 
@@ -33,6 +34,13 @@ async function api(url, options = {}) {
   return body;
 }
 
+const post = (url, payload) =>
+  api(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
 function toast(message, kind = 'ok') {
   els.toast.textContent = message;
   els.toast.dataset.kind = kind;
@@ -41,6 +49,18 @@ function toast(message, kind = 'ok') {
   toast.timer = setTimeout(() => {
     els.toast.hidden = true;
   }, 3200);
+}
+
+async function act(fn, okMessage) {
+  try {
+    const result = await fn();
+    if (okMessage) toast(okMessage);
+    await refresh();
+    return result;
+  } catch (err) {
+    toast(err.message, 'error');
+    return null;
+  }
 }
 
 // --- rendering --------------------------------------------------------------
@@ -56,10 +76,12 @@ function render(next) {
   state = next;
   renderBotStatus(next.bot);
   if (!isEditing(els.connectionForm)) renderConnection(next.config);
-  if (!isEditing(els.behaviourForm)) renderBehaviour(next.config);
+  if (!isEditing(els.listeningForm)) renderListening(next.config);
+  if (!isEditing(els.transcriptionForm)) renderTranscription(next.config);
+  if (!isEditing(els.thinkingForm)) renderThinking(next.config);
+  if (!isEditing(els.speakingForm)) renderSpeaking(next.config);
   renderSessions(next.sessions);
   renderGuilds(next.guilds);
-  renderSounds(next);
 }
 
 function renderBotStatus(bot) {
@@ -80,16 +102,83 @@ function renderConnection(cfg) {
   if (document.activeElement !== guildInput) guildInput.value = cfg.guildId ?? '';
 }
 
-function renderBehaviour(cfg) {
-  const f = els.behaviourForm.elements;
-  f.minIntervalSeconds.value = cfg.minIntervalSeconds;
-  f.maxIntervalSeconds.value = cfg.maxIntervalSeconds;
-  f.volume.value = Math.round(cfg.volume * 100);
-  f.autoStart.checked = cfg.autoStart;
-  f.playOnJoin.checked = cfg.playOnJoin;
-  f.pauseWhenAlone.checked = cfg.pauseWhenAlone;
+function renderListening(cfg) {
+  const f = els.listeningForm.elements;
+  f.bufferSeconds.value = cfg.bufferSeconds;
+  f.agentNames.value = cfg.agentNames ?? '';
+  f.eagerTranscription.checked = cfg.eagerTranscription;
+  f.wakeEnabled.checked = cfg.wakeEnabled;
+  els.bufferOut.textContent = describeSeconds(cfg.bufferSeconds);
+}
+
+function renderTranscription(cfg) {
+  const f = els.transcriptionForm.elements;
+  for (const radio of f.sttProvider) radio.checked = radio.value === cfg.sttProvider;
+
+  els.keyHint.textContent = cfg.hasOpenaiApiKey
+    ? `A key is stored (${cfg.openaiApiKeyPreview}). Leave blank to keep it.`
+    : 'No key stored yet.';
+
+  // The key only matters for the cloud provider.
+  const usingOpenAi = cfg.sttProvider === 'openai';
+  f.openaiApiKey.closest('label').classList.toggle('dim', !usingOpenAi);
+
+  if (usingOpenAi && !cfg.hasOpenaiApiKey) {
+    els.sttAdvice.textContent =
+      'No key set, so transcription will fail. Paste an OpenAI key below, or switch to running locally once that lands.';
+    els.sttAdvice.classList.add('warn');
+  } else {
+    els.sttAdvice.textContent =
+      'Running locally is free and keeps audio on your machine, but Whisper’s full model wants a real GPU — on a laptop without one you’d drop to a smaller model that struggles with several people talking at once. The API sidesteps that.';
+    els.sttAdvice.classList.remove('warn');
+  }
+}
+
+function renderThinking(cfg) {
+  const f = els.thinkingForm.elements;
+  for (const radio of f.brainProvider) radio.checked = radio.value === cfg.brainProvider;
+  f.brainModel.value = cfg.brainModel ?? '';
+  f.webSearch.checked = cfg.webSearch;
+
+  els.anthropicKeyHint.textContent = cfg.hasAnthropicApiKey
+    ? `A key is stored (${cfg.anthropicApiKeyPreview}). Leave blank to keep it.`
+    : 'No key stored yet.';
+
+  const usingClaude = cfg.brainProvider === 'anthropic';
+  f.anthropicApiKey.closest('label').classList.toggle('dim', !usingClaude);
+
+  const missing = usingClaude ? !cfg.hasAnthropicApiKey : !cfg.hasOpenaiApiKey;
+  els.brainAdvice.textContent = missing
+    ? `No ${usingClaude ? 'Anthropic' : 'OpenAI'} key set, so the agent can't answer yet.`
+    : 'Ready to answer.';
+  els.brainAdvice.classList.toggle('warn', missing);
+}
+
+function renderSpeaking(cfg) {
+  const f = els.speakingForm.elements;
+
+  const voices = cfg.voices ?? [];
+  if (els.voiceSelect.options.length !== voices.length) {
+    els.voiceSelect.replaceChildren(...voices.map((v) => new Option(v, v)));
+  }
+  els.voiceSelect.value = cfg.ttsVoice;
+
   f.webPort.value = cfg.webPort;
-  els.volumeOut.textContent = `${Math.round(cfg.volume * 100)}%`;
+}
+
+function describeSeconds(seconds) {
+  if (seconds < 60) return `${seconds}s`;
+  const mins = seconds / 60;
+  return `${Number.isInteger(mins) ? mins : mins.toFixed(1)} min`;
+}
+
+function button(label, onClick, className = '') {
+  const el = document.createElement('button');
+  el.type = 'button';
+  el.textContent = label;
+  if (className) el.className = className;
+  el.addEventListener('click', onClick);
+  return el;
 }
 
 function renderSessions(sessions) {
@@ -104,260 +193,247 @@ function renderSessions(sessions) {
 
       const meta = document.createElement('div');
       meta.className = 'meta';
-      const bits = [
-        s.running ? 'scheduler running' : 'paused',
-        `${s.listeners} listening`,
-        s.secondsUntilNext !== null ? `next in ~${s.secondsUntilNext}s` : null,
-        s.lastPlayed ? `last: ${s.lastPlayed}` : null,
-        `${s.playCount} played`,
-      ].filter(Boolean);
-      meta.textContent = bits.join(' · ');
+      const l = s.listening;
+      meta.textContent = [
+        `${s.listeners} in channel`,
+        s.agentEnabled ? 'listening' : 'deafened',
+        s.agentEnabled ? `${l.utterances} utterance(s), ${l.speechSeconds}s of speech` : null,
+        s.speaking ? 'speaking now' : null,
+        s.agentEnabled && s.wakeEnabled ? `answers to "${s.agentNames}"` : null,
+        s.eager?.error ? `transcription stopped: ${s.eager.error}` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ');
 
       const row = document.createElement('div');
       row.className = 'row';
       row.append(
-        button(s.running ? 'Pause' : 'Start', () =>
-          act('/api/voice/scheduler', { guildId: s.guildId, running: !s.running }),
+        button(
+          s.agentEnabled ? 'Stop listening' : 'Start listening',
+          () =>
+            act(
+              () =>
+                post('/api/voice/listen', {
+                  guildId: s.guildId,
+                  listening: !s.agentEnabled,
+                }),
+              s.agentEnabled ? 'Deafened, buffer wiped.' : 'Listening.',
+            ),
+          s.agentEnabled ? '' : 'primary',
         ),
-        button('Play now', () => act('/api/voice/play', { guildId: s.guildId })),
-        button('Leave', () => act('/api/voice/leave', { guildId: s.guildId }), 'danger'),
+        button('Read transcript', () => showTranscript(s.guildId)),
+        button('Leave', () =>
+          act(() => post('/api/voice/leave', { guildId: s.guildId }), 'Left the channel.'),
+        ),
       );
+      if (s.speaking) {
+        row.append(button('Shush', () => act(() => post('/api/voice/shush', { guildId: s.guildId }))));
+      }
 
-      card.append(title, meta, row);
+      const askRow = document.createElement('form');
+      askRow.className = 'row ask';
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.placeholder = 'Ask something — it answers out loud';
+      input.autocomplete = 'off';
+      const send = document.createElement('button');
+      send.type = 'submit';
+      send.textContent = 'Ask';
+      askRow.append(input, send);
+      askRow.addEventListener('submit', (event) => {
+        event.preventDefault();
+        const question = input.value.trim();
+        if (!question) return;
+        input.value = '';
+        askAgent(s.guildId, question);
+      });
+
+      const out = document.createElement('pre');
+      out.className = 'transcript';
+      out.id = `transcript-${s.guildId}`;
+      out.hidden = true;
+
+      card.append(title, meta, row, askRow, out);
       return card;
     }),
   );
 }
 
-function renderGuilds(guilds) {
-  const connectedGuilds = new Set((state.sessions ?? []).map((s) => s.guildId));
-  const previousGuild = els.guildSelect.value;
+async function showTranscript(guildId) {
+  const out = $(`#transcript-${guildId}`);
+  if (!out) return;
+  out.hidden = false;
+  out.textContent = 'Transcribing…';
 
+  try {
+    const result = await post('/api/voice/transcript', { guildId });
+    out.textContent =
+      result.transcript ||
+      'Got audio but no words out of it — likely too quiet or too short.';
+    toast(
+      `${result.transcribed} new chunk(s) in ${(result.elapsedMs / 1000).toFixed(1)}s`,
+    );
+  } catch (err) {
+    out.textContent = `Transcription failed: ${err.message}`;
+  }
+}
+
+async function askAgent(guildId, question) {
+  const out = $(`#transcript-${guildId}`);
+  if (out) {
+    out.hidden = false;
+    out.textContent = 'Thinking…';
+  }
+
+  try {
+    const result = await post('/api/voice/ask', { guildId, question });
+    const t = result.timings;
+    if (out) {
+      out.textContent =
+        `You: ${question}\n\n${result.spoken}` +
+        `\n\n— heard ${(t.transcribeMs / 1000).toFixed(1)}s, ` +
+        `thought ${(t.thinkMs / 1000).toFixed(1)}s, ` +
+        `voiced ${(t.speakMs / 1000).toFixed(1)}s, ` +
+        `${(t.totalMs / 1000).toFixed(1)}s total`;
+    }
+  } catch (err) {
+    if (out) out.textContent = `Couldn't answer: ${err.message}`;
+  }
+}
+
+function renderGuilds(guilds) {
+  const previousGuild = els.guildSelect.value;
   els.guildSelect.replaceChildren(
-    ...guilds.map((g) => new Option(g.name, g.id)),
+    ...(guilds.length
+      ? guilds.map((g) => new Option(g.name, g.id))
+      : [new Option('— bot offline or in no servers —', '')]),
   );
-  if (guilds.length === 0) {
-    els.guildSelect.replaceChildren(new Option('— bot offline or in no servers —', ''));
-  }
-  if (previousGuild && guilds.some((g) => g.id === previousGuild)) {
-    els.guildSelect.value = previousGuild;
-  }
+  if (guilds.some((g) => g.id === previousGuild)) els.guildSelect.value = previousGuild;
 
   const guild = guilds.find((g) => g.id === els.guildSelect.value);
-  const previousChannel = els.channelSelect.value;
   const channels = guild?.channels ?? [];
-
+  const previousChannel = els.channelSelect.value;
   els.channelSelect.replaceChildren(
-    ...channels.map((c) => new Option(`#${c.name}${c.members ? ` (${c.members})` : ''}`, c.id)),
+    ...(channels.length
+      ? channels.map((c) => new Option(`${c.name} (${c.members})`, c.id))
+      : [new Option('— no voice channels —', '')]),
   );
-  if (channels.length === 0) {
-    els.channelSelect.replaceChildren(new Option('— no voice channels —', ''));
-  }
-  if (previousChannel && channels.some((c) => c.id === previousChannel)) {
-    els.channelSelect.value = previousChannel;
-  }
-
-  els.joinBtn.disabled = channels.length === 0;
-  els.joinBtn.textContent = connectedGuilds.has(els.guildSelect.value)
-    ? 'Move to channel'
-    : 'Join channel';
-}
-
-function renderSounds(next) {
-  els.soundCount.textContent = next.sounds.length;
-  els.soundsDir.textContent = next.soundsDir;
-  // Draw the eye to the download links only while there's nothing to play.
-  els.sourcesCard.classList.toggle('wanted', next.sounds.length === 0);
-
-  els.soundList.replaceChildren(
-    ...next.sounds.map((name) => {
-      const li = document.createElement('li');
-      const label = document.createElement('span');
-      label.className = 'name';
-      label.textContent = name;
-
-      const row = document.createElement('span');
-      row.className = 'row';
-      row.style.margin = '0';
-
-      const session = next.sessions[0];
-      if (session) {
-        row.append(
-          button('Play', () =>
-            act('/api/voice/play', { guildId: session.guildId, sound: name }),
-          ),
-        );
-      }
-      row.append(
-        button('Delete', async () => {
-          if (!confirm(`Delete ${name}?`)) return;
-          await api(`/api/sounds/${encodeURIComponent(name)}`, { method: 'DELETE' });
-          toast(`Deleted ${name}`);
-          refresh();
-        }, 'danger'),
-      );
-
-      li.append(label, row);
-      return li;
-    }),
-  );
-}
-
-function button(text, onClick, className = '') {
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.textContent = text;
-  if (className) b.className = className;
-  b.addEventListener('click', async () => {
-    b.disabled = true;
-    try {
-      await onClick();
-    } catch (err) {
-      toast(err.message, 'error');
-    } finally {
-      b.disabled = false;
-    }
-  });
-  return b;
-}
-
-async function act(url, body) {
-  await api(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  refresh();
+  if (channels.some((c) => c.id === previousChannel)) els.channelSelect.value = previousChannel;
 }
 
 // --- events -----------------------------------------------------------------
 
-els.connectionForm.addEventListener('submit', async (event) => {
+els.guildSelect.addEventListener('change', () => renderGuilds(state?.guilds ?? []));
+
+els.joinBtn.addEventListener('click', () =>
+  act(
+    () =>
+      post('/api/voice/join', {
+        guildId: els.guildSelect.value,
+        channelId: els.channelSelect.value,
+      }),
+    'Joined.',
+  ),
+);
+
+els.connectionForm.addEventListener('submit', (event) => {
   event.preventDefault();
-  const data = Object.fromEntries(new FormData(els.connectionForm));
-  try {
-    const res = await api('/api/config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    els.connectionForm.elements.token.value = '';
-    toast(res.restarted ? 'Saved — restarting the bot…' : 'Saved.');
-    refresh();
-  } catch (err) {
-    toast(err.message, 'error');
-  }
-});
-
-els.behaviourForm.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  const f = els.behaviourForm.elements;
-  const payload = {
-    minIntervalSeconds: Number(f.minIntervalSeconds.value),
-    maxIntervalSeconds: Number(f.maxIntervalSeconds.value),
-    volume: Number(f.volume.value) / 100,
-    autoStart: f.autoStart.checked,
-    playOnJoin: f.playOnJoin.checked,
-    pauseWhenAlone: f.pauseWhenAlone.checked,
-    webPort: Number(f.webPort.value),
-  };
-  try {
-    await api('/api/config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    toast('Saved.');
-    document.activeElement?.blur();
-    refresh();
-  } catch (err) {
-    toast(err.message, 'error');
-  }
-});
-
-els.behaviourForm.elements.volume.addEventListener('input', (event) => {
-  els.volumeOut.textContent = `${event.target.value}%`;
-});
-
-document.querySelectorAll('[data-bot]').forEach((btn) => {
-  btn.addEventListener('click', async () => {
-    btn.disabled = true;
-    try {
-      const res = await api(`/api/bot/${btn.dataset.bot}`, { method: 'POST' });
-      toast(res.error ? res.error : `Bot ${res.state}.`, res.error ? 'error' : 'ok');
-      refresh();
-    } catch (err) {
-      toast(err.message, 'error');
-    } finally {
-      btn.disabled = false;
-    }
+  const f = els.connectionForm.elements;
+  act(
+    () => post('/api/config', { token: f.token.value, guildId: f.guildId.value }),
+    'Saved.',
+  ).then(() => {
+    f.token.value = '';
   });
 });
 
-els.guildSelect.addEventListener('change', () => renderGuilds(state.guilds));
-
-els.joinBtn.addEventListener('click', async () => {
-  els.joinBtn.disabled = true;
-  try {
-    await act('/api/voice/join', {
-      guildId: els.guildSelect.value,
-      channelId: els.channelSelect.value,
-    });
-    toast('Joined.');
-  } catch (err) {
-    toast(err.message, 'error');
-  } finally {
-    els.joinBtn.disabled = false;
-  }
+els.listeningForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  const f = els.listeningForm.elements;
+  act(
+    () =>
+      post('/api/config', {
+        bufferSeconds: Number(f.bufferSeconds.value),
+        agentNames: f.agentNames.value,
+        eagerTranscription: f.eagerTranscription.checked,
+        wakeEnabled: f.wakeEnabled.checked,
+      }),
+    'Saved.',
+  );
 });
 
-// --- uploads ----------------------------------------------------------------
+els.listeningForm.elements.bufferSeconds.addEventListener('input', (event) => {
+  els.bufferOut.textContent = describeSeconds(Number(event.target.value));
+});
 
-async function uploadFiles(files) {
-  for (const file of files) {
-    try {
-      await api(`/api/sounds/${encodeURIComponent(file.name)}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': file.type || 'application/octet-stream' },
-        body: file,
-      });
-      toast(`Uploaded ${file.name}`);
-    } catch (err) {
-      toast(`${file.name}: ${err.message}`, 'error');
-    }
-  }
-  refresh();
+els.transcriptionForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  const f = els.transcriptionForm.elements;
+  const provider = [...f.sttProvider].find((r) => r.checked)?.value ?? 'openai';
+  act(
+    () => post('/api/config', { sttProvider: provider, openaiApiKey: f.openaiApiKey.value }),
+    'Saved.',
+  ).then(() => {
+    f.openaiApiKey.value = '';
+  });
+});
+
+els.thinkingForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  const f = els.thinkingForm.elements;
+  const provider = [...f.brainProvider].find((r) => r.checked)?.value ?? 'anthropic';
+  act(
+    () =>
+      post('/api/config', {
+        brainProvider: provider,
+        brainModel: f.brainModel.value,
+        webSearch: f.webSearch.checked,
+        anthropicApiKey: f.anthropicApiKey.value,
+      }),
+    'Saved.',
+  ).then(() => {
+    f.anthropicApiKey.value = '';
+  });
+});
+
+els.speakingForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  const f = els.speakingForm.elements;
+  act(
+    () =>
+      post('/api/config', {
+        ttsVoice: f.ttsVoice.value,
+        webPort: Number(f.webPort.value),
+      }),
+    'Saved.',
+  );
+});
+
+for (const btn of document.querySelectorAll('[data-bot]')) {
+  btn.addEventListener('click', () =>
+    act(() => post(`/api/bot/${btn.dataset.bot}`, {}), `Bot ${btn.dataset.bot}ed.`),
+  );
 }
-
-els.browseBtn.addEventListener('click', () => els.fileInput.click());
-els.fileInput.addEventListener('change', () => {
-  uploadFiles([...els.fileInput.files]);
-  els.fileInput.value = '';
-});
-
-['dragenter', 'dragover'].forEach((type) =>
-  els.dropzone.addEventListener(type, (event) => {
-    event.preventDefault();
-    els.dropzone.classList.add('over');
-  }),
-);
-['dragleave', 'drop'].forEach((type) =>
-  els.dropzone.addEventListener(type, (event) => {
-    event.preventDefault();
-    els.dropzone.classList.remove('over');
-  }),
-);
-els.dropzone.addEventListener('drop', (event) => {
-  uploadFiles([...event.dataTransfer.files]);
-});
 
 // --- polling ----------------------------------------------------------------
 
 async function refresh() {
+  // Fetch and render are reported separately on purpose. Folding them into one
+  // catch makes a render bug look identical to a dead server, which sends you
+  // hunting the wrong problem.
+  let next;
   try {
-    render(await api('/api/state'));
+    next = await api('/api/state');
+  } catch {
+    els.botStatus.querySelector('.label').textContent = 'Control panel offline — retrying';
+    return;
+  }
+
+  try {
+    render(next);
   } catch (err) {
-    els.botStatus.querySelector('.label').textContent = `Control panel offline: ${err.message}`;
+    console.error('[panel] render failed:', err);
+    els.botStatus.querySelector('.label').textContent = `Panel error: ${err.message}`;
   }
 }
 

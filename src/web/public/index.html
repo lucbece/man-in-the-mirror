@@ -8,234 +8,332 @@
     <link rel="icon" type="image/svg+xml" href="icon.svg" />
   </head>
   <body>
-    <header>
-      <h1>
-        <img src="icon.svg" alt="" class="logo" width="34" height="34" />
-        <span>
-          Man in the Mirror
-          <small>Michael Jackson, uninvited, in your voice channel</small>
-        </span>
-      </h1>
-      <div id="botStatus" class="status">
-        <span class="dot" data-state="stopped"></span>
-        <span class="label">loading…</span>
+  <header>
+    <h1>
+      <img src="icon.svg" alt="" class="logo" width="34" height="34" />
+      <span>
+        Man in the Mirror
+        <small>A voice agent that listens to your channel and answers out loud</small>
+      </span>
+    </h1>
+    <div class="status" id="botStatus">
+      <span class="dot" data-state="stopped"></span>
+      <span class="label">loading…</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>Connection</h2>
+      <p class="hint">
+        The bot needs its own account on Discord, and a token that proves it's
+        yours. Two minutes, one page:
+      </p>
+
+      <ol class="steps">
+        <li>
+          Open the
+          <a
+            href="https://discord.com/developers/applications"
+            target="_blank"
+            rel="noopener noreferrer"
+            >Discord Developer Portal</a
+          >
+          and click <strong>New Application</strong>. The name you give it is the
+          name people see in the member list.
+        </li>
+        <li>
+          Open the <strong>Bot</strong> tab → <strong>Reset Token</strong> →
+          <strong>Copy</strong>. Discord shows the token once and never again; if
+          you lose it, just reset for a new one.
+        </li>
+        <li>Paste it below and hit <strong>Save &amp; apply</strong>.</li>
+        <li>
+          Back in the portal, open <strong>Installation</strong> and enable the
+          <code>bot</code> and <code>applications.commands</code> scopes plus the
+          <strong>Connect</strong> and <strong>Speak</strong> permissions. Open the
+          link it generates to invite the bot to your server.
+        </li>
+      </ol>
+
+      <form id="connectionForm">
+        <label>
+          Bot token
+          <input
+            type="password"
+            name="token"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="paste a new token to replace the stored one"
+          />
+          <small id="tokenHint" class="hint"></small>
+        </label>
+
+        <label>
+          Guild ID <span class="optional">optional</span>
+          <input
+            type="text"
+            name="guildId"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="registers slash commands instantly on one server"
+          />
+          <small class="hint">
+            Your server's ID — worth setting, because
+            <code>/mj</code> shows up straight away instead of taking up to an hour.
+            To find it: Discord → <strong>Settings</strong> →
+            <strong>Advanced</strong> → turn on <strong>Developer Mode</strong>, then
+            right-click your server icon → <strong>Copy Server ID</strong>.
+          </small>
+        </label>
+
+        <div class="row">
+          <button type="submit" class="primary">Save &amp; apply</button>
+          <button type="button" data-bot="start">Start bot</button>
+          <button type="button" data-bot="stop" class="danger">Stop bot</button>
+        </div>
+      </form>
+
+      <p class="hint caution">
+        No privileged intents needed — leave those toggles alone. Secrets are
+        saved to <code>data/config.json</code>, readable only by you on
+        macOS/Linux; on Windows it inherits the folder's permissions.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>Voice channel</h2>
+      <div class="grid">
+        <label>
+          Server
+          <select id="guildSelect"></select>
+        </label>
+        <label>
+          Voice channel
+          <select id="channelSelect"></select>
+        </label>
       </div>
-    </header>
+      <div class="row">
+        <button type="button" id="joinBtn" class="primary">Join channel</button>
+      </div>
 
-    <main>
-      <section class="card">
-        <h2>Connection</h2>
-        <p class="hint">
-          The bot needs its own account on Discord, and a token that proves it's
-          yours. Two minutes, one page:
-        </p>
+      <div class="sessions" id="sessions"></div>
+    </section>
 
-        <ol class="steps">
-          <li>
-            Open the
-            <a
-              href="https://discord.com/developers/applications"
-              target="_blank"
-              rel="noopener noreferrer"
-              >Discord Developer Portal</a
-            >
-            and click <strong>New Application</strong>. The name you give it is the
-            name people see in the member list.
-          </li>
-          <li>
-            Open the <strong>Bot</strong> tab → <strong>Reset Token</strong> →
-            <strong>Copy</strong>. Discord shows the token once and never again; if
-            you lose it, just reset for a new one.
-          </li>
-          <li>Paste it below and hit <strong>Save &amp; apply</strong>.</li>
-          <li>
-            Back in the portal, open <strong>Installation</strong> and enable the
-            <code>bot</code> and <code>applications.commands</code> scopes plus the
-            <strong>Connect</strong> and <strong>Speak</strong> permissions. Open the
-            link it generates to invite the bot to your server.
-          </li>
-        </ol>
+    <section class="card">
+      <h2>Listening</h2>
+      <p class="hint">
+        While listening, the bot keeps recent conversation in memory so it has
+        context when you speak to it. Nothing is ever written to disk, and
+        anything older than the window is dropped.
+      </p>
 
-        <form id="connectionForm">
-          <label>
-            Bot token
-            <input
-              type="password"
-              name="token"
-              autocomplete="off"
-              spellcheck="false"
-              placeholder="paste a new token to replace the stored one"
-            />
-            <small id="tokenHint" class="hint"></small>
+      <form id="listeningForm">
+        <label>
+          How much conversation to remember
+          <input type="range" name="bufferSeconds" min="30" max="600" step="30" />
+          <output id="bufferOut"></output>
+          <small class="hint">
+            How far back it can remember when answering. Ninety seconds covers
+            the thread of a conversation without dragging in something from ten
+            minutes ago.
+          </small>
+        </label>
+
+        <label class="check">
+          <input type="checkbox" name="eagerTranscription" />
+          Transcribe as people speak
+        </label>
+        <small class="hint">
+          Required for the wake phrase, and the difference between answering in
+          seconds and answering in half a minute. It does mean paying to
+          transcribe everything said in the channel, not just what's buffered
+          when someone asks.
+        </small>
+
+        <label class="check">
+          <input type="checkbox" name="wakeEnabled" />
+          Answer when someone says its name
+        </label>
+
+        <label>
+          Names it answers to
+          <input
+            type="text"
+            name="agentNames"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="mirror, espejo"
+          />
+          <small class="hint">
+            Comma-separated. Say any of them anywhere in a sentence and it
+            answers — "che, mirror, ¿qué opinás?" works, so does "what do you
+            reckon, mirror?". Include a name that exists in the language you
+            actually speak: "hey mirror" said mid-Spanish came back from
+            transcription as "Amy", while "espejo" lands every time. Avoid
+            anything that sounds like an ordinary word.
+          </small>
+        </label>
+
+        <div class="row">
+          <button type="submit" class="primary">Save</button>
+        </div>
+      </form>
+
+      <p class="hint caution">
+        Discord shows a deafened icon next to the bot whenever it isn't
+        listening, so everyone in the channel can see its state without taking
+        your word for it. People should know when it can hear them.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>Transcription</h2>
+      <p class="hint" id="sttAdvice">Checking what this machine can do…</p>
+
+      <form id="transcriptionForm">
+        <div class="choices">
+          <label class="choice">
+            <input type="radio" name="sttProvider" value="openai" />
+            <span>
+              <strong>OpenAI API</strong>
+              <small>Works on any machine. Around 2–4 cents per question.</small>
+            </span>
           </label>
-
-          <label>
-            Guild ID <span class="optional">optional</span>
-            <input
-              type="text"
-              name="guildId"
-              autocomplete="off"
-              spellcheck="false"
-              placeholder="registers slash commands instantly on one server"
-            />
-            <small class="hint">
-              Your server's ID — worth setting, because
-              <code>/mj</code> shows up straight away instead of taking up to an hour.
-              To find it: Discord → <strong>Settings</strong> →
-              <strong>Advanced</strong> → turn on <strong>Developer Mode</strong>, then
-              right-click your server icon → <strong>Copy Server ID</strong>.
-            </small>
+          <label class="choice">
+            <input type="radio" name="sttProvider" value="local" />
+            <span>
+              <strong>Run locally</strong>
+              <small>Free, private, needs a capable GPU. Not implemented yet.</small>
+            </span>
           </label>
+        </div>
 
-          <div class="row">
-            <button type="submit" class="primary">Save &amp; apply</button>
-            <button type="button" data-bot="start">Start bot</button>
-            <button type="button" data-bot="stop" class="danger">Stop bot</button>
-          </div>
-        </form>
+        <label>
+          OpenAI API key
+          <input
+            type="password"
+            name="openaiApiKey"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="paste a new key to replace the stored one"
+          />
+          <small id="keyHint" class="hint"></small>
+        </label>
+
+        <div class="row">
+          <button type="submit" class="primary">Save</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Thinking</h2>
+      <p class="hint" id="brainAdvice"></p>
+
+      <form id="thinkingForm">
+        <div class="choices">
+          <label class="choice">
+            <input type="radio" name="brainProvider" value="anthropic" />
+            <span>
+              <strong>Claude</strong>
+              <small>Needs an Anthropic key. Transcription stays on OpenAI.</small>
+            </span>
+          </label>
+          <label class="choice">
+            <input type="radio" name="brainProvider" value="openai" />
+            <span>
+              <strong>OpenAI</strong>
+              <small>Reuses the transcription key — no second account.</small>
+            </span>
+          </label>
+        </div>
+
+        <label>
+          Anthropic API key
+          <input
+            type="password"
+            name="anthropicApiKey"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="paste a new key to replace the stored one"
+          />
+          <small id="anthropicKeyHint" class="hint"></small>
+        </label>
+
+        <label class="check">
+          <input type="checkbox" name="webSearch" />
+          Let it look things up on the web
+        </label>
+        <small class="hint">
+          Works with either provider. Without it, the agent can only reason over
+          what it heard in the channel, and will say so rather than guess. Adds
+          a second or two to each answer because it actually goes and looks.
+        </small>
+
+        <label>
+          Model <span class="optional">optional</span>
+          <input
+            type="text"
+            name="brainModel"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="leave blank for the provider default"
+          />
+          <small class="hint">
+            Blank uses a sensible default. Bigger does not mean slower — what
+            costs time is whether the model reasons before answering. Measured
+            on a real question: <code>gpt-4.1</code> 0.9s, <code>gpt-4o</code>
+            1.1s, <code>gpt-4o-mini</code> 1.7s, but <code>gpt-5-mini</code>
+            6.1s and <code>gpt-5-nano</code> 6.8s. Anything past about three
+            seconds and the conversation has moved on without it.
+          </small>
+        </label>
+
+        <div class="row">
+          <button type="submit" class="primary">Save</button>
+        </div>
+      </form>
+
+      <p class="hint caution">
+        Replies are capped at a few sentences and stripped of anything unspeakable
+        — no lists, no markdown, no links. It answers in whichever language you
+        asked in.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>Speaking</h2>
+      <form id="speakingForm">
+        <label>
+          Voice
+          <select name="ttsVoice" id="voiceSelect"></select>
+        </label>
 
         <p class="hint caution">
-          No privileged intents needed — leave those toggles alone. The token is
-          saved to <code>data/config.json</code>, readable only by you on
-          macOS/Linux; on Windows it inherits the folder's permissions. You can set
-          <code>DISCORD_TOKEN</code> / <code>DISCORD_GUILD_ID</code> in a
-          <code>.env</code> file instead, but anything saved here wins.
+          Speech is sent to Discord as Opus and played untouched, which is the
+          fastest path and avoids re-encoding every reply. The trade is that
+          this app can't change its own loudness — adjust it in Discord instead:
+          right-click the bot in the member list and use the user volume slider.
+          That's per-listener anyway, which is better than one setting for
+          everyone.
         </p>
-      </section>
 
-      <section class="card">
-        <h2>Behaviour</h2>
-        <form id="behaviourForm">
-          <div class="grid">
-            <label>
-              Min gap (seconds)
-              <input type="number" name="minIntervalSeconds" min="1" max="3600" required />
-            </label>
-            <label>
-              Max gap (seconds)
-              <input type="number" name="maxIntervalSeconds" min="1" max="3600" required />
-            </label>
-          </div>
+        <label>
+          Control panel port
+          <input type="number" name="webPort" min="1" max="65535" />
+          <small class="hint">Takes effect after restarting the process.</small>
+        </label>
 
-          <label>
-            Volume <output id="volumeOut">60%</output>
-            <input type="range" name="volume" min="0" max="200" step="5" />
-          </label>
-
-          <label class="check">
-            <input type="checkbox" name="autoStart" />
-            Start the scheduler as soon as the bot joins
-          </label>
-          <label class="check">
-            <input type="checkbox" name="playOnJoin" />
-            Play one sound immediately on join
-          </label>
-          <label class="check">
-            <input type="checkbox" name="pauseWhenAlone" />
-            Skip playback when nobody is in the channel
-          </label>
-
-          <label>
-            Control panel port
-            <input type="number" name="webPort" min="1" max="65535" />
-            <small class="hint">Takes effect after restarting the process.</small>
-          </label>
-
-          <div class="row">
-            <button type="submit" class="primary">Save</button>
-          </div>
-        </form>
-      </section>
-
-      <section class="card">
-        <h2>Voice</h2>
-        <div id="sessions" class="sessions"></div>
-        <div id="joinArea">
-          <div class="grid">
-            <label>
-              Server
-              <select id="guildSelect"></select>
-            </label>
-            <label>
-              Voice channel
-              <select id="channelSelect"></select>
-            </label>
-          </div>
-          <div class="row">
-            <button type="button" id="joinBtn" class="primary">Join channel</button>
-          </div>
+        <div class="row">
+          <button type="submit" class="primary">Save</button>
         </div>
-      </section>
+      </form>
+    </section>
+  </main>
 
-      <section class="card">
-        <h2>Sounds <span id="soundCount" class="badge">0</span></h2>
-        <p class="hint">
-          Drop audio files here, or copy them into <code id="soundsDir"></code>.
-        </p>
-        <div id="dropzone" class="dropzone">
-          <input type="file" id="fileInput" multiple hidden />
-          <span>Drag &amp; drop audio files, or <button type="button" id="browseBtn" class="linklike">browse</button></span>
-        </div>
-        <ul id="soundList" class="sound-list"></ul>
-      </section>
+  <div class="toast" id="toast" hidden></div>
 
-      <section class="card" id="sourcesCard">
-        <h2>Where to get clips</h2>
-        <p class="hint">
-          Grab short vocal ad-libs — the yelps, the grunts, the "hee-hee". Each link
-          opens a Michael Jackson soundboard; download the MP3s, then drop them in the
-          box above or stage them in <code>incoming/</code> and run
-          <code>npm run prep</code>.
-        </p>
-
-        <div class="links">
-          <a
-            class="chip"
-            href="https://www.myinstants.com/en/search/?name=michael+jackson"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Myinstants <small>biggest collection</small>
-          </a>
-          <a
-            class="chip"
-            href="https://www.101soundboards.com/boards/10028-michael-jackson-soundboard"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            101soundboards <small>full board</small>
-          </a>
-          <a
-            class="chip"
-            href="https://soundbuttonspro.net/michael-jackson-sound-buttons/"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Sound Buttons Pro <small>the classic ad-libs</small>
-          </a>
-          <a
-            class="chip"
-            href="https://www.voicy.network/official-soundboards/celebrities/michael-jackson-hehe"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Voicy <small>individual clips</small>
-          </a>
-        </div>
-
-        <p class="hint">
-          Aim for 8–15 clips of varied length and energy — below that the randomness
-          starts repeating noticeably. Skip anything over ~6 seconds; those talk over
-          people instead of interrupting them.
-        </p>
-        <p class="hint caution">
-          These are copyrighted recordings. Fine for a private server — don't
-          redistribute them or commit them to a public repo.
-        </p>
-      </section>
-    </main>
-
-    <div id="toast" class="toast" hidden></div>
     <script src="app.js"></script>
   </body>
 </html>

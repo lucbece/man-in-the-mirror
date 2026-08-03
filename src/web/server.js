@@ -1,16 +1,14 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 
 import { config } from '../config.js';
-import { SOUNDS_DIR } from '../paths.js';
-import { sounds, SUPPORTED_EXTENSIONS } from '../sounds.js';
 import { bot } from '../bot/index.js';
 import { sessionManager } from '../voice/manager.js';
+import { formatTranscript, transcribeBuffer } from '../agent/stt.js';
+import { ask, AgentBusyError } from '../agent/index.js';
 
 const HOST = process.env.WEB_HOST || '127.0.0.1';
-const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 export function startWebServer() {
   const app = express();
@@ -27,9 +25,6 @@ export function startWebServer() {
       bot: bot.status(),
       guilds: bot.guildOverview(),
       sessions: sessionManager.status(),
-      sounds: sounds.refresh(),
-      soundsDir: SOUNDS_DIR,
-      supportedExtensions: [...SUPPORTED_EXTENSIONS],
     });
   });
 
@@ -39,9 +34,6 @@ export function startWebServer() {
     const body = req.body ?? {};
     const tokenChanged =
       typeof body.token === 'string' && body.token.trim() && body.token.trim() !== config.get('token');
-
-    // An empty token field means "leave it alone", not "erase it".
-    if (typeof body.token === 'string' && !body.token.trim()) delete body.token;
 
     const guildChanged =
       typeof body.guildId === 'string' && body.guildId.trim() !== config.get('guildId');
@@ -98,62 +90,58 @@ export function startWebServer() {
     res.json({ ok: sessionManager.leave(guildId) });
   });
 
-  app.post('/api/voice/scheduler', (req, res) => {
-    const { guildId, running } = req.body ?? {};
+  app.post('/api/voice/listen', async (req, res) => {
+    const { guildId, listening } = req.body ?? {};
     const session = sessionManager.get(guildId);
     if (!session) return res.status(404).json({ error: 'Not connected in that guild' });
 
-    if (running) session.start({ immediate: false });
-    else session.stop();
-    res.json(session.status());
-  });
-
-  app.post('/api/voice/play', (req, res) => {
-    const { guildId, sound } = req.body ?? {};
-    const session = sessionManager.get(guildId);
-    if (!session) return res.status(404).json({ error: 'Not connected in that guild' });
-
-    const file = sound ? sounds.resolve(sound) : null;
-    if (sound && !file) return res.status(404).json({ error: `No sound named ${sound}` });
-
-    const played = session.playRandom(file);
-    if (!played) {
-      return res.status(409).json({
-        error: sounds.size === 0 ? 'No sounds available' : 'Nobody is in the channel',
-      });
+    try {
+      config.update({ agentEnabled: Boolean(listening) });
+      await session.setAgentEnabled(Boolean(listening));
+      res.json(session.status());
+    } catch (err) {
+      res.status(500).json({ error: err.message });
     }
+  });
+
+  app.post('/api/voice/shush', (req, res) => {
+    const { guildId } = req.body ?? {};
+    const session = sessionManager.get(guildId);
+    if (!session) return res.status(404).json({ error: 'Not connected in that guild' });
+    session.shush();
     res.json(session.status());
   });
 
-  // --- sound library -------------------------------------------------------
+  app.post('/api/voice/transcript', async (req, res) => {
+    const { guildId } = req.body ?? {};
+    const session = sessionManager.get(guildId);
+    if (!session) return res.status(404).json({ error: 'Not connected in that guild' });
+    if (!session.agentEnabled) return res.status(409).json({ error: 'Not listening' });
 
-  app.put(
-    '/api/sounds/:name',
-    express.raw({ type: '*/*', limit: MAX_UPLOAD_BYTES }),
-    (req, res) => {
-      const name = path.basename(req.params.name);
-      const ext = path.extname(name).toLowerCase();
+    try {
+      const result = await transcribeBuffer(session.receiver.buffer);
+      res.json({
+        ...result,
+        transcript: formatTranscript(session.receiver.buffer.recent()),
+        stats: session.receiver.buffer.stats(),
+      });
+    } catch (err) {
+      res.status(502).json({ error: err.message });
+    }
+  });
 
-      if (!SUPPORTED_EXTENSIONS.has(ext)) {
-        return res.status(400).json({ error: `Unsupported file type: ${ext || 'none'}` });
-      }
-      if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
-        return res.status(400).json({ error: 'Empty upload' });
-      }
+  app.post('/api/voice/ask', async (req, res) => {
+    const { guildId, question } = req.body ?? {};
+    const session = sessionManager.get(guildId);
+    if (!session) return res.status(404).json({ error: 'Not connected in that guild' });
+    if (!question?.trim()) return res.status(400).json({ error: 'question is required' });
 
-      fs.mkdirSync(SOUNDS_DIR, { recursive: true });
-      fs.writeFileSync(path.join(SOUNDS_DIR, name), req.body);
-      sounds.refresh();
-      res.json({ ok: true, name, sounds: sounds.files });
-    },
-  );
-
-  app.delete('/api/sounds/:name', (req, res) => {
-    const file = sounds.resolve(req.params.name);
-    if (!file) return res.status(404).json({ error: 'No such sound' });
-    fs.unlinkSync(file);
-    sounds.refresh();
-    res.json({ ok: true, sounds: sounds.files });
+    try {
+      res.json(await ask(session, { question: question.trim(), askedBy: 'the control panel' }));
+    } catch (err) {
+      const code = err instanceof AgentBusyError ? 409 : 502;
+      res.status(code).json({ error: err.message });
+    }
   });
 
   // --- boot ----------------------------------------------------------------

@@ -3,18 +3,18 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Discord bot that lurks in a voice channel and drops Michael Jackson vocal samples at random intervals.",
+  "description": "Discord voice agent that listens to a channel and answers out loud when addressed.",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "test-tone": "node scripts/make-test-tone.js",
-    "prep": "node scripts/prep-sounds.js"
+    "test": "node --test"
   },
   "engines": {
     "node": ">=18"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.115.0",
     "@discordjs/voice": "^0.19.0",
     "discord.js": "^14.23.2",
     "dotenv": "^17.2.3",

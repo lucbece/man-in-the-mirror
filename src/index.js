@@ -1,11 +1,9 @@
 import { config } from './config.js';
-import { sounds } from './sounds.js';
 import { bot } from './bot/index.js';
 import { sessionManager } from './voice/manager.js';
 import { startWebServer } from './web/server.js';
 
 async function main() {
-  console.log(`[app] ${sounds.refresh().length} sound(s) in sounds/`);
 
   const server = await startWebServer();
   const port = server.address().port;
