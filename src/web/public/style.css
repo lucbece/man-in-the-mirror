@@ -274,95 +274,6 @@ code {
   font-size: 0.82rem;
 }
 
-.sound-list {
-  list-style: none;
-  margin: 1rem 0 0;
-  padding: 0;
-  display: grid;
-  gap: 0.35rem;
-  max-height: 320px;
-  overflow-y: auto;
-}
-
-.sound-list li {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  justify-content: space-between;
-  padding: 0.45rem 0.6rem;
-  background: var(--panel-2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 0.85rem;
-}
-
-.sound-list .name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sound-list button {
-  padding: 0.25rem 0.55rem;
-  font-size: 0.78rem;
-}
-
-.dropzone {
-  border: 1px dashed var(--border);
-  border-radius: 8px;
-  padding: 1.5rem;
-  text-align: center;
-  color: var(--muted);
-  font-size: 0.85rem;
-  transition: border-color 0.15s, background 0.15s;
-}
-
-.dropzone.over {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--text);
-}
-
-/* Highlighted while the library is still empty — that's when it matters. */
-.card.wanted {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent-soft), 0 8px 30px rgba(212, 175, 55, 0.08);
-}
-
-.links {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 0.5rem;
-  margin: 0.9rem 0;
-}
-
-.chip {
-  display: block;
-  padding: 0.6rem 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--panel-2);
-  color: var(--text);
-  text-decoration: none;
-  font-size: 0.88rem;
-  font-weight: 500;
-  transition: border-color 0.15s, background 0.15s, transform 0.15s;
-}
-
-.chip:hover {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  transform: translateY(-1px);
-}
-
-.chip small {
-  display: block;
-  font-weight: 400;
-  font-size: 0.74rem;
-  color: var(--muted);
-  margin-top: 0.15rem;
-}
-
 a {
   color: var(--accent);
   text-decoration-color: rgba(212, 175, 55, 0.4);
@@ -422,4 +333,78 @@ a:hover {
 
 .toast[data-kind="ok"] {
   border-color: var(--ok);
+}
+
+/* --- agent panel --- */
+.choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.5rem;
+  margin: 0.6rem 0 1rem;
+}
+
+.choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.choice:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.choice input {
+  margin-top: 0.2rem;
+  width: auto;
+}
+
+.choice span {
+  display: block;
+  font-size: 0.88rem;
+}
+
+.choice small {
+  display: block;
+  font-weight: 400;
+  font-size: 0.74rem;
+  color: var(--muted);
+  margin-top: 0.15rem;
+}
+
+label.dim {
+  opacity: 0.45;
+}
+
+.hint.warn {
+  color: var(--accent);
+}
+
+.transcript {
+  margin: 0.8rem 0 0;
+  padding: 0.7rem 0.8rem;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.ask {
+  margin-top: 0.6rem;
+}
+
+.ask input {
+  flex: 1 1 12rem;
+  min-width: 0;
 }

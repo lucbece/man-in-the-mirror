@@ -14,13 +14,46 @@ const DEFAULTS = {
   token: '',
   guildId: '', // optional: registers slash commands instantly on this guild only
 
-  // Playback behaviour
-  minIntervalSeconds: 30,
-  maxIntervalSeconds: 120,
+  // Listening
+  // Off by default. While off the bot joins self-deafened and never receives a
+  // byte of audio — enabling it is an explicit, and visible, act.
+  agentEnabled: false,
+  bufferSeconds: 90, // rolling audio kept in memory, never written to disk
+  // Names it answers to, comma-separated. Not a fixed phrase — people address
+  // it however they like ("che, mirror, qué opinás?"), so any mention counts.
+  //
+  // More than one on purpose: speech-to-text writes down what it expects in
+  // the language it thinks it's hearing, so "hey mirror" inside a Spanish
+  // sentence came back as "Amy". A name that exists in the language being
+  // spoken survives that.
+  agentNames: 'mirror, espejo',
+  wakeEnabled: true, // answer when addressed, not only on /mj ask
+
+  // Transcribe each utterance moments after it's spoken, rather than doing the
+  // whole buffer at the moment someone asks. Costs more (you pay for all
+  // speech) but it's the difference between answering in ~2s and ~20s — and
+  // it's what makes wake-phrase detection possible without a native engine.
+  eagerTranscription: true,
+
+  // Transcription
+  sttProvider: 'openai', // 'openai' | 'local' (local not implemented yet)
+  openaiApiKey: '',
+
+  // Thinking
+  brainProvider: 'anthropic', // 'anthropic' | 'openai'
+  brainModel: '', // blank = the provider's default
+  anthropicApiKey: '',
+
+  // Let it look things up. Costs a second or two per answer. Both providers
+  // support it: OpenAI through its search-capable models, Anthropic through a
+  // server-side tool it runs itself.
+  webSearch: true,
+
+  // Speaking
+  ttsProvider: 'openai', // 'openai' | 'local' (Piper, runs on this machine)
+  ttsVoice: 'onyx', // OpenAI voice
+  ttsLocalVoice: 'es_ES-davefx-medium', // Piper voice
   volume: 0.6,
-  playOnJoin: true, // fire one sound right after joining instead of waiting
-  pauseWhenAlone: true, // don't play to an empty channel
-  autoStart: true, // start the random scheduler as soon as the bot joins
 
   // Web UI
   webPort: 3000,
@@ -30,19 +63,40 @@ const DEFAULTS = {
 const ENV_KEYS = {
   token: 'DISCORD_TOKEN',
   guildId: 'DISCORD_GUILD_ID',
-  minIntervalSeconds: 'MIN_INTERVAL_SECONDS',
-  maxIntervalSeconds: 'MAX_INTERVAL_SECONDS',
   volume: 'VOLUME',
   webPort: 'WEB_PORT',
+  openaiApiKey: 'OPENAI_API_KEY',
+  anthropicApiKey: 'ANTHROPIC_API_KEY',
+  bufferSeconds: 'BUFFER_SECONDS',
 };
 
-const NUMERIC_KEYS = new Set([
-  'minIntervalSeconds',
-  'maxIntervalSeconds',
-  'volume',
-  'webPort',
+/** OpenAI's stock voices. */
+const VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
+
+/** Piper voices, described for the panel. Kept here to avoid a circular import. */
+const LOCAL_VOICE_INFO = [
+  { id: 'es_ES-davefx-medium', label: 'Español (España) — rápida' },
+  { id: 'en_US-lessac-medium', label: 'English (US) — fast' },
+  { id: 'es_AR-daniela-high', label: 'Español (Argentina) — acento rioplatense' },
+];
+
+const NUMERIC_KEYS = new Set(['volume', 'webPort', 'bufferSeconds']);
+const BOOLEAN_KEYS = new Set([
+  'agentEnabled',
+  'eagerTranscription',
+  'wakeEnabled',
+  'webSearch',
 ]);
-const BOOLEAN_KEYS = new Set(['playOnJoin', 'pauseWhenAlone', 'autoStart']);
+
+/**
+ * Secrets are write-only from the UI: the field always renders empty, because
+ * we never send the value to the browser. So a blank submission means "I didn't
+ * touch this", never "erase it" — otherwise saving any unrelated setting on the
+ * same card silently destroys the key.
+ *
+ * To actually clear one, edit data/config.json.
+ */
+const SECRET_KEYS = new Set(['token', 'openaiApiKey', 'anthropicApiKey']);
 
 function coerce(key, value) {
   if (value === undefined || value === null || value === '') return undefined;
@@ -60,20 +114,22 @@ function coerce(key, value) {
 function clampConfig(cfg) {
   const out = { ...cfg };
 
-  out.minIntervalSeconds = Math.max(1, Math.round(out.minIntervalSeconds));
-  out.maxIntervalSeconds = Math.max(1, Math.round(out.maxIntervalSeconds));
-  if (out.maxIntervalSeconds < out.minIntervalSeconds) {
-    // Swap rather than reject: the intent is obvious.
-    [out.minIntervalSeconds, out.maxIntervalSeconds] = [
-      out.maxIntervalSeconds,
-      out.minIntervalSeconds,
-    ];
-  }
-
   out.volume = Math.min(2, Math.max(0, out.volume));
   out.webPort = Math.min(65535, Math.max(1, Math.round(out.webPort)));
   out.token = out.token.trim();
   out.guildId = out.guildId.trim();
+
+  // 10s is too little to be useful context; past 10min a single transcription
+  // gets slow and expensive enough to hurt.
+  out.bufferSeconds = Math.min(600, Math.max(10, Math.round(out.bufferSeconds)));
+  out.openaiApiKey = out.openaiApiKey.trim();
+  out.anthropicApiKey = out.anthropicApiKey.trim();
+  out.brainModel = out.brainModel.trim();
+  if (!['anthropic', 'openai'].includes(out.brainProvider)) out.brainProvider = 'anthropic';
+  if (!VOICES.includes(out.ttsVoice)) out.ttsVoice = 'onyx';
+  if (!['openai', 'local'].includes(out.ttsProvider)) out.ttsProvider = 'openai';
+  out.agentNames = out.agentNames.trim().toLowerCase() || DEFAULTS.agentNames;
+  if (!['openai', 'local'].includes(out.sttProvider)) out.sttProvider = 'openai';
 
   return out;
 }
@@ -123,8 +179,18 @@ class Config extends EventEmitter {
 
   /** Config minus secrets, safe to hand to the browser. */
   publicView() {
-    const { token, ...rest } = this.values;
-    return { ...rest, hasToken: Boolean(token), tokenPreview: previewToken(token) };
+    const { token, openaiApiKey, anthropicApiKey, ...rest } = this.values;
+    return {
+      ...rest,
+      hasToken: Boolean(token),
+      tokenPreview: previewToken(token),
+      hasOpenaiApiKey: Boolean(openaiApiKey),
+      openaiApiKeyPreview: previewToken(openaiApiKey),
+      hasAnthropicApiKey: Boolean(anthropicApiKey),
+      anthropicApiKeyPreview: previewToken(anthropicApiKey),
+      voices: VOICES,
+      localVoices: LOCAL_VOICE_INFO,
+    };
   }
 
   /** Merge a partial update, persist it, and notify listeners. */
@@ -132,6 +198,10 @@ class Config extends EventEmitter {
     const next = { ...this.values };
     for (const [key, value] of Object.entries(patch)) {
       if (!(key in DEFAULTS)) continue;
+
+      // A blank secret means "unchanged", not "delete". See SECRET_KEYS.
+      if (SECRET_KEYS.has(key) && typeof value === 'string' && !value.trim()) continue;
+
       const coerced = coerce(key, value);
       // Booleans and empty strings are meaningful clears; coerce() drops '' only.
       if (coerced !== undefined) next[key] = coerced;
@@ -155,6 +225,10 @@ class Config extends EventEmitter {
 
 function previewToken(token) {
   if (!token) return '';
+  // Showing head and tail of something short reveals the whole secret. Real
+  // keys are far longer than this, so anything shorter is malformed anyway —
+  // mask it completely rather than leak it into the browser.
+  if (token.length < 16) return '•'.repeat(12);
   return `${token.slice(0, 6)}${'•'.repeat(12)}${token.slice(-4)}`;
 }
 

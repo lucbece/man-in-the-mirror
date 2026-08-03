@@ -1,11 +1,10 @@
 import { config } from './config.js';
-import { sounds } from './sounds.js';
 import { bot } from './bot/index.js';
 import { sessionManager } from './voice/manager.js';
 import { startWebServer } from './web/server.js';
+import { warmFillers } from './agent/filler.js';
 
 async function main() {
-  console.log(`[app] ${sounds.refresh().length} sound(s) in sounds/`);
 
   const server = await startWebServer();
   const port = server.address().port;
@@ -13,6 +12,17 @@ async function main() {
 
   if (config.get('token')) {
     await bot.start();
+    // Render the "hang on" clips now; the first search shouldn't wait for them.
+    warmFillers()
+      .then((r) => {
+        if (r.rendered || r.reused) {
+          console.log(
+            `[filler] ${r.cached} clip(s) ready` +
+              (r.rendered ? ` (${r.rendered} newly rendered)` : ' (all from cache)'),
+          );
+        }
+      })
+      .catch(() => {});
   } else {
     console.log('[app] no token configured — open the control panel to add one');
   }

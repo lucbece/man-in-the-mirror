@@ -2,52 +2,19 @@
 
 <img src="src/web/public/icon.svg" width="88" align="right" alt="">
 
-A Discord bot that sits in a voice channel and drops a Michael Jackson sound at
-random intervals. The gap is re-rolled after every clip, so it never falls into
-a rhythm you can predict, and you set the range it draws from.
+A Discord bot that sits in a voice channel, listens to the conversation, and
+answers out loud when you address it.
 
-Ships with a local web control panel for the token, the intervals, and the
-sound library — no editing config files by hand.
+It stays quiet by default. Recent audio is held in memory so it has context when
+you ask it something — and that audio is only ever turned into text at the
+moment you ask, which is what keeps it cheap.
 
-## Quick start (no setup)
+> **This branch is a work in progress.** Listening and transcription work.
+> The wake word, the answering, and the speaking do not exist yet — see
+> [docs/voice-agent-plan.md](docs/voice-agent-plan.md) for the plan and where
+> it currently stands. `main` still holds the original soundboard.
 
-Grab your platform's zip from the
-[latest release](https://github.com/lucbece/man-in-the-mirror/releases/latest):
-
-| You're on | Download |
-| --- | --- |
-| Windows (most PCs) | `ManInTheMirror-windows-x64.zip` |
-| Windows on ARM | `ManInTheMirror-windows-arm64.zip` |
-| macOS (Apple silicon) | `ManInTheMirror-macos-arm64.zip` |
-| macOS (Intel) | `ManInTheMirror-macos-intel.zip` |
-| Linux | `ManInTheMirror-linux-x64.zip` |
-
-Unzip it anywhere and double-click **`ManInTheMirror`** (`.exe` on Windows). It:
-
-1. finds Node, or downloads a private copy into `runtime/` if the machine has
-   none (nothing is installed system-wide, no admin rights, no PATH changes)
-2. runs `npm install` on first launch
-3. starts the bot
-4. waits for the control panel to come up, then opens it in your browser
-
-The zip already has the launcher sitting next to `package.json`, which is how it
-finds the project — so keep them together. Ctrl+C in the black window stops the
-bot. Delete the folder and nothing is left behind.
-
-> Windows SmartScreen will warn on first run ("Windows protected your PC")
-> because the binary isn't code-signed — **More info → Run anyway**. Some
-> antivirus tools also flag unsigned Go binaries that download files. Signing it
-> properly needs a paid certificate.
->
-> macOS blocks it as an unidentified developer: right-click → **Open**, or
-> `xattr -d com.apple.quarantine ManInTheMirror`.
-
-The binaries aren't in the repo — they're built artifacts, so they live on the
-[releases page](https://github.com/lucbece/man-in-the-mirror/releases) instead of
-in git history. Building them yourself is one command, see
-[Rebuilding the launcher](#rebuilding-the-launcher).
-
-## Quick start (from a terminal)
+## Quick start
 
 ```bash
 npm install
@@ -57,8 +24,8 @@ npm start          # → control panel on http://localhost:3000
 Open the panel, paste your bot token, hit **Save & apply**. The bot connects
 immediately; no process restart needed.
 
-Then either use the panel's **Voice** section to pick a channel, or type
-`/mj join` in Discord while you're in a voice channel.
+Then pick a channel in the panel's **Voice channel** section, or type `/mj join`
+in Discord while you're in a voice channel.
 
 ### Getting a token
 
@@ -69,42 +36,67 @@ Then either use the panel's **Voice** section to pick a channel, or type
 
 No privileged intents are required.
 
-> Opus encoding uses the pure-JS `opusscript`, which works everywhere with no
-> build step. If CPU matters, `npm i @discordjs/opus` — it's picked up
-> automatically when present. `ffmpeg` ships with the install via
-> `ffmpeg-static`.
+## How listening works
 
-### Adding sounds
+```
+Discord voice receive (one Opus stream per speaker)
+        │
+        └─► ring buffer, last ~3 min per speaker   [memory only, free]
 
-Stage raw downloads in `incoming/`, then:
-
-```bash
-npm run prep
+  on request ─► transcribe, in parallel chunks
+             ─► speaker-laballed transcript
 ```
 
-Everything gets silence-trimmed, normalised to −16 LUFS and converted to 48kHz
-Opus in `sounds/`. Without this step, clips from different sources sit up to
-30 dB apart — one is inaudible, the next one deafens the channel.
+Nothing is transcribed while the bot is idle. The buffer holds raw audio, and it
+only becomes text when you ask for it — that is the entire cost strategy, and it
+is worth roughly 10–30× versus transcribing continuously.
 
-For files you already know are consistent, dragging them onto the control panel
-(or into `sounds/`) works too. Short clips, 0.5–3s. See
-[sounds/README.md](sounds/README.md).
+Discord gives one audio stream per speaker, so you get speaker labels for free
+with no diarization:
 
-`npm run test-tone` writes a placeholder beep so you can verify playback before
-you have real samples.
+```
+[21:14:02] Luc: ...the dayZ servers were down all weekend
+[21:14:09] Marco: that's not what he said though
+```
+
+**Nothing is written to disk.** Audio lives in memory and ages out of the
+window. `/mj deaf` stops capture and wipes the buffer immediately.
+
+**People can see when it's listening.** The bot joins self-deafened, which is
+what actually prevents Discord sending it audio. Discord shows a deafened icon
+next to it in the member list, so its state is visible without taking this
+README's word for it.
+
+## Transcription
+
+Two routes, same interface — it's a hardware question, not a quality one.
+whisper.cpp runs the same Whisper model the API does.
+
+| Your machine | Recommended |
+| --- | --- |
+| Discrete NVIDIA GPU (≥6 GB VRAM) or Apple Silicon | Local — free, private, same quality |
+| Laptop or no discrete GPU | OpenAI API — local would mean a smaller, worse model |
+
+Only the OpenAI route is implemented so far. Set the key in the panel, or as
+`OPENAI_API_KEY` in a `.env` file.
+
+Cost with the API is roughly 2–4 cents per question on a busy channel, and $0
+locally. Note it scales with *speech*, not wall-clock: streams are per speaker
+and they overlap, so three minutes of conversation can be five or six minutes of
+audio.
 
 ## Slash commands
 
 | Command | What it does |
 | --- | --- |
-| `/mj join [channel]` | Join your channel (or a named one) and start the scheduler |
+| `/mj join [channel]` | Join your channel, or a named one |
 | `/mj leave` | Disconnect |
-| `/mj start` / `/mj stop` | Resume / pause the scheduler without leaving |
-| `/mj play [sound]` | Fire a clip right now — random, or pick one (autocompletes) |
-| `/mj status` | Connection, listener count, seconds until the next clip |
-| `/mj sounds` | List the loaded clips |
-| `/mj interval <min> <max>` | Change the random gap, in seconds |
-| `/mj volume <percent>` | 0–200% |
+| `/mj listen` | Start listening — un-deafens and begins buffering |
+| `/mj deaf` | Stop listening and wipe the buffer |
+| `/mj transcript` | Transcribe what was said recently |
+| `/mj shush` | Cut the agent off mid-sentence |
+| `/mj status` | Connection, listening state, buffer contents |
+| `/mj volume <percent>` | Speaking volume, 0–200% |
 
 ## Configuration
 
@@ -113,21 +105,16 @@ means owner-only on macOS/Linux, and normal inherited permissions on Windows,
 where Node can't express that. A `.env` file works too — copy `.env.example` —
 but anything saved through the UI wins.
 
-Runs on Windows, macOS and Linux: Node 18+, no build step, no native
-compilation. `opusscript` and `libsodium-wrappers` are pure JS/wasm, and
-`ffmpeg-static` pulls the right prebuilt ffmpeg for your platform at install
-time (including `ffmpeg.exe` on Windows).
-
 | Setting | Env var | Default | |
 | --- | --- | --- | --- |
 | `token` | `DISCORD_TOKEN` | — | Bot token |
 | `guildId` | `DISCORD_GUILD_ID` | — | Registers slash commands on one server instantly instead of globally (global registration can take an hour to appear) |
-| `minIntervalSeconds` | `MIN_INTERVAL_SECONDS` | `30` | |
-| `maxIntervalSeconds` | `MAX_INTERVAL_SECONDS` | `120` | |
-| `volume` | `VOLUME` | `0.6` | 0.0–2.0 |
-| `playOnJoin` | — | `true` | Fire one clip on join instead of waiting |
-| `pauseWhenAlone` | — | `true` | Skip playback when no humans are in the channel |
-| `autoStart` | — | `true` | Start the scheduler on join |
+| `agentEnabled` | — | `false` | Whether the bot listens. Off means self-deafened |
+| `bufferSeconds` | `BUFFER_SECONDS` | `180` | How much conversation to hold in memory |
+| `wakePhrase` | — | `hey mirror` | Not wired up yet |
+| `sttProvider` | — | `openai` | `openai` or `local` (local not implemented) |
+| `openaiApiKey` | `OPENAI_API_KEY` | — | Needed for the OpenAI transcription route |
+| `volume` | `VOLUME` | `0.6` | Speaking volume, 0.0–2.0 |
 | `webPort` | `WEB_PORT` | `3000` | Needs a process restart to change |
 | — | `WEB_HOST` | `127.0.0.1` | The panel has no auth — only expose it beyond localhost behind something that does |
 
@@ -138,21 +125,16 @@ launcher/main.go      the double-click launcher (Go, stdlib only)
 src/
   index.js            boot: web panel first, then the bot if a token exists
   config.js           defaults ← .env ← data/config.json, with live updates
-  sounds.js           library scan + shuffle-bag picker (no immediate repeats)
   bot/index.js        Discord client lifecycle — start/stop/restart at runtime
   bot/commands.js     /mj slash commands
-  voice/session.js    one guild: connection, player, and the random timer
+  voice/session.js    one guild: connection, player, receiver
+  voice/receiver.js   per-speaker capture, utterances cut on silence
   voice/manager.js    session registry
+  agent/buffer.js     rolling in-memory window of utterances
+  agent/audio.js      Opus → 16kHz mono WAV, decoded only on demand
+  agent/stt.js        transcription providers
   web/server.js       control panel API
 ```
-
-The timer re-rolls `min + random × (max − min)` after every clip rather than
-running on a fixed schedule, and the next gap is only scheduled once the
-previous clip finishes — so a long clip never overlaps the next one.
-
-Clip selection draws from a shuffled bag rather than picking uniformly at
-random: with a small library, uniform random repeats itself often enough to
-feel broken.
 
 ## Rebuilding the launcher
 

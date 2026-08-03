@@ -7,18 +7,19 @@ import {
 } from 'discord.js';
 
 import { config } from '../config.js';
-import { sounds } from '../sounds.js';
 import { sessionManager } from '../voice/manager.js';
+import { formatTranscript, transcribeBuffer } from '../agent/stt.js';
+import { ask, AgentBusyError } from '../agent/index.js';
 
 export const commandData = [
   new SlashCommandBuilder()
     .setName('mj')
-    .setDescription('Man in the Mirror — Michael Jackson soundboard')
+    .setDescription('Man in the Mirror — a voice agent that listens and answers')
     .setContexts(InteractionContextType.Guild)
     .addSubcommand((sub) =>
       sub
         .setName('join')
-        .setDescription('Join a voice channel and start dropping sounds')
+        .setDescription('Join a voice channel')
         .addChannelOption((opt) =>
           opt
             .setName('channel')
@@ -28,59 +29,31 @@ export const commandData = [
     )
     .addSubcommand((sub) => sub.setName('leave').setDescription('Leave the voice channel'))
     .addSubcommand((sub) =>
-      sub.setName('start').setDescription('Resume the random sound scheduler'),
+      sub
+        .setName('listen')
+        .setDescription('Start listening (the bot un-deafens and buffers audio)'),
     )
     .addSubcommand((sub) =>
-      sub.setName('stop').setDescription('Pause the scheduler (stays in the channel)'),
+      sub.setName('deaf').setDescription('Stop listening and wipe the buffered audio'),
+    )
+    .addSubcommand((sub) =>
+      sub.setName('transcript').setDescription('Transcribe what was said recently'),
     )
     .addSubcommand((sub) =>
       sub
-        .setName('play')
-        .setDescription('Play a sound right now')
+        .setName('ask')
+        .setDescription('Ask the agent something — it answers out loud')
         .addStringOption((opt) =>
           opt
-            .setName('sound')
-            .setDescription('Specific sound (defaults to random)')
-            .setAutocomplete(true),
+            .setName('question')
+            .setDescription('What do you want to ask?')
+            .setRequired(true)
+            .setMaxLength(500),
         ),
     )
+    .addSubcommand((sub) => sub.setName('shush').setDescription('Stop the agent mid-sentence'))
     .addSubcommand((sub) =>
       sub.setName('status').setDescription('Show what the bot is up to'),
-    )
-    .addSubcommand((sub) => sub.setName('sounds').setDescription('List available sounds'))
-    .addSubcommand((sub) =>
-      sub
-        .setName('interval')
-        .setDescription('Set the random gap between sounds')
-        .addIntegerOption((opt) =>
-          opt
-            .setName('min')
-            .setDescription('Minimum seconds')
-            .setMinValue(1)
-            .setMaxValue(3600)
-            .setRequired(true),
-        )
-        .addIntegerOption((opt) =>
-          opt
-            .setName('max')
-            .setDescription('Maximum seconds')
-            .setMinValue(1)
-            .setMaxValue(3600)
-            .setRequired(true),
-        ),
-    )
-    .addSubcommand((sub) =>
-      sub
-        .setName('volume')
-        .setDescription('Set playback volume (0-200%)')
-        .addIntegerOption((opt) =>
-          opt
-            .setName('percent')
-            .setDescription('Volume percentage')
-            .setMinValue(0)
-            .setMaxValue(200)
-            .setRequired(true),
-        ),
     )
     .toJSON(),
 ];
@@ -88,7 +61,6 @@ export const commandData = [
 const ephemeral = (content) => ({ content, flags: MessageFlags.Ephemeral });
 
 export async function handleInteraction(interaction) {
-  if (interaction.isAutocomplete()) return handleAutocomplete(interaction);
   if (!interaction.isChatInputCommand()) return;
   if (interaction.commandName !== 'mj') return;
 
@@ -100,20 +72,18 @@ export async function handleInteraction(interaction) {
         return await cmdJoin(interaction);
       case 'leave':
         return await cmdLeave(interaction);
-      case 'start':
-        return await cmdStart(interaction);
-      case 'stop':
-        return await cmdStop(interaction);
-      case 'play':
-        return await cmdPlay(interaction);
+      case 'listen':
+        return await cmdListen(interaction);
+      case 'deaf':
+        return await cmdDeaf(interaction);
+      case 'transcript':
+        return await cmdTranscript(interaction);
+      case 'ask':
+        return await cmdAsk(interaction);
+      case 'shush':
+        return await cmdShush(interaction);
       case 'status':
         return await cmdStatus(interaction);
-      case 'sounds':
-        return await cmdSounds(interaction);
-      case 'interval':
-        return await cmdInterval(interaction);
-      case 'volume':
-        return await cmdVolume(interaction);
       default:
         return await interaction.reply(ephemeral('Unknown subcommand.'));
     }
@@ -128,17 +98,7 @@ export async function handleInteraction(interaction) {
   }
 }
 
-async function handleAutocomplete(interaction) {
-  const typed = (interaction.options.getFocused() ?? '').toLowerCase();
-  const choices = sounds
-    .refresh()
-    .filter((name) => name.toLowerCase().includes(typed))
-    .slice(0, 25)
-    .map((name) => ({ name: name.slice(0, 100), value: name.slice(0, 100) }));
-  await interaction.respond(choices).catch(() => {});
-}
-
-// --- subcommands ------------------------------------------------------------
+// --- connection -------------------------------------------------------------
 
 async function cmdJoin(interaction) {
   const requested = interaction.options.getChannel('channel');
@@ -158,16 +118,10 @@ async function cmdJoin(interaction) {
   }
 
   await interaction.deferReply();
-  const session = await sessionManager.join(channel);
-  sounds.refresh();
-
-  const note =
-    sounds.size === 0
-      ? '\n⚠️ No sound files found in `sounds/` yet — add some and I will start using them.'
-      : '';
+  await sessionManager.join(channel);
 
   return interaction.editReply(
-    `🕺 In ${channel}. ${describeSchedule(session)}${note}`,
+    `🪞 In ${channel}, deafened. Run \`/mj listen\` when you want me hearing.`,
   );
 }
 
@@ -178,96 +132,171 @@ async function cmdLeave(interaction) {
   );
 }
 
-async function cmdStart(interaction) {
-  const session = requireSession(interaction);
-  if (!session) return;
-  session.start({ immediate: false });
-  return interaction.reply(`▶️ ${describeSchedule(session)}`);
-}
+// --- listening --------------------------------------------------------------
 
-async function cmdStop(interaction) {
-  const session = requireSession(interaction);
-  if (!session) return;
-  session.stop();
-  return interaction.reply('⏸️ Scheduler paused. Still in the channel.');
-}
-
-async function cmdPlay(interaction) {
+async function cmdListen(interaction) {
   const session = requireSession(interaction);
   if (!session) return;
 
-  const requested = interaction.options.getString('sound');
-  let file = null;
-  if (requested) {
-    file = sounds.resolve(requested);
-    if (!file) return interaction.reply(ephemeral(`No sound named \`${requested}\`.`));
+  if (session.agentEnabled) {
+    return interaction.reply(ephemeral('Already listening. `/mj transcript` to read it back.'));
   }
 
-  const played = session.playRandom(file);
-  if (!played) {
-    return interaction.reply(
-      ephemeral(
-        sounds.size === 0
-          ? 'No sounds available — drop files into the `sounds/` folder.'
-          : 'Skipped: nobody is in the channel.',
-      ),
+  await interaction.deferReply();
+  config.update({ agentEnabled: true });
+  await session.setAgentEnabled(true);
+
+  const minutes = Math.round(config.get('bufferSeconds') / 60);
+  return interaction.editReply(
+    [
+      `👂 **Listening.** Keeping the last ${minutes} minute(s) of audio in memory.`,
+      '',
+      'Nothing is transcribed until someone runs `/mj transcript`, nothing is written to disk,',
+      'and anything older than the window is dropped. `/mj deaf` stops this and wipes the buffer.',
+    ].join('\n'),
+  );
+}
+
+async function cmdDeaf(interaction) {
+  const session = requireSession(interaction);
+  if (!session) return;
+
+  if (!session.agentEnabled) {
+    return interaction.reply(ephemeral("I'm already deafened — not receiving any audio."));
+  }
+
+  await interaction.deferReply();
+  config.update({ agentEnabled: false });
+  await session.setAgentEnabled(false);
+
+  return interaction.editReply('🙉 **Deafened.** Buffer wiped, no longer receiving audio.');
+}
+
+async function cmdTranscript(interaction) {
+  const session = requireSession(interaction);
+  if (!session) return;
+
+  if (!session.agentEnabled) {
+    return interaction.reply(ephemeral('Not listening. Run `/mj listen` first.'));
+  }
+
+  const stats = session.receiver.buffer.stats();
+  if (stats.utterances === 0) {
+    return interaction.reply(ephemeral('Nothing buffered yet — nobody has spoken.'));
+  }
+
+  // Transcription takes seconds, well past Discord's 3s reply deadline.
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  let result;
+  try {
+    result = await transcribeBuffer(session.receiver.buffer);
+  } catch (err) {
+    return interaction.editReply(`Transcription unavailable: ${err.message}`);
+  }
+
+  const text = formatTranscript(session.receiver.buffer.recent());
+  if (!text) {
+    // Distinguish "nothing was said" from "every request failed" — they look
+    // identical in the output and have completely different fixes.
+    return interaction.editReply(
+      result.failed > 0
+        ? `All ${result.failed} chunk(s) failed to transcribe. Check the server log for why.`
+        : 'Got audio but no words out of it — likely too quiet or too short.',
     );
   }
-  return interaction.reply(`🔊 ${session.lastPlayed}`);
+
+  const header =
+    `**Last ${stats.speechSeconds}s of speech, ${stats.speakers} speaker(s)** · ` +
+    `${result.transcribed} new chunk(s) in ${(result.elapsedMs / 1000).toFixed(1)}s` +
+    (result.failed ? ` · ${result.failed} failed` : '');
+
+  // Discord caps messages at 2000 characters.
+  const budget = 2000 - header.length - 20;
+  const body = text.length > budget ? `…${text.slice(-budget)}` : text;
+
+  return interaction.editReply(`${header}\n\`\`\`\n${body}\n\`\`\``);
 }
+
+async function cmdAsk(interaction) {
+  const session = requireSession(interaction);
+  if (!session) return;
+
+  const question = interaction.options.getString('question');
+
+  // The whole round trip is several seconds — past Discord's 3s deadline.
+  await interaction.deferReply();
+
+  let result;
+  try {
+    result = await ask(session, {
+      question,
+      askedBy: interaction.member?.displayName ?? interaction.user.username,
+    });
+  } catch (err) {
+    if (err instanceof AgentBusyError) {
+      return interaction.editReply(`⏳ ${err.message}`);
+    }
+    return interaction.editReply(`Couldn't answer: ${err.message}`);
+  }
+
+  const t = result.timings;
+  const detail =
+    `heard ${(t.transcribeMs / 1000).toFixed(1)}s · ` +
+    `thought ${(t.thinkMs / 1000).toFixed(1)}s · ` +
+    `voiced ${(t.speakMs / 1000).toFixed(1)}s · ` +
+    `${(t.totalMs / 1000).toFixed(1)}s total`;
+
+  return interaction.editReply(
+    `🗣️ ${result.spoken}${result.truncated ? ' *(trimmed)*' : ''}\n-# ${detail}`,
+  );
+}
+
+// --- speaking ---------------------------------------------------------------
+
+async function cmdShush(interaction) {
+  const session = requireSession(interaction);
+  if (!session) return;
+
+  if (!session.speaking) {
+    return interaction.reply(ephemeral("I'm not saying anything."));
+  }
+  session.shush();
+  return interaction.reply('🤐 Stopped.');
+}
+
+// --- status -----------------------------------------------------------------
 
 async function cmdStatus(interaction) {
   const session = sessionManager.get(interaction.guildId);
   const cfg = config.all();
 
-  const lines = [
-    `**Sounds loaded:** ${sounds.refresh().length}`,
-    `**Interval:** ${cfg.minIntervalSeconds}–${cfg.maxIntervalSeconds}s`,
-    `**Volume:** ${Math.round(cfg.volume * 100)}%`,
-  ];
+  const lines = [];
 
   if (!session) {
     lines.unshift('**Voice:** not connected');
   } else {
     const s = session.status();
-    lines.unshift(`**Voice:** <#${s.channelId}> (${s.listeners} listening)`);
-    lines.push(`**Scheduler:** ${s.running ? 'running' : 'paused'}`);
-    if (s.secondsUntilNext !== null) lines.push(`**Next sound in:** ~${s.secondsUntilNext}s`);
-    if (s.lastPlayed) lines.push(`**Last played:** ${s.lastPlayed} (${s.playCount} total)`);
+    lines.unshift(`**Voice:** <#${s.channelId}> (${s.listeners} in channel)`);
+
+    if (s.agentEnabled) {
+      const l = s.listening;
+      lines.push(
+        `**Listening:** yes — ${l.utterances} utterance(s), ` +
+          `${l.speechSeconds}s of speech from ${l.speakers} speaker(s), ` +
+          `${l.pendingUtterances} not yet transcribed`,
+      );
+    } else {
+      lines.push('**Listening:** no (deafened)');
+    }
   }
+
+  lines.push(
+    `**Transcription:** ${cfg.sttProvider}` +
+      (cfg.sttProvider === 'openai' && !cfg.openaiApiKey ? ' ⚠️ no API key set' : ''),
+  );
 
   return interaction.reply(ephemeral(lines.join('\n')));
-}
-
-async function cmdSounds(interaction) {
-  const files = sounds.refresh();
-  if (files.length === 0) {
-    return interaction.reply(
-      ephemeral('No sounds yet. Drop audio files into the `sounds/` folder.'),
-    );
-  }
-  const shown = files.slice(0, 40).map((f) => `• ${f}`);
-  const more = files.length > shown.length ? `\n…and ${files.length - shown.length} more` : '';
-  return interaction.reply(ephemeral(`**${files.length} sounds:**\n${shown.join('\n')}${more}`));
-}
-
-async function cmdInterval(interaction) {
-  const min = interaction.options.getInteger('min');
-  const max = interaction.options.getInteger('max');
-  const next = config.update({ minIntervalSeconds: min, maxIntervalSeconds: max });
-
-  const session = sessionManager.get(interaction.guildId);
-  if (session?.running) session.scheduleNext();
-
-  return interaction.reply(
-    `⏱️ Sounds now every ${next.minIntervalSeconds}–${next.maxIntervalSeconds}s.`,
-  );
-}
-
-async function cmdVolume(interaction) {
-  const percent = interaction.options.getInteger('percent');
-  const next = config.update({ volume: percent / 100 });
-  return interaction.reply(`🔉 Volume set to ${Math.round(next.volume * 100)}%.`);
 }
 
 // --- helpers ----------------------------------------------------------------
@@ -279,10 +308,4 @@ function requireSession(interaction) {
     return null;
   }
   return session;
-}
-
-function describeSchedule(session) {
-  const cfg = config.all();
-  if (!session.running) return 'Scheduler is paused.';
-  return `Sounds every ${cfg.minIntervalSeconds}–${cfg.maxIntervalSeconds}s.`;
 }

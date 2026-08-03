@@ -9,7 +9,7 @@
     "FileSubType": "00"
   },
   "StringFileInfo": {
-    "FileDescription": "Man in the Mirror — Discord soundboard bot launcher",
+    "FileDescription": "Man in the Mirror — Discord voice agent launcher",
     "FileVersion": "0.1.0",
     "InternalName": "man-in-the-mirror",
     "OriginalFilename": "ManInTheMirror.exe",
