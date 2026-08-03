@@ -14,7 +14,26 @@ moment you ask, which is what keeps it cheap.
 > [docs/voice-agent-plan.md](docs/voice-agent-plan.md) for the plan and where
 > it currently stands. `main` still holds the original soundboard.
 
-## Quick start
+## Download
+
+**[⬇ v0.2.0-preview — the voice agent](https://github.com/lucbece/man-in-the-mirror/releases/tag/v0.2.0-preview)**
+
+| You're on | File |
+| --- | --- |
+| Windows (most PCs) | `ManInTheMirror-windows-x64.zip` |
+| Windows on ARM | `ManInTheMirror-windows-arm64.zip` |
+| macOS (Apple silicon) | `ManInTheMirror-macos-arm64.zip` |
+| Linux | `ManInTheMirror-linux-x64.zip` |
+
+Unzip anywhere and double-click **`ManInTheMirror`** (`.exe` on Windows). It
+finds Node or downloads a private copy, installs dependencies on first run,
+starts the bot, and opens the control panel. Nothing is installed system-wide.
+
+> Link the tag, not `/releases/latest`. This is published as a **prerelease**,
+> so "latest" resolves to v0.1.0 — which is the old Michael Jackson soundboard
+> from `main`, not this.
+
+## Running from source
 
 ```bash
 npm install
