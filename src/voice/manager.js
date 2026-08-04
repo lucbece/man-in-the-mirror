@@ -2,8 +2,13 @@ import { EventEmitter } from 'node:events';
 
 import { config } from '../config.js';
 import { VoiceSession } from './session.js';
+import { AudioPlayerStatus, entersState } from '@discordjs/voice';
+
 import { ask, AgentBusyError } from '../agent/index.js';
 import { endAgentSession } from '../agent/agent-brain.js';
+import { reminders } from '../agent/reminders.js';
+import { createTts, toAudioResource } from '../agent/tts.js';
+import { clampForSpeech } from '../agent/brain.js';
 import { warmFillers } from '../agent/filler.js';
 
 /** Tracks one VoiceSession per guild. */
@@ -25,6 +30,31 @@ class SessionManager extends EventEmitter {
         // Volume is worth applying mid-sentence.
         session.applyVolume(values.volume);
         session.receiver?.setWindow(values.bufferSeconds);
+      }
+    });
+
+    // A reminder came due. This is the one place the bot speaks without
+    // having just been spoken to — the agent composed the sentence when the
+    // reminder was set; all that's left is to say it.
+    reminders.on('fire', async ({ guildId, id, message }) => {
+      const session = this.sessions.get(guildId);
+      if (!session || session.destroyed) {
+        console.warn(`[reminders] #${id} fired but the bot is no longer in a channel — dropped: "${message}"`);
+        return;
+      }
+      try {
+        const tts = createTts();
+        const audio = await tts.synthesizeStream(clampForSpeech(message));
+        // If it's mid-answer, let the sentence finish — an alarm that talks
+        // over the answer to someone else's question serves nobody.
+        if (session.speaking) {
+          await entersState(session.player, AudioPlayerStatus.Idle, 15_000).catch(() => {});
+        }
+        session.player.stop(true);
+        session.player.play(toAudioResource(audio));
+        console.log(`[reminders] #${id} spoken: "${message}"`);
+      } catch (err) {
+        console.warn(`[reminders] #${id} could not be spoken: ${err.message}`);
       }
     });
   }

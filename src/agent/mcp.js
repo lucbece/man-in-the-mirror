@@ -109,6 +109,11 @@ export function parseMcpServers(text) {
         `Server name "${name}" — use letters, numbers, - and _ only (it becomes part of tool names).`,
       );
     }
+    if (name === 'bot') {
+      throw new McpConfigError(
+        '"bot" is reserved — it\'s the server carrying the bot\'s own tools (reminders etc).',
+      );
+    }
     servers[name] = validateServer(name, entry);
   }
   return servers;

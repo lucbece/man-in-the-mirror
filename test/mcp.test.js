@@ -48,6 +48,9 @@ describe('parseMcpServers', () => {
       ['{"a": {"url": "ftp://x"}}', /http or https/],
       ['{"a": {"url": "not a url"}}', /not a valid URL/],
       ['{"a": {"url": "https://x.com", "type": "ws"}}', /type/],
+      // "bot" carries the bot's own tools (reminders); letting a user server
+      // shadow it would silently replace them.
+      ['{"bot": {"command": "x"}}', /reserved/],
     ];
     for (const [input, pattern] of bad) {
       assert.throws(() => parseMcpServers(input), McpConfigError, input);

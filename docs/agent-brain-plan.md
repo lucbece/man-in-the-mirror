@@ -98,6 +98,29 @@ the persistent session makes follow-ups *faster* than the stateless chat
 brain, because nothing is re-sent. A tool-using answer through a stdio MCP
 server measured 9.0s end to end, which is what the filler exists for.
 
+## The bot's own tools
+
+Alongside the user's MCP servers, the agent is always served an in-process
+server named `bot` (the name is reserved; the panel rejects it) carrying
+tools that control the bot itself. The first: **reminders** — the first
+thing that ever makes the bot speak without being spoken to.
+
+The design point: the model has no clock, and a turn lives two minutes at
+most, so "I'll tell you in ten minutes" is a promise the model cannot keep.
+`set_reminder` hands the promise to the machine — the agent composes the
+exact sentence *now*, in the speaker's language, addressed by name; a plain
+setTimeout owns the ten minutes; when it fires, the bot synthesises that
+sentence and says it in the channel. If someone is being answered at that
+moment, the reminder waits for the sentence to finish.
+
+Bounds, all speakable back to the asker: 5 seconds to 24 hours, 25 pending
+per channel. In memory only — a reminder is a promise made in a
+conversation, and it dies with the process the conversation lived in.
+
+Verified end to end through the real modules: a spoken Spanish request set
+reminder #1 with a correctly-composed message, it fired on time, and the
+session remembered the exchange afterwards.
+
 ## Rejected alternatives
 
 - **OpenAI Realtime (`gpt-realtime`), speech-to-speech.** The only option

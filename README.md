@@ -137,6 +137,12 @@ answers take longer (~9s measured through a stdio server) and cost more; the
 bot says "dame un segundo" while it works. The agent gets *only* your MCP
 tools and web search — no files, no shell.
 
+The agent also gets tools for the bot itself. Ask *"espejo, recordame en
+diez minutos que saque la basura"* and it sets a real timer; ten minutes
+later the bot speaks the reminder into the channel — the one case where it
+talks without being addressed first. Reminders live in memory: they don't
+survive a restart, and they go up to twenty-four hours out.
+
 ## Slash commands
 
 | Command | What it does |
@@ -205,6 +211,7 @@ src/
   agent/brain.js      thinking — Claude or OpenAI, both with web search
   agent/agent-brain.js  thinking, agent mode — persistent Claude session + MCP tools
   agent/mcp.js        validates the MCP servers pasted into the panel
+  agent/reminders.js  timers the agent sets; the bot speaks them when they fire
   agent/tts.js        speaking — API or Piper
   agent/filler.js     "dame un segundo" while it searches
   agent/whisper.js    whisper.cpp runtime, downloaded on demand
