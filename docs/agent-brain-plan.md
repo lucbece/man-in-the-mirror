@@ -121,6 +121,13 @@ Verified end to end through the real modules: a spoken Spanish request set
 reminder #1 with a correctly-composed message, it fired on time, and the
 session remembered the exchange afterwards.
 
+## Where this goes next
+
+The embedded agent answers the question "what if the bot had an agent?".
+The more interesting question is the inverse — "what if my agent had a voice
+channel?" — which points at exposing the bot itself as an MCP server rather
+than having it host one. See [bot-as-mcp-server.md](bot-as-mcp-server.md).
+
 ## Rejected alternatives
 
 - **OpenAI Realtime (`gpt-realtime`), speech-to-speech.** The only option
