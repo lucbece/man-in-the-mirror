@@ -88,10 +88,15 @@ channel, killed on `/mj leave`, is the only sane default.
 
 | Phase | What | Status |
 | --- | --- | --- |
-| 1 | Sentence-streaming TTS: speak the first sentence while the rest generates. Benefits both brains; measurable win on day one. | — |
-| 2 | `AgentBrain`: SDK session per channel, queue adapter, delta → TTS, filler on tool_use, teardown on leave/timeout. | — |
-| 3 | Panel: brain kind selector (chat / agent), MCP server list (JSON textarea to start), model + maxTurns. | — |
-| 4 | Session lifecycle polish: idle timeout, restart on crash, `/mj status` shows session age and spend. | — |
+| 1 | Sentence-streaming TTS: speak the first sentence while the rest generates. Benefits both brains; measurable win on day one. | deferred — capability first, latency later |
+| 2 | `AgentBrain`: SDK session per channel, queue adapter, filler on tool_use, teardown on leave/timeout. | **done** — `src/agent/agent-brain.js` |
+| 3 | Panel: brain kind selector (chat / agent), MCP server list (JSON textarea), maxTurns. | **done** — validated at save time, errors name the field |
+| 4 | Session lifecycle polish: restart on crash, `/mj status` shows session age and spend. | partial — idle reap (30min) and crash-fail exist; status display pending |
+
+Measured on the live SDK: first turn 4.0s cold, second turn 1.9s warm —
+the persistent session makes follow-ups *faster* than the stateless chat
+brain, because nothing is re-sent. A tool-using answer through a stdio MCP
+server measured 9.0s end to end, which is what the filler exists for.
 
 ## Rejected alternatives
 

@@ -7,6 +7,7 @@ import { bot } from '../bot/index.js';
 import { sessionManager } from '../voice/manager.js';
 import { formatTranscript, transcribeBuffer } from '../agent/stt.js';
 import { ask, AgentBusyError } from '../agent/index.js';
+import { parseMcpServers } from '../agent/mcp.js';
 
 const HOST = process.env.WEB_HOST || '127.0.0.1';
 
@@ -32,6 +33,17 @@ export function startWebServer() {
 
   app.post('/api/config', async (req, res) => {
     const body = req.body ?? {};
+
+    // Reject broken MCP JSON at save time, with the field named — finding out
+    // at the first question, mid-conversation, is the worst possible moment.
+    if (typeof body.mcpServers === 'string' && body.mcpServers.trim()) {
+      try {
+        parseMcpServers(body.mcpServers);
+      } catch (err) {
+        return res.status(400).json({ ok: false, error: `MCP servers: ${err.message}` });
+      }
+    }
+
     const tokenChanged =
       typeof body.token === 'string' && body.token.trim() && body.token.trim() !== config.get('token');
 

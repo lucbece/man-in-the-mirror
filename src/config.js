@@ -45,6 +45,18 @@ const DEFAULTS = {
   brainModel: '', // blank = the provider's default
   anthropicApiKey: '',
 
+  // 'chat' answers from one API call, as always. 'agent' runs a persistent
+  // Claude agent session that can use the MCP tools configured below —
+  // slower per answer, but it can actually *do* things.
+  brainKind: 'chat', // 'chat' | 'agent'
+  // MCP servers the agent may use, as a JSON object — same shape Claude
+  // Desktop and Claude Code use: { "name": { "command": ..., "args": [...] } }
+  // or { "name": { "type": "http", "url": ... } }.
+  mcpServers: '',
+  // How many tool-using rounds one answer may take before it's cut off. A
+  // confused agent left unbounded will happily spend a minute and a dollar.
+  agentMaxTurns: 8,
+
   // Let it look things up. Costs a second or two per answer. Both providers
   // support it: OpenAI through its search-capable models, Anthropic through a
   // server-side tool it runs itself.
@@ -88,7 +100,7 @@ const LOCAL_VOICE_INFO = [
   { id: 'es_AR-daniela-high', label: 'Español (Argentina) — acento rioplatense' },
 ];
 
-const NUMERIC_KEYS = new Set(['volume', 'webPort', 'bufferSeconds']);
+const NUMERIC_KEYS = new Set(['volume', 'webPort', 'bufferSeconds', 'agentMaxTurns']);
 const BOOLEAN_KEYS = new Set([
   'agentEnabled',
   'eagerTranscription',
@@ -134,6 +146,9 @@ function clampConfig(cfg) {
   out.anthropicApiKey = out.anthropicApiKey.trim();
   out.brainModel = out.brainModel.trim();
   if (!['anthropic', 'openai'].includes(out.brainProvider)) out.brainProvider = 'anthropic';
+  if (!['chat', 'agent'].includes(out.brainKind)) out.brainKind = 'chat';
+  out.mcpServers = out.mcpServers.trim();
+  out.agentMaxTurns = Math.min(25, Math.max(1, Math.round(out.agentMaxTurns)));
   if (!VOICES.includes(out.ttsVoice)) out.ttsVoice = 'onyx';
   if (!['openai', 'local'].includes(out.ttsProvider)) out.ttsProvider = 'openai';
   out.agentNames = out.agentNames.trim().toLowerCase() || DEFAULTS.agentNames;

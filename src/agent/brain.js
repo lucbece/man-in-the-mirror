@@ -8,6 +8,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 
 import { config } from '../config.js';
+import { AgentBrain } from './agent-brain.js';
 
 /**
  * Hard ceiling on what gets spoken, in characters.
@@ -289,9 +290,15 @@ async function* readSse(res) {
   }
 }
 
-export function createBrain() {
+export function createBrain({ guildId } = {}) {
   const provider = config.get('brainProvider');
   const model = config.get('brainModel');
+
+  // The agent brain is Anthropic-only (it *is* a Claude session), so the
+  // kind switch outranks the provider switch rather than combining with it.
+  if (config.get('brainKind') === 'agent') {
+    return new AgentBrain({ guildId: guildId ?? 'default' });
+  }
 
   if (provider === 'openai') {
     return new OpenAiBrain({

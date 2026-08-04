@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events';
 import { config } from '../config.js';
 import { VoiceSession } from './session.js';
 import { ask, AgentBusyError } from '../agent/index.js';
+import { endAgentSession } from '../agent/agent-brain.js';
 import { warmFillers } from '../agent/filler.js';
 
 /** Tracks one VoiceSession per guild. */
@@ -52,6 +53,9 @@ class SessionManager extends EventEmitter {
       if (this.sessions.get(channel.guild.id) === session) {
         this.sessions.delete(channel.guild.id);
       }
+      // The agent session's memory is that conversation; when the bot leaves
+      // the channel, the conversation is over.
+      endAgentSession(channel.guild.id);
       this.emit('update');
     });
     session.on('update', () => this.emit('update'));
@@ -118,11 +122,28 @@ function describeChanges(values, previous) {
       `[config] speaking → ${values.ttsProvider === 'local' ? `Piper ${values.ttsLocalVoice} (this machine)` : `OpenAI tts-1 ${values.ttsVoice} (API)`}`,
     );
   }
-  if (values.brainProvider !== previous.brainProvider || values.brainModel !== previous.brainModel || values.webSearch !== previous.webSearch) {
-    const model = values.brainModel || (values.brainProvider === 'openai' ? 'gpt-4.1' : 'claude-sonnet-5');
-    console.log(
-      `[config] thinking → ${values.brainProvider} ${model}${values.webSearch ? ' + web search' : ''}`,
-    );
+  if (
+    values.brainKind !== previous.brainKind ||
+    values.brainProvider !== previous.brainProvider ||
+    values.brainModel !== previous.brainModel ||
+    values.webSearch !== previous.webSearch ||
+    values.mcpServers !== previous.mcpServers
+  ) {
+    if (values.brainKind === 'agent') {
+      let mcp = 'no MCP servers';
+      try {
+        const names = Object.keys(JSON.parse(values.mcpServers || '{}'));
+        if (names.length) mcp = `MCP: ${names.join(', ')}`;
+      } catch { mcp = 'MCP config has a JSON error'; }
+      console.log(
+        `[config] thinking → Claude agent ${values.brainModel || 'claude-sonnet-5'} (${mcp})${values.webSearch ? ' + web search' : ''}`,
+      );
+    } else {
+      const model = values.brainModel || (values.brainProvider === 'openai' ? 'gpt-4.1' : 'claude-sonnet-5');
+      console.log(
+        `[config] thinking → ${values.brainProvider} ${model}${values.webSearch ? ' + web search' : ''}`,
+      );
+    }
   }
   if (values.agentNames !== previous.agentNames) {
     console.log(`[config] answers to → ${values.agentNames}`);

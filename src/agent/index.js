@@ -39,9 +39,11 @@ export async function ask(session, { question, askedBy }) {
     //    cost nothing, so follow-up questions are much cheaper than the first.
     const t0 = Date.now();
     let transcript = '';
+    let utterances = [];
     if (session.agentEnabled) {
       await transcribeBuffer(session.receiver.buffer);
-      transcript = formatTranscript(session.receiver.buffer.recent());
+      utterances = session.receiver.buffer.recent();
+      transcript = formatTranscript(utterances);
     }
     timings.transcribeMs = Date.now() - t0;
 
@@ -49,9 +51,9 @@ export async function ask(session, { question, askedBy }) {
     //    but only then, and only with audio rendered ahead of time. Anything
     //    else would lengthen the wait to announce the wait.
     const t1 = Date.now();
-    const brain = createBrain();
+    const brain = createBrain({ guildId: session.guildId });
     const raw = await brain.answer(
-      { transcript, question, askedBy },
+      { transcript, utterances, question, askedBy },
       {
         onSearchStart: () => {
           timings.searchedAtMs = Date.now() - t1;

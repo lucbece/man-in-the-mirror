@@ -127,6 +127,16 @@ Claude reasons visibly better; OpenAI searches far faster. Pick by which you
 care about. Anything past about four seconds and the conversation has moved on
 without it.
 
+Thinking also has a second mode: **agent**. Instead of one stateless API
+call, a persistent Claude session runs per voice channel — it remembers the
+whole conversation (follow-ups measured *faster* than chat: 1.9s against
+4.0s cold, nothing re-sent), and it can use MCP servers you paste into the
+panel — the same JSON Claude Desktop uses. That's what turns "what do you
+think?" into "check my calendar and tell me if I'm free Thursday". Tool
+answers take longer (~9s measured through a stdio server) and cost more; the
+bot says "dame un segundo" while it works. The agent gets *only* your MCP
+tools and web search — no files, no shell.
+
 ## Slash commands
 
 | Command | What it does |
@@ -164,6 +174,9 @@ but anything saved through the UI wins.
 | `sttLocalModel` | — | `ggml-base` | `ggml-base`, `ggml-small`, `ggml-large-v3-turbo` |
 | `brainProvider` | — | `anthropic` | `anthropic` or `openai` |
 | `brainModel` | — | *(blank)* | Blank uses the provider default |
+| `brainKind` | — | `chat` | `chat` answers from one API call; `agent` runs a persistent Claude session that can use MCP tools |
+| `mcpServers` | — | *(blank)* | JSON object of MCP servers for the agent — same shape as Claude Desktop's `mcpServers` |
+| `agentMaxTurns` | — | `8` | Tool rounds one agent answer may take |
 | `webSearch` | — | `true` | Let it look things up |
 | `ttsProvider` | — | `openai` | `openai` or `local` (Piper) |
 | `ttsVoice` / `ttsLocalVoice` | — | `onyx` / `es_ES-davefx-medium` | Voice per provider |
@@ -190,6 +203,8 @@ src/
   agent/wake.js       noticing its name, fuzzily, anywhere in a sentence
   agent/stt.js        hearing — API or whisper.cpp
   agent/brain.js      thinking — Claude or OpenAI, both with web search
+  agent/agent-brain.js  thinking, agent mode — persistent Claude session + MCP tools
+  agent/mcp.js        validates the MCP servers pasted into the panel
   agent/tts.js        speaking — API or Piper
   agent/filler.js     "dame un segundo" while it searches
   agent/whisper.js    whisper.cpp runtime, downloaded on demand

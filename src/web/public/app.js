@@ -7,6 +7,8 @@ const els = {
   transcriptionForm: $('#transcriptionForm'),
   thinkingForm: $('#thinkingForm'),
   brainAdvice: $('#brainAdvice'),
+  chatProviderRow: $('#chatProviderRow'),
+  agentRow: $('#agentRow'),
   anthropicKeyHint: $('#anthropicKeyHint'),
   voiceSelect: $('#voiceSelect'),
   localVoiceSelect: $('#localVoiceSelect'),
@@ -148,21 +150,32 @@ function renderTranscription(cfg) {
 
 function renderThinking(cfg) {
   const f = els.thinkingForm.elements;
+  for (const radio of f.brainKind) radio.checked = radio.value === cfg.brainKind;
   for (const radio of f.brainProvider) radio.checked = radio.value === cfg.brainProvider;
   f.brainModel.value = cfg.brainModel ?? '';
   f.webSearch.checked = cfg.webSearch;
+  f.mcpServers.value = cfg.mcpServers ?? '';
+  f.agentMaxTurns.value = cfg.agentMaxTurns ?? 8;
 
   els.anthropicKeyHint.textContent = cfg.hasAnthropicApiKey
     ? `A key is stored (${cfg.anthropicApiKeyPreview}). Leave blank to keep it.`
     : 'No key stored yet.';
 
-  const usingClaude = cfg.brainProvider === 'anthropic';
+  // The agent *is* a Claude session, so the provider choice belongs to chat
+  // mode and the Anthropic key is always the relevant one in agent mode.
+  const agent = cfg.brainKind === 'agent';
+  els.chatProviderRow.classList.toggle('dim', agent);
+  els.agentRow.classList.toggle('dim', !agent);
+
+  const usingClaude = agent || cfg.brainProvider === 'anthropic';
   f.anthropicApiKey.closest('label').classList.toggle('dim', !usingClaude);
 
   const missing = usingClaude ? !cfg.hasAnthropicApiKey : !cfg.hasOpenaiApiKey;
   els.brainAdvice.textContent = missing
     ? `No ${usingClaude ? 'Anthropic' : 'OpenAI'} key set, so the agent can't answer yet.`
-    : 'Ready to answer.';
+    : agent
+      ? 'Agent mode: answers can use the MCP tools below.'
+      : 'Ready to answer.';
   els.brainAdvice.classList.toggle('warn', missing);
 }
 
@@ -353,6 +366,16 @@ function renderGuilds(guilds) {
 
 els.guildSelect.addEventListener('change', () => renderGuilds(state?.guilds ?? []));
 
+// Show the right half of the Thinking card the moment the kind is clicked,
+// not only after a save round-trips.
+for (const radio of els.thinkingForm.elements.brainKind) {
+  radio.addEventListener('change', () => {
+    const agent = radio.value === 'agent' && radio.checked;
+    els.chatProviderRow.classList.toggle('dim', agent);
+    els.agentRow.classList.toggle('dim', !agent);
+  });
+}
+
 els.joinBtn.addEventListener('click', () =>
   act(
     () =>
@@ -418,10 +441,13 @@ els.thinkingForm.addEventListener('submit', (event) => {
   act(
     () =>
       post('/api/config', {
+        brainKind: [...f.brainKind].find((r) => r.checked)?.value ?? 'chat',
         brainProvider: provider,
         brainModel: f.brainModel.value,
         webSearch: f.webSearch.checked,
         anthropicApiKey: f.anthropicApiKey.value,
+        mcpServers: f.mcpServers.value,
+        agentMaxTurns: Number(f.agentMaxTurns.value) || 8,
       }),
     'Saved.',
   ).then(() => {

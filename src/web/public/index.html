@@ -245,6 +245,23 @@
       <form id="thinkingForm">
         <div class="choices">
           <label class="choice">
+            <input type="radio" name="brainKind" value="chat" />
+            <span>
+              <strong>Answer directly</strong>
+              <small>One API call per answer. Fastest; talk and web search only.</small>
+            </span>
+          </label>
+          <label class="choice">
+            <input type="radio" name="brainKind" value="agent" />
+            <span>
+              <strong>Run an agent</strong>
+              <small>A Claude session that can use your MCP tools to actually do things. Slower and costlier per answer.</small>
+            </span>
+          </label>
+        </div>
+
+        <div class="choices" id="chatProviderRow">
+          <label class="choice">
             <input type="radio" name="brainProvider" value="anthropic" />
             <span>
               <strong>Claude</strong>
@@ -300,6 +317,44 @@
             seconds and the conversation has moved on without it.
           </small>
         </label>
+
+        <div id="agentRow">
+          <label>
+            MCP servers <span class="optional">JSON</span>
+            <textarea
+              name="mcpServers"
+              rows="8"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder='{
+  "github": {
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-github"],
+    "env": { "GITHUB_TOKEN": "..." }
+  },
+  "some-remote": { "type": "http", "url": "https://example.com/mcp" }
+}'
+            ></textarea>
+            <small class="hint">
+              The same <code>mcpServers</code> object Claude Desktop and Claude
+              Code use — paste yours as-is, wrapper and all. These are the
+              <em>only</em> tools the agent gets (plus web search if enabled
+              above): it has no access to files or the shell on this machine.
+              Local servers are spawned on demand; remote ones are called over
+              HTTP.
+            </small>
+          </label>
+
+          <label>
+            Max tool rounds per answer
+            <input type="number" name="agentMaxTurns" min="1" max="25" step="1" />
+            <small class="hint">
+              Each round is a model round trip — seconds and tokens. Eight
+              handles "check my calendar and tell me if I'm free" comfortably;
+              raise it only if the agent reports being cut off mid-task.
+            </small>
+          </label>
+        </div>
 
         <div class="row">
           <button type="submit" class="primary">Save</button>

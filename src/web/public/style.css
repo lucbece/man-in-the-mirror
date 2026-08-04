@@ -138,6 +138,7 @@ label.check {
 input[type="text"],
 input[type="password"],
 input[type="number"],
+textarea,
 select {
   width: 100%;
   padding: 0.6rem 0.7rem;
@@ -148,7 +149,15 @@ select {
   font: inherit;
 }
 
+textarea {
+  /* JSON is column-sensitive; a proportional font hides misalignment. */
+  font-family: ui-monospace, 'Cascadia Code', Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  resize: vertical;
+}
+
 input:focus,
+textarea:focus,
 select:focus,
 button:focus-visible {
   outline: 2px solid var(--accent);
