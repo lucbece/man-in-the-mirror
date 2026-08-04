@@ -17,6 +17,7 @@
  * Sessions die with the voice session and after IDLE_MS of disuse.
  */
 import { query, createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
+import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 
 import { config } from '../config.js';
@@ -59,6 +60,51 @@ You also have tools, and unlike a plain chatbot you are expected to use them:
 The "bot" tools control the bot you are speaking through. When someone asks to be reminded of something, use set_reminder — never just promise to remember, because without the tool no reminder will ever fire. Write the message as the exact sentence to be spoken aloud when the time comes, in the speaker's language, addressed to them by name: "Luc, me pediste que te recuerde sacar la basura." Then confirm briefly that it's set.`;
 
 class AgentError extends Error {}
+
+/**
+ * Web search as a fast side-call, rather than the runtime's own search tool.
+ *
+ * The SDK's WebSearch is a research tool: it reads pages, and it sits behind
+ * tool search, so a weather question cost a round trip to *find* the tool plus
+ * another twenty seconds to use it. Measured against the server-side
+ * `web_search` on the plain Messages API, asked the same thing:
+ *
+ *     agent WebSearch      ~20s, via a ToolSearch round trip first
+ *     Haiku 4.5 + search    3.5s, with better numbers in the answer
+ *     Sonnet 5 + search     8.7s, and it found nothing specific
+ *
+ * Haiku is the right size here precisely because this call does no reasoning —
+ * it retrieves facts and hands them back for the agent to think about.
+ */
+const SEARCH_MODEL = 'claude-haiku-4-5';
+
+async function searchWeb(query) {
+  const apiKey = config.get('anthropicApiKey');
+  if (!apiKey) throw new AgentError('No Anthropic API key.');
+
+  const client = new Anthropic({ apiKey });
+  const res = await client.beta.messages.create({
+    model: SEARCH_MODEL,
+    max_tokens: 1024,
+    system:
+      'Search the web and report the facts you find, compactly and in plain text. ' +
+      'No opinions, no greetings, no preamble — just what you found, with dates and ' +
+      'numbers where they matter. Say plainly if you found nothing.',
+    // Haiku rejects the tool without this: it has no programmatic tool calling,
+    // so the search has to be marked as one the model itself invokes.
+    tools: [
+      { type: 'web_search_20260209', name: 'web_search', max_uses: 1, allowed_callers: ['direct'] },
+    ],
+    messages: [{ role: 'user', content: query }],
+  });
+
+  const text = res.content
+    .filter((block) => block.type === 'text')
+    .map((block) => block.text)
+    .join(' ')
+    .trim();
+  return text || 'Nothing useful found.';
+}
 
 /** One live SDK session. Input is pushed; output is pumped in the background. */
 class AgentSession {
@@ -230,6 +276,26 @@ function currentSignature() {
  * no network — and the reminder registry does the speaking when it fires.
  */
 function botToolsServer(guildId) {
+  const searchTools = config.get('webSearch')
+    ? [
+        tool(
+          'search_web',
+          'Look something up on the web: current events, weather, prices, scores, anything that could have changed recently. Returns the facts found, for you to say in your own words.',
+          { query: z.string().describe('What to look up, as a search query.') },
+          async ({ query: q }) => {
+            const started = Date.now();
+            try {
+              const text = await searchWeb(q);
+              console.log(`[search] "${q}" in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+              return { content: [{ type: 'text', text }] };
+            } catch (err) {
+              return { content: [{ type: 'text', text: `Search failed: ${err.message}` }] };
+            }
+          },
+        ),
+      ]
+    : [];
+
   return createSdkMcpServer({
     name: 'bot',
     version: '1.0.0',
@@ -238,6 +304,7 @@ function botToolsServer(guildId) {
     // which in a voice call is seconds of silence for nothing.
     alwaysLoad: true,
     tools: [
+      ...searchTools,
       tool(
         'set_reminder',
         'Speak a message aloud in the voice channel after a delay. The message must be the finished sentence to say at that moment, in the language the person spoke, addressed to them by name.',
@@ -300,7 +367,9 @@ function buildSession(guildId) {
   // Same reasoning as the bot's own server: pay the tokens, skip the round
   // trip. A handful of servers is what people configure, not hundreds.
   for (const server of Object.values(servers)) server.alwaysLoad = true;
-  const allowed = allowedToolsFor(servers, { webSearch: config.get('webSearch'), allow });
+  // webSearch: false — the runtime's own WebSearch is not used. Ours lives on
+  // the bot server, is always loaded, and is several times faster.
+  const allowed = allowedToolsFor(servers, { webSearch: false, allow });
   const directories = parseDirectories(config.get('agentDirectories'));
   // The bot's own tools ride alongside the user's servers. "bot" is a
   // reserved name — parseMcpServers rejects it — so no collision is possible.

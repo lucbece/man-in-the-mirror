@@ -14,6 +14,16 @@ import { formatTranscript, transcribeBuffer } from './stt.js';
 /** Guard against a stuck stage wedging the session forever. */
 const SPEAK_TIMEOUT_MS = 60_000;
 
+/**
+ * How long a silence has to last, once the bot has started talking, before it
+ * says something to fill it.
+ *
+ * Long enough that a normal answer never reaches it — the gap between two
+ * sentences is a second or two — and short enough that a slow tool doesn't
+ * leave the channel wondering whether the thing crashed.
+ */
+const QUIET_MS = 7_000;
+
 export class AgentBusyError extends Error {}
 
 /** Guilds with a request in flight — one conversation at a time per channel. */
@@ -63,6 +73,26 @@ export async function ask(session, { question, askedBy }) {
 
     let budget = MAX_SPOKEN_CHARS;
     let cutOff = false;
+
+    // If the silence drags on after we've already said something, say
+    // something else. Not announced up front: most tool calls come back
+    // quickly, so warning about a wait that usually doesn't happen makes the
+    // bot sound slow when it isn't. This only speaks once the wait is real.
+    let quietTimer = null;
+    let finishedThinking = false;
+    const nudge = () => {
+      clearTimeout(quietTimer);
+      if (finishedThinking) return;
+      quietTimer = setTimeout(() => {
+        const filler = takeFiller(guessLanguage(question), 'waiting');
+        if (filler) {
+          speech.push(toAudioResource(filler.audio), null);
+          timings.waited = (timings.waited ?? 0) + 1;
+        }
+        nudge(); // and again if it keeps dragging
+      }, QUIET_MS);
+      quietTimer.unref?.();
+    };
     // Synthesis requests are chained so pieces reach the queue in the order
     // they were said. Each resolves when the response starts, not when it
     // finishes, so this costs nothing in wall clock.
@@ -80,6 +110,7 @@ export async function ask(session, { question, askedBy }) {
           const audio = await tts.synthesizeStream(clean);
           timings.firstAudioMs ??= Date.now() - t1;
           speech.push(toAudioResource(audio), clean);
+          nudge();
         })
         .catch((err) => console.warn(`[speech] could not render: ${err.message}`));
     };
@@ -99,10 +130,13 @@ export async function ask(session, { question, askedBy }) {
             if (!filler) return;
             speech.push(toAudioResource(filler.audio), null);
             timings.filler = filler.line;
+            nudge();
           },
         },
       );
     } finally {
+      finishedThinking = true;
+      clearTimeout(quietTimer);
       // Whatever was already said still has to finish playing, even if the
       // model failed partway — a half answer beats a sentence cut in two.
       await rendering;
@@ -123,7 +157,8 @@ export async function ask(session, { question, askedBy }) {
         `thought through ${(timings.thinkMs / 1000).toFixed(1)}s)` +
         (timings.filler
           ? ` · searched at ${(timings.searchedAtMs / 1000).toFixed(1)}s, said "${timings.filler}"`
-          : ''),
+          : '') +
+        (timings.waited ? ` · filled ${timings.waited} long silence(s)` : ''),
     );
     console.log(`[agent]   via ${brain.label} → ${tts.label}`);
 

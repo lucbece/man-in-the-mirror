@@ -44,12 +44,19 @@ describe('reminders registry', () => {
 
   test('list reports remaining time, soonest first', (t) => {
     t.after(() => reminders.clearGuild('g3'));
-    const now = Date.now();
     reminders.set({ guildId: 'g3', delayMs: 20 * 60_000, message: 'later' });
     reminders.set({ guildId: 'g3', delayMs: 10 * 60_000, message: 'sooner' });
-    const listed = reminders.list('g3', now);
-    assert.equal(listed[0].message, 'sooner');
+
+    // `now` has to be read after setting, not before: the clock moves between
+    // the two, and reading it first made remainingMs come out a few
+    // milliseconds over the requested delay whenever the suite ran under load.
+    const listed = reminders.list('g3', Date.now());
+    assert.deepEqual(
+      listed.map((r) => r.message),
+      ['sooner', 'later'],
+    );
     assert.ok(listed[0].remainingMs <= 10 * 60_000);
+    assert.ok(listed[0].remainingMs > 9 * 60_000, 'should be counting down from ten minutes');
     assert.ok(listed[1].remainingMs > 10 * 60_000);
   });
 

@@ -131,9 +131,39 @@ servers is what people configure. It also blocks session startup on connecting
 those servers, so sessions are now pre-started when the bot joins the channel,
 where nobody is waiting.
 
-Still slow and not fixed here: the agent's web search took 20s against the
-chat brain's 6.7s for the same kind of question. Whatever the SDK is doing
-there is much heavier than the server-side `web_search` tool.
+### Search, replaced rather than waited out
+
+The agent's own WebSearch was the worst offender: ~20s, and behind a tool
+search round trip on top. It is a research tool that reads pages, which is
+not what "is it going to rain Thursday" needs. Asked the same question three
+ways:
+
+| | time | result |
+| --- | --- | --- |
+| agent `WebSearch` | ~20s | plus a ToolSearch round trip first |
+| Sonnet 5 + server-side `web_search` | 8.7s | found nothing specific |
+| **Haiku 4.5 + server-side `web_search`** | **3.5s** | the actual forecast, with numbers |
+
+So the agent no longer gets `WebSearch` at all. `search_web` on the bot's own
+server calls Haiku with the server-side tool and hands back the facts. Haiku
+is the right size precisely because this call does no reasoning — it fetches,
+and the agent thinks. (Haiku needs `allowed_callers: ['direct']` on the tool;
+without it the API rejects the request outright.)
+
+Agent totals, same two questions: web search 20.6s → 16.7s, MCP tool 9.4s →
+6.6s, with first audio at 3–4s in both.
+
+### When the wait is real anyway
+
+Some tool calls are just slow. After the bot has started talking, a silence
+longer than seven seconds gets another line — "perdón, sigo buscando esto".
+
+Deliberately *not* announced up front. Warning about a long wait before
+knowing there is one is wrong in both directions: most calls come back
+quickly, so the warning is usually a lie, and a bot that opens every answer
+apologising for its speed sounds slow even when it isn't. Saying it only once
+the wait is real is both honest and what a person does — you say "hold on",
+and if it drags, you say "still looking".
 
 ## The trap: who decides what a filesystem server can see
 

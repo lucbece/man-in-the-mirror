@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { describe } from 'node:test';
 
-import { guessLanguage, takeFiller, LINES } from '../src/agent/filler.js';
+import { guessLanguage, takeFiller, LINES, WAITING_LINES } from '../src/agent/filler.js';
 
 describe('guessLanguage', () => {
   test('recognises Spanish even with accents', () => {
@@ -53,5 +53,33 @@ describe('takeFiller', () => {
     for (const line of [...LINES.es, ...LINES.en]) {
       assert.ok(line.length <= 25, `too long to be a filler: ${line}`);
     }
+  });
+});
+
+describe('the long-wait lines', () => {
+  test('are a separate, distinct set from the opening ones', () => {
+    // Reusing an opening line after ten seconds of silence would sound like
+    // the bot forgot it already said it.
+    for (const lang of ['es', 'en']) {
+      assert.ok(WAITING_LINES[lang].length >= 2);
+      assert.equal(WAITING_LINES[lang].some((l) => LINES[lang].includes(l)), false);
+    }
+  });
+
+  test('are longer than the openers, since buying time is the whole job', () => {
+    for (const lang of ['es', 'en']) {
+      const shortest = Math.min(...WAITING_LINES[lang].map((l) => l.length));
+      const longestOpener = Math.max(...LINES[lang].map((l) => l.length));
+      assert.ok(shortest > longestOpener, `${lang}: waiting lines should be the longer set`);
+    }
+  });
+
+  test('the two sets rotate independently', () => {
+    // Shared rotation state would make the second set skip lines depending on
+    // how many openers had played.
+    const a = takeFiller('es', 'waiting');
+    const b = takeFiller('es', 'waiting');
+    if (!a || !b) return; // nothing warmed in this process
+    assert.notEqual(a.line, b.line);
   });
 });

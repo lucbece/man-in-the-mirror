@@ -48,17 +48,35 @@ const LINES = {
   en: ['Give me a second.', 'Let me check.', 'One sec.'],
 };
 
+/**
+ * For when it's still not back, several seconds after the first "hang on".
+ *
+ * Deliberately *not* said up front. Warning about a long wait before knowing
+ * there is one gets it wrong in both directions: most tool calls come back
+ * quickly, so the warning is usually a lie, and a bot that opens every answer
+ * apologising for its speed is worse than one that occasionally makes you
+ * wait. Saying it only once the wait is real is both honest and how a person
+ * behaves — you say "hold on", and if it drags, you say "still looking".
+ *
+ * Longer than the first set, because by now buying time is the entire job.
+ */
+const WAITING_LINES = {
+  es: ['Perdón, sigo buscando esto, dame un toque más.', 'Ahí lo tengo, aguantame un segundo más.'],
+  en: ["Sorry, still digging, give me a moment.", "Nearly there, hang on a second."],
+};
+
 /** Rendered audio, keyed by the exact line. Survives for the process lifetime. */
 const cache = new Map();
 
-let lastIndex = -1;
+const lastIndex = { first: -1, waiting: -1 };
 let cachedVoice = null;
 
 /** Rotate rather than repeat — the same clip every time sounds like a recording. */
-function pickLine(lang) {
-  const lines = LINES[lang] ?? LINES.es;
-  lastIndex = (lastIndex + 1) % lines.length;
-  return lines[lastIndex];
+function pickLine(lang, set) {
+  const table = set === 'waiting' ? WAITING_LINES : LINES;
+  const lines = table[lang] ?? table.es;
+  lastIndex[set] = (lastIndex[set] + 1) % lines.length;
+  return lines[lastIndex[set]];
 }
 
 /**
@@ -86,7 +104,7 @@ export async function warmFillers() {
   let rendered = 0;
   let reused = 0;
 
-  for (const line of [...LINES.es, ...LINES.en]) {
+  for (const line of [...LINES.es, ...LINES.en, ...WAITING_LINES.es, ...WAITING_LINES.en]) {
     if (cache.has(line)) continue;
 
     const file = cachePath(line, voice);
@@ -117,8 +135,8 @@ export async function warmFillers() {
  * Never synthesises on the spot: if it isn't cached, staying quiet is better
  * than making the wait longer to announce the wait.
  */
-export function takeFiller(lang = 'es') {
-  const line = pickLine(lang);
+export function takeFiller(lang = 'es', set = 'first') {
+  const line = pickLine(lang, set);
   const audio = cache.get(line);
   return audio ? { line, audio } : null;
 }
@@ -151,4 +169,4 @@ export function guessLanguage(text) {
   return hits > 0 ? 'es' : 'en';
 }
 
-export { LINES };
+export { LINES, WAITING_LINES };
