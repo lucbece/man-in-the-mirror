@@ -19,7 +19,7 @@ through an API or on your own machine, mixed however you like.
 
 ## Download
 
-**[⬇ v0.2.2-preview — the voice agent](https://github.com/lucbece/man-in-the-mirror/releases/tag/v0.2.2-preview)**
+**[⬇ v0.2.3-preview — the voice agent](https://github.com/lucbece/man-in-the-mirror/releases/tag/v0.2.3-preview)**
 
 | You're on | File |
 | --- | --- |
