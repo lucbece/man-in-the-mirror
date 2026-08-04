@@ -1,12 +1,12 @@
 /**
- * The full round trip: hear → transcribe → think → speak.
+ * The full round trip: hear → transcribe → think and speak, overlapping.
  *
  * Each stage is timed and reported, because when this feels slow you need to
- * know *which* stage was slow — they have completely different fixes.
+ * know *which* stage was slow — they have completely different fixes. The one
+ * that matters most is `first words at`, since that's when a listener stops
+ * wondering whether the thing is broken.
  */
-import { AudioPlayerStatus, entersState } from '@discordjs/voice';
-
-import { createBrain, clampForSpeech, BrainError } from './brain.js';
+import { createBrain, clampForSpeech, BrainError, MAX_SPOKEN_CHARS } from './brain.js';
 import { createTts, toAudioResource } from './tts.js';
 import { guessLanguage, takeFiller } from './filler.js';
 import { formatTranscript, transcribeBuffer } from './stt.js';
@@ -47,63 +47,80 @@ export async function ask(session, { question, askedBy }) {
     }
     timings.transcribeMs = Date.now() - t0;
 
-    // 2. Think. If it goes off to search, fill the silence it just created —
-    //    but only then, and only with audio rendered ahead of time. Anything
-    //    else would lengthen the wait to announce the wait.
+    // 2 and 3, at the same time. The reply is spoken sentence by sentence as
+    //    the model produces it, rather than after it finishes: measured, the
+    //    first sentence exists about a second before the last one does, and
+    //    synthesising one sentence beats synthesising four by half a second
+    //    again.
+    //
+    //    What keeps it seamless after that is that speech is slower than
+    //    synthesis — a sentence takes two or three seconds to say and under
+    //    one to render, so the queue stays ahead. The only gap is the first.
     const t1 = Date.now();
     const brain = createBrain({ guildId: session.guildId });
-    const raw = await brain.answer(
-      { transcript, utterances, question, askedBy },
-      {
-        onSearchStart: () => {
-          timings.searchedAtMs = Date.now() - t1;
-          const filler = takeFiller(guessLanguage(question));
-          if (!filler) return;
-          try {
-            session.player.play(toAudioResource(filler.audio));
-            timings.filler = filler.line;
-          } catch (err) {
-            console.warn(`[filler] could not play: ${err.message}`);
-          }
-        },
-      },
-    );
-    timings.thinkMs = Date.now() - t1;
-
-    const spoken = clampForSpeech(raw);
-    if (!spoken) throw new BrainError('The model returned nothing to say.');
-
-    // 3. Speak. Streamed rather than buffered: playback starts on the first
-    //    bytes instead of waiting for the whole file, which is about a second
-    //    of silence removed.
-    const t2 = Date.now();
     const tts = createTts();
-    const audio = await tts.synthesizeStream(spoken);
-    timings.speakMs = Date.now() - t2;
+    const speech = session.startSpeech();
 
-    // If a filler is still playing, let it finish its sentence — cutting it
-    // off is more jarring than the half-second it costs to wait.
-    if (timings.filler && session.speaking) {
-      await entersState(session.player, AudioPlayerStatus.Idle, 4_000).catch(() => {});
-    }
+    let budget = MAX_SPOKEN_CHARS;
+    let cutOff = false;
+    // Synthesis requests are chained so pieces reach the queue in the order
+    // they were said. Each resolves when the response starts, not when it
+    // finishes, so this costs nothing in wall clock.
+    let rendering = Promise.resolve();
 
-    // Never talk over ourselves — a second answer starting mid-sentence is
-    // worse than a slightly delayed one.
-    session.player.stop(true);
-    session.player.play(toAudioResource(audio));
+    const say = (text) => {
+      const clean = clampForSpeech(text, Math.max(0, budget));
+      if (!clean || budget <= 0) {
+        cutOff ||= Boolean(text.trim());
+        return;
+      }
+      budget -= clean.length;
+      rendering = rendering
+        .then(async () => {
+          const audio = await tts.synthesizeStream(clean);
+          timings.firstAudioMs ??= Date.now() - t1;
+          speech.push(toAudioResource(audio), clean);
+        })
+        .catch((err) => console.warn(`[speech] could not render: ${err.message}`));
+    };
 
     try {
-      await entersState(session.player, AudioPlayerStatus.Playing, 5_000);
-    } catch {
-      throw new Error('Audio never started playing — check the ffmpeg install.');
+      // The return value is the whole reply, but everything sayable has
+      // already gone out through onSentence by the time it resolves.
+      await brain.answer(
+        { transcript, utterances, question, askedBy },
+        {
+          onSentence: say,
+          // Only reached when nothing has been said yet — a canned clip on top
+          // of the model's own words would be two fillers in a row.
+          onSearchStart: () => {
+            timings.searchedAtMs = Date.now() - t1;
+            const filler = takeFiller(guessLanguage(question));
+            if (!filler) return;
+            speech.push(toAudioResource(filler.audio), null);
+            timings.filler = filler.line;
+          },
+        },
+      );
+    } finally {
+      // Whatever was already said still has to finish playing, even if the
+      // model failed partway — a half answer beats a sentence cut in two.
+      await rendering;
+      speech.end();
     }
+    timings.thinkMs = Date.now() - t1;
 
+    const spoken = speech.spoken.join(' ').trim();
+    if (!spoken) throw new BrainError('The model returned nothing to say.');
+
+    await speech.finished;
     timings.totalMs = Date.now() - started;
+
     console.log(
       `[agent] answered in ${(timings.totalMs / 1000).toFixed(1)}s ` +
         `(heard ${(timings.transcribeMs / 1000).toFixed(1)}s, ` +
-        `thought ${(timings.thinkMs / 1000).toFixed(1)}s, ` +
-        `voiced ${(timings.speakMs / 1000).toFixed(1)}s)` +
+        `first words at ${(timings.firstAudioMs / 1000).toFixed(1)}s, ` +
+        `thought through ${(timings.thinkMs / 1000).toFixed(1)}s)` +
         (timings.filler
           ? ` · searched at ${(timings.searchedAtMs / 1000).toFixed(1)}s, said "${timings.filler}"`
           : ''),
@@ -112,7 +129,7 @@ export async function ask(session, { question, askedBy }) {
 
     return {
       spoken,
-      truncated: spoken !== raw.trim(),
+      truncated: cutOff,
       timings,
       brain: brain.label,
       voice: tts.label,

@@ -5,7 +5,7 @@ import { VoiceSession } from './session.js';
 import { AudioPlayerStatus, entersState } from '@discordjs/voice';
 
 import { ask, AgentBusyError } from '../agent/index.js';
-import { endAgentSession } from '../agent/agent-brain.js';
+import { endAgentSession, warmAgentSession } from '../agent/agent-brain.js';
 import { reminders } from '../agent/reminders.js';
 import { createTts, toAudioResource } from '../agent/tts.js';
 import { clampForSpeech } from '../agent/brain.js';
@@ -111,6 +111,10 @@ class SessionManager extends EventEmitter {
       this.sessions.delete(channel.guild.id);
       throw new Error(`Could not connect to ${channel.name}: ${err.message}`);
     }
+
+    // Nobody is waiting yet, so this is the cheapest moment to absorb the
+    // agent session's startup.
+    warmAgentSession(channel.guild.id);
 
     this.emit('update');
     return session;

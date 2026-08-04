@@ -88,7 +88,7 @@ channel, killed on `/mj leave`, is the only sane default.
 
 | Phase | What | Status |
 | --- | --- | --- |
-| 1 | Sentence-streaming TTS: speak the first sentence while the rest generates. Benefits both brains; measurable win on day one. | deferred — capability first, latency later |
+| 1 | Sentence-streaming TTS: speak the first sentence while the rest generates. Benefits both brains; measurable win on day one. | **done** — `src/agent/sentences.js`, `src/voice/speech-queue.js` |
 | 2 | `AgentBrain`: SDK session per channel, queue adapter, filler on tool_use, teardown on leave/timeout. | **done** — `src/agent/agent-brain.js` |
 | 3 | Panel: brain kind selector (chat / agent), MCP server list (JSON textarea), maxTurns. | **done** — validated at save time, errors name the field |
 | 4 | Session lifecycle polish: restart on crash, `/mj status` shows session age and spend. | partial — idle reap (30min) and crash-fail exist; status display pending |
@@ -97,6 +97,43 @@ Measured on the live SDK: first turn 4.0s cold, second turn 1.9s warm —
 the persistent session makes follow-ups *faster* than the stateless chat
 brain, because nothing is re-sent. A tool-using answer through a stdio MCP
 server measured 9.0s end to end, which is what the filler exists for.
+
+## Latency: what actually moved
+
+Speaking sentence by sentence as the model produces them, instead of after it
+finishes. Two things make it work: the first sentence exists about a second
+before the last one does, and synthesising one sentence beats synthesising
+four. After that first chunk there is no gap, because **speech is slower than
+synthesis** — a sentence takes two or three seconds to say and under one to
+render, so the queue stays ahead of the voice.
+
+Measured end to end, time until the first word is audible:
+
+| | before | after |
+| --- | --- | --- |
+| chat, `claude-sonnet-5` | 7.9s | 4.9s |
+| chat, `claude-haiku-4-5` | 5.2s | 2.4s |
+| agent, MCP tool | 8.6s | 4.4s |
+| agent, web search | 21.0s | 5.6s |
+
+The agent needed a second change to benefit at all: it produces *no text*
+until every tool has returned, so there was nothing to stream early. The
+prompt now asks for one short line before reaching for a tool — "dale, dejame
+chequear" — which is spoken while the tool runs. It replaces the canned filler
+whenever it happens (two fillers in a row is worse than none), and it fits the
+moment better than a stock clip because the model knows what it is about to
+go and do.
+
+`alwaysLoad: true` on every MCP server removes another round trip: without it
+the SDK defers tools behind a tool-search call, which costs a full model turn
+before the first real tool. The trade is tokens for latency, and a handful of
+servers is what people configure. It also blocks session startup on connecting
+those servers, so sessions are now pre-started when the bot joins the channel,
+where nobody is waiting.
+
+Still slow and not fixed here: the agent's web search took 20s against the
+chat brain's 6.7s for the same kind of question. Whatever the SDK is doing
+there is much heavier than the server-side `web_search` tool.
 
 ## The trap: who decides what a filesystem server can see
 

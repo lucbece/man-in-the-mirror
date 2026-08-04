@@ -9,6 +9,7 @@ import {
 } from '@discordjs/voice';
 
 import { config } from '../config.js';
+import { SpeechQueue } from './speech-queue.js';
 import { VoiceReceiver } from './receiver.js';
 import { EagerTranscriber } from '../agent/eager.js';
 import { detectAddress, normalise, splitNames } from '../agent/wake.js';
@@ -294,8 +295,25 @@ export class VoiceSession extends EventEmitter {
     return this.player.state.status === AudioPlayerStatus.Playing;
   }
 
+  /**
+   * Begin one continuous spoken answer.
+   *
+   * Replaces whatever was being said — a second answer starting over the top
+   * of the first is worse than a slightly delayed one.
+   */
+  startSpeech() {
+    this.speech?.cancel();
+    this.player.stop(true);
+    this.speech = new SpeechQueue(this.player);
+    return this.speech;
+  }
+
   /** Cut off playback immediately. Backs a "stop talking" control. */
   shush() {
+    // Cancel the queue first: stopping the player alone would just start the
+    // next sentence, which is the opposite of being asked to stop.
+    this.speech?.cancel();
+    this.speech = null;
     this.player.stop(true);
     this.emit('update');
   }
@@ -319,6 +337,8 @@ export class VoiceSession extends EventEmitter {
       /* never started */
     }
     try {
+      this.speech?.cancel();
+      this.speech = null;
       this.player.stop(true);
     } catch {
       /* already stopped */

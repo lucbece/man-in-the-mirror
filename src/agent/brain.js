@@ -9,6 +9,7 @@ import Anthropic from '@anthropic-ai/sdk';
 
 import { config } from '../config.js';
 import { AgentBrain } from './agent-brain.js';
+import { SentenceSplitter } from './sentences.js';
 
 /**
  * Hard ceiling on what gets spoken, in characters.
@@ -109,7 +110,7 @@ class ClaudeBrain {
     return `Anthropic ${this.model}${this.webSearch ? ' (web)' : ''}`;
   }
 
-  async answer(context, { onSearchStart } = {}) {
+  async answer(context, { onSearchStart, onSentence } = {}) {
     const stream = this.client.beta.messages.stream({
       model: this.model,
       max_tokens: MAX_TOKENS,
@@ -147,6 +148,15 @@ class ClaudeBrain {
       }
     });
 
+    // Hand out sentences as they complete, so the voice can start before the
+    // model has finished. Roughly a second and a half earlier, measured.
+    const splitter = new SentenceSplitter();
+    if (onSentence) {
+      stream.on('text', (delta) => {
+        for (const chunk of splitter.push(delta)) onSentence(chunk);
+      });
+    }
+
     let response;
     try {
       response = await stream.finalMessage();
@@ -166,6 +176,10 @@ class ClaudeBrain {
     if (response.stop_reason === 'refusal') {
       throw new BrainError("I'd rather not answer that one.");
     }
+
+    // The tail that never got its full stop still has to be said.
+    const tail = splitter.flush();
+    if (tail) onSentence?.(tail);
 
     // Server tools interleave their own blocks with the text; we only want
     // what it decided to say out loud.
@@ -214,7 +228,7 @@ class OpenAiBrain {
    * about 0.3s in, well before the answer exists. That's the only moment where
    * saying "hang on" is honest rather than a delay of its own.
    */
-  async answer(context, { onSearchStart } = {}) {
+  async answer(context, { onSearchStart, onSentence } = {}) {
     const res = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
@@ -238,6 +252,7 @@ class OpenAiBrain {
 
     let text = '';
     let announced = false;
+    const splitter = new SentenceSplitter();
 
     for await (const event of readSse(res)) {
       switch (event.type) {
@@ -249,6 +264,7 @@ class OpenAiBrain {
           break;
         case 'response.output_text.delta':
           text += event.delta ?? '';
+          if (onSentence) for (const chunk of splitter.push(event.delta)) onSentence(chunk);
           break;
         case 'response.failed':
         case 'response.error':
@@ -257,6 +273,9 @@ class OpenAiBrain {
           break;
       }
     }
+
+    const tail = splitter.flush();
+    if (tail) onSentence?.(tail);
 
     return text.trim();
   }
