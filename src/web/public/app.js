@@ -155,6 +155,7 @@ function renderThinking(cfg) {
   f.brainModel.value = cfg.brainModel ?? '';
   f.webSearch.checked = cfg.webSearch;
   f.mcpServers.value = cfg.mcpServers ?? '';
+  f.agentDirectories.value = cfg.agentDirectories ?? '';
   f.agentMaxTurns.value = cfg.agentMaxTurns ?? 8;
 
   els.anthropicKeyHint.textContent = cfg.hasAnthropicApiKey
@@ -447,6 +448,7 @@ els.thinkingForm.addEventListener('submit', (event) => {
         webSearch: f.webSearch.checked,
         anthropicApiKey: f.anthropicApiKey.value,
         mcpServers: f.mcpServers.value,
+        agentDirectories: f.agentDirectories.value,
         agentMaxTurns: Number(f.agentMaxTurns.value) || 8,
       }),
     'Saved.',

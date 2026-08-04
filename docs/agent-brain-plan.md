@@ -98,6 +98,36 @@ the persistent session makes follow-ups *faster* than the stateless chat
 brain, because nothing is re-sent. A tool-using answer through a stdio MCP
 server measured 9.0s end to end, which is what the filler exists for.
 
+## The trap: who decides what a filesystem server can see
+
+Worth writing down because it cost an hour and would cost it again.
+
+The SDK advertises its working directories to MCP servers as **roots**, and a
+root-aware server — the standard filesystem one included — honours those over
+its own command-line arguments. So the folder in a server's `args`, which is
+the only place a user would think to put it, is silently ignored.
+
+Measured with `list_allowed_directories`, args pointing at one folder and the
+SDK's cwd at another:
+
+| cwd | args | what the server actually allowed |
+| --- | --- | --- |
+| `data/` | repo root | `data/` |
+| *(inherited)* | some other folder | the inherited cwd |
+| `data/` + `additionalDirectories: [X]` | X | `data/` **and** X |
+
+Hence `agentDirectories` in the panel, passed as `additionalDirectories`.
+`cwd` stays pointed at the data directory — there is no workspace here, no
+code to edit, and it has to point somewhere harmless because it leaks into
+every root-aware server.
+
+The related lever is `allow` on a server entry: without it a server is
+granted `mcp__<name>__*`, which for the filesystem server means `write_file`,
+`edit_file`, `create_directory` and `move_file` alongside the readers.
+Granting write access to something driven by imperfect speech recognition,
+in a room where anyone can talk, is not a trade worth making to ask what's
+in a folder.
+
 ## The bot's own tools
 
 Alongside the user's MCP servers, the agent is always served an in-process

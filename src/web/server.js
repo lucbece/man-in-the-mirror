@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
@@ -7,7 +8,7 @@ import { bot } from '../bot/index.js';
 import { sessionManager } from '../voice/manager.js';
 import { formatTranscript, transcribeBuffer } from '../agent/stt.js';
 import { ask, AgentBusyError } from '../agent/index.js';
-import { parseMcpServers } from '../agent/mcp.js';
+import { parseMcpServers, parseDirectories } from '../agent/mcp.js';
 
 const HOST = process.env.WEB_HOST || '127.0.0.1';
 
@@ -41,6 +42,18 @@ export function startWebServer() {
         parseMcpServers(body.mcpServers);
       } catch (err) {
         return res.status(400).json({ ok: false, error: `MCP servers: ${err.message}` });
+      }
+    }
+
+    // A folder that doesn't exist is a typo, and the agent would just report
+    // an empty world rather than anything that points at the mistake.
+    if (typeof body.agentDirectories === 'string' && body.agentDirectories.trim()) {
+      try {
+        parseDirectories(body.agentDirectories, {
+          exists: (dir) => fs.existsSync(dir) && fs.statSync(dir).isDirectory(),
+        });
+      } catch (err) {
+        return res.status(400).json({ ok: false, error: `Folders: ${err.message}` });
       }
     }
 

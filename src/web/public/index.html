@@ -343,6 +343,32 @@
               Local servers are spawned on demand; remote ones are called over
               HTTP.
             </small>
+            <small class="hint">
+              Add <code>"allow": ["tool_name", …]</code> to a server to grant
+              only those tools instead of all of them. Worth doing whenever a
+              server can modify things: the stock filesystem server ships
+              <code>write_file</code> and <code>move_file</code> next to the
+              readers, and this is a bot acting on imperfect transcription in
+              a room full of people.
+            </small>
+          </label>
+
+          <label>
+            Folders the agent may reach <span class="optional">one per line</span>
+            <textarea
+              name="agentDirectories"
+              rows="3"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="/home/you/Documents/notes"
+            ></textarea>
+            <small class="hint">
+              Full paths only. This — not the folder in a server's own
+              arguments — is what a filesystem-style MCP server actually gets
+              scoped to, because the agent runtime hands its own folders to
+              MCP servers and they take those over their arguments. Leave it
+              empty and such a server sees nothing useful.
+            </small>
           </label>
 
           <label>

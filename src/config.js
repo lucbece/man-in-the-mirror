@@ -53,6 +53,10 @@ const DEFAULTS = {
   // Desktop and Claude Code use: { "name": { "command": ..., "args": [...] } }
   // or { "name": { "type": "http", "url": ... } }.
   mcpServers: '',
+  // Folders the agent may reach, one full path per line. These are what a
+  // filesystem-style MCP server actually gets scoped to — see parseDirectories
+  // in agent/mcp.js for why the server's own arguments don't decide it.
+  agentDirectories: '',
   // How many tool-using rounds one answer may take before it's cut off. A
   // confused agent left unbounded will happily spend a minute and a dollar.
   agentMaxTurns: 8,
@@ -148,6 +152,7 @@ function clampConfig(cfg) {
   if (!['anthropic', 'openai'].includes(out.brainProvider)) out.brainProvider = 'anthropic';
   if (!['chat', 'agent'].includes(out.brainKind)) out.brainKind = 'chat';
   out.mcpServers = out.mcpServers.trim();
+  out.agentDirectories = out.agentDirectories.trim();
   out.agentMaxTurns = Math.min(25, Math.max(1, Math.round(out.agentMaxTurns)));
   if (!VOICES.includes(out.ttsVoice)) out.ttsVoice = 'onyx';
   if (!['openai', 'local'].includes(out.ttsProvider)) out.ttsProvider = 'openai';
