@@ -387,7 +387,9 @@ a:hover {
   margin-top: 0.15rem;
 }
 
-label.dim {
+/* Not `label.dim` — whole sections get dimmed too (the provider choice in
+   agent mode, the agent settings in chat mode), and those are divs. */
+.dim {
   opacity: 0.45;
 }
 
