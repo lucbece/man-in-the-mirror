@@ -161,6 +161,7 @@ class LocalWhisper {
   constructor({ model }) {
     this.model = MODELS[model] ? model : 'ggml-base';
     this.ready = null;
+    this.logged = 0;
   }
 
   get label() {
@@ -169,16 +170,23 @@ class LocalWhisper {
 
   /** Fetch binary and model on first use, once per process. */
   async prepare() {
-    this.ready ??= (async () => ({
-      binary: await ensureWhisper(),
-      model: await ensureModel(this.model),
-    }))();
+    this.ready ??= (async () => {
+      const started = Date.now();
+      console.log(`[whisper] preparing ${this.model}…`);
+      const binary = await ensureWhisper();
+      const model = await ensureModel(this.model);
+      console.log(
+        `[whisper] ready in ${((Date.now() - started) / 1000).toFixed(1)}s — ${this.model}`,
+      );
+      return { binary, model };
+    })();
     return this.ready;
   }
 
   async transcribe(wav) {
     let binary;
     let model;
+    const started = Date.now();
     try {
       ({ binary, model } = await this.prepare());
     } catch (err) {
@@ -190,7 +198,16 @@ class LocalWhisper {
     }
     // No language pin: this channel code-switches mid-sentence, and forcing
     // one makes the other markedly worse.
-    return transcribeWav(wav, { binary, model, language: 'auto' });
+    const text = await transcribeWav(wav, { binary, model, language: 'auto' });
+    // First few are worth seeing: this is where "is local actually faster?"
+    // gets answered on whatever machine it's running on.
+    if (this.logged < 3) {
+      this.logged += 1;
+      console.log(
+        `[whisper] transcribed in ${((Date.now() - started) / 1000).toFixed(2)}s (local)`,
+      );
+    }
+    return text;
   }
 }
 

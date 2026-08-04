@@ -17,8 +17,41 @@
  * string match on text that already exists.
  */
 
-/** How close a heard name has to be. Speech recognition is never exact. */
-const SIMILARITY_THRESHOLD = 0.82;
+/**
+ * How close a heard name has to be.
+ *
+ * Loose, because speech recognition mangles names constantly — real examples
+ * from live sessions: "mirra", "mirrow", "el mirror", "espejito". Being too
+ * strict means being ignored, which is the worse failure: you repeat yourself
+ * and nothing happens.
+ *
+ * Loose alone would be unusable, though. "espero" scores 0.83 against
+ * "espejo" and "miro" scores 0.67 against "mirror" — both are said constantly.
+ * That's what COMMON_WORDS below is for: a low bar, with the words that would
+ * abuse it named explicitly.
+ */
+const SIMILARITY_THRESHOLD = 0.65;
+
+/**
+ * Words that are never the bot's name, no matter how close they score.
+ *
+ * Without this the threshold has to sit high enough to exclude "espero", which
+ * also excludes "espejito" — and then half the times you call it, nothing
+ * happens. Cheaper to name the collisions.
+ */
+const COMMON_WORDS = new Set([
+  // Spanish — mostly forms of mirar/esperar, which collide hard with both names
+  'mira', 'miro', 'mire', 'miren', 'mirad', 'miras', 'miralo', 'mirale',
+  'espero', 'espera', 'esperen', 'esperá', 'esperar', 'esperando',
+  'mejor', 'viejo', 'dejo', 'dejó', 'pero', 'lejos', 'consejo', 'espejismo',
+  'herrero', 'quiero', 'primero', 'tercero', 'sendero', 'dinero',
+  // English
+  'mirror', // only as a plain noun — handled below, kept out of this set
+  'error', 'mere', 'more', 'meter', 'motor', 'minor', 'major',
+]);
+// "mirror" is a legitimate name; the entry above exists only to document that
+// the collision was considered. Remove it so the name still matches itself.
+COMMON_WORDS.delete('mirror');
 
 /** Very short names match too loosely, so they need to be exact. */
 const FUZZY_MIN_LENGTH = 5;
@@ -91,6 +124,9 @@ export function detectAddress(text, names) {
     for (let i = 0; i + span <= words.length; i++) {
       const window = words.slice(i, i + span).join(' ');
 
+      // An ordinary word is never a name, however close it scores.
+      if (window !== needle && COMMON_WORDS.has(window)) continue;
+
       // Short names ("mj", "eco") collide with ordinary words under fuzzy
       // matching, so they have to land exactly.
       const matched =
@@ -129,4 +165,4 @@ function closestOf(words, names) {
   return best;
 }
 
-export { SIMILARITY_THRESHOLD, FUZZY_MIN_LENGTH };
+export { SIMILARITY_THRESHOLD, FUZZY_MIN_LENGTH, COMMON_WORDS };

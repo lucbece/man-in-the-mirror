@@ -74,3 +74,45 @@ describe('detectAddress', () => {
     assert.equal(detectAddress('mirror hola', 'mirror,,').matched, true);
   });
 });
+
+describe('loose matching without false positives', () => {
+  const NAMES = 'mirror, espejo';
+
+  test('lets through what speech recognition actually produces', () => {
+    // All observed in live sessions, or one edit away from something that was.
+    for (const heard of [
+      'mirra qué opinás',
+      'mirrow what now',
+      'espejito decime algo',
+      'spejo estás ahí',
+      'el mirror escuchás',
+    ]) {
+      assert.equal(detectAddress(heard, NAMES).matched, true, `missed: ${heard}`);
+    }
+  });
+
+  test('common words never count, however close they score', () => {
+    // "espero" is 0.83 against "espejo" and "miro" is 0.67 against "mirror" —
+    // both above the threshold, and both said constantly. Excluding them by
+    // name is what lets the threshold be loose enough to be useful.
+    for (const heard of [
+      'espero que sí',
+      'esperá un toque',
+      'te espero afuera',
+      'mira quién volvió',
+      'yo miro la tele',
+      'mejor no',
+      'ya te dejo',
+      'el viejo ese',
+      'quiero eso',
+    ]) {
+      assert.equal(detectAddress(heard, NAMES).matched, false, `false positive: ${heard}`);
+    }
+  });
+
+  test('a name that is itself a common word still matches exactly', () => {
+    // Someone could reasonably name it "espera"; the exclusion must not stop
+    // the configured name from matching itself.
+    assert.equal(detectAddress('espera decime algo', 'espera').matched, true);
+  });
+});

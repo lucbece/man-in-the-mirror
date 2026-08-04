@@ -12,6 +12,8 @@ class SessionManager extends EventEmitter {
     this.sessions = new Map();
 
     config.on('change', (values, previous) => {
+      describeChanges(values, previous);
+
       const voiceChanged =
         values.ttsProvider !== previous.ttsProvider ||
         values.ttsVoice !== previous.ttsVoice ||
@@ -95,6 +97,35 @@ class SessionManager extends EventEmitter {
 
   status() {
     return this.list().map((s) => s.status());
+  }
+}
+
+/**
+ * Say out loud when a provider changes.
+ *
+ * Switching these from the panel used to be silent, so there was no way to tell
+ * from the console whether a setting had taken, whether a model was loading, or
+ * whether it had quietly fallen back.
+ */
+function describeChanges(values, previous) {
+  if (values.sttProvider !== previous.sttProvider || values.sttLocalModel !== previous.sttLocalModel) {
+    console.log(
+      `[config] hearing → ${values.sttProvider === 'local' ? `whisper.cpp ${values.sttLocalModel} (this machine)` : 'OpenAI whisper-1 (API)'}`,
+    );
+  }
+  if (values.ttsProvider !== previous.ttsProvider || values.ttsVoice !== previous.ttsVoice || values.ttsLocalVoice !== previous.ttsLocalVoice) {
+    console.log(
+      `[config] speaking → ${values.ttsProvider === 'local' ? `Piper ${values.ttsLocalVoice} (this machine)` : `OpenAI tts-1 ${values.ttsVoice} (API)`}`,
+    );
+  }
+  if (values.brainProvider !== previous.brainProvider || values.brainModel !== previous.brainModel || values.webSearch !== previous.webSearch) {
+    const model = values.brainModel || (values.brainProvider === 'openai' ? 'gpt-4.1' : 'claude-sonnet-5');
+    console.log(
+      `[config] thinking → ${values.brainProvider} ${model}${values.webSearch ? ' + web search' : ''}`,
+    );
+  }
+  if (values.agentNames !== previous.agentNames) {
+    console.log(`[config] answers to → ${values.agentNames}`);
   }
 }
 

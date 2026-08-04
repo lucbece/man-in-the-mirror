@@ -106,6 +106,7 @@ export async function ask(session, { question, askedBy }) {
           ? ` · searched at ${(timings.searchedAtMs / 1000).toFixed(1)}s, said "${timings.filler}"`
           : ''),
     );
+    console.log(`[agent]   via ${brain.label} → ${tts.label}`);
 
     return {
       spoken,

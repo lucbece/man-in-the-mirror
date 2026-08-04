@@ -99,10 +99,16 @@ class LocalTts {
 
   /** Fetch binary and model on first use, once per process. */
   async prepare() {
-    this.ready ??= (async () => ({
-      binary: await ensurePiper(),
-      model: await ensureVoice(this.voice),
-    }))();
+    this.ready ??= (async () => {
+      const started = Date.now();
+      console.log(`[piper] preparing ${this.voice}…`);
+      const binary = await ensurePiper();
+      const model = await ensureVoice(this.voice);
+      console.log(
+        `[piper] ready in ${((Date.now() - started) / 1000).toFixed(1)}s — ${this.voice}`,
+      );
+      return { binary, model };
+    })();
     return this.ready;
   }
 
