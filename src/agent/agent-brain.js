@@ -312,7 +312,7 @@ function currentSignature() {
     config.get('agentDirectories'),
     String(config.get('webSearch')),
     config.get('anthropicApiKey').slice(0, 8),
-  ].join(' ');
+  ].join(' ');
 }
 
 /**
