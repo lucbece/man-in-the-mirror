@@ -12,6 +12,20 @@ echo "  Man in the Mirror"
 echo "  -----------------"
 echo
 
+# The Windows counterpart hits this constantly — Explorer runs scripts from
+# inside a .zip without extracting — and being unpacked somewhere unexpected
+# is possible here too. Fail with a sentence rather than with npm's.
+if [ ! -f package.json ] || [ ! -f src/index.js ]; then
+  echo "  This isn't the project folder, so there's nothing here to start."
+  echo
+  echo "  Running from: $(pwd)"
+  echo
+  echo "  Extract the archive properly and run this from inside the folder"
+  echo "  it creates."
+  echo
+  exit 1
+fi
+
 if ! command -v node >/dev/null 2>&1; then
   echo "  Node.js is not installed, or not on PATH."
   echo

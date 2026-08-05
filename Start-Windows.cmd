@@ -23,6 +23,34 @@ echo   Man in the Mirror
 echo   -----------------
 echo.
 
+rem --- 0. Are we actually in the project folder? ------------------------------
+rem
+rem Explorer lets you double-click a file inside a .zip without extracting it.
+rem It copies just that file to a temp folder, flattens the names, and runs it
+rem there — so the script starts in a directory with none of the project in it,
+rem and the first thing to fail is npm with a module-not-found about a path
+rem nobody recognises. Checking here turns that into a sentence you can act on.
+
+if not exist "package.json" goto :notExtracted
+if not exist "src\index.js" goto :notExtracted
+goto :extracted
+
+:notExtracted
+echo   This isn't the project folder, so there's nothing here to start.
+echo.
+echo   Running from: %CD%
+echo.
+echo   If you double-clicked this from inside the .zip, that's the reason:
+echo   Windows ran a copy of it in a temporary folder, on its own.
+echo.
+echo   Right-click the .zip, choose "Extract All", open the folder it makes,
+echo   and double-click Start-Windows.cmd in there.
+echo.
+pause
+exit /b 1
+
+:extracted
+
 rem --- 1. Find Node: on PATH, or the private copy, or fetch one ---------------
 
 set "NODE_EXE="
