@@ -53,22 +53,29 @@ exit /b 1
 
 rem --- 1. Find Node: on PATH, or the private copy, or fetch one ---------------
 
+rem NPM_CLI is npm's own entry script. Running that through node directly
+rem avoids npm.cmd, which locates npm-cli.js relative to itself with %~dp0 —
+rem and a reported failure looked for it in the project folder rather than in
+rem Node's, which is a resolution this script has no way to influence. Calling
+rem the script by its full path can't go wrong that way.
 set "NODE_EXE="
-set "NPM_CMD="
+set "NPM_CLI="
 
 where node >nul 2>nul
 if not errorlevel 1 (
   for /f "delims=" %%v in ('node --version 2^>nul') do set "FOUND=%%v"
+  for /f "delims=" %%p in ('where node 2^>nul') do set "NODE_WHERE=%%p"
   echo   [1/3] Using the Node already installed ^(!FOUND!^)
   set "NODE_EXE=node"
-  set "NPM_CMD=npm"
+  for %%d in ("!NODE_WHERE!") do set "NODE_DIR=%%~dpd"
+  if exist "!NODE_DIR!node_modules\npm\bin\npm-cli.js" set "NPM_CLI=!NODE_DIR!node_modules\npm\bin\npm-cli.js"
   goto :haveNode
 )
 
 if exist "%RUNTIME%\node\node.exe" (
   echo   [1/3] Using the private copy of Node in runtime\node
   set "NODE_EXE=%RUNTIME%\node\node.exe"
-  set "NPM_CMD=%RUNTIME%\node\npm.cmd"
+  set "NPM_CLI=%RUNTIME%\node\node_modules\npm\bin\npm-cli.js"
   goto :haveNode
 )
 
@@ -115,25 +122,42 @@ if not exist "%RUNTIME%\node\node.exe" (
 )
 
 set "NODE_EXE=%RUNTIME%\node\node.exe"
-set "NPM_CMD=%RUNTIME%\node\npm.cmd"
+set "NPM_CLI=%RUNTIME%\node\node_modules\npm\bin\npm-cli.js"
 echo   [1/3] Node ready
 
 :haveNode
 
 rem --- 2. Dependencies -------------------------------------------------------
 
-if not exist "node_modules\" (
-  echo   [2/3] Installing dependencies. First run only, takes a minute...
-  call "%NPM_CMD%" install --no-audit --no-fund
-  if errorlevel 1 (
-    echo.
-    echo   npm install failed. The message above says why.
-    pause
-    exit /b 1
-  )
+if exist "node_modules\" goto :haveDeps
+
+echo   [2/3] Installing dependencies. First run only, takes a minute...
+if defined NPM_CLI (
+  "!NODE_EXE!" "!NPM_CLI!" install --no-audit --no-fund
 ) else (
-  echo   [2/3] Dependencies already installed
+  rem No npm-cli.js beside node, so fall back to whatever npm is on PATH.
+  rem Unquoted deliberately: quoting a bare command name makes cmd look for a
+  rem file of that name in the current directory before searching PATH.
+  call npm install --no-audit --no-fund
 )
+if errorlevel 1 (
+  echo.
+  echo   Installing dependencies failed. The message above says why.
+  echo.
+  echo   If you report this, these are the paths it was using:
+  echo     node:    !NODE_EXE!
+  echo     npm-cli: !NPM_CLI!
+  echo     folder:  %CD%
+  echo.
+  pause
+  exit /b 1
+)
+goto :depsDone
+
+:haveDeps
+echo   [2/3] Dependencies already installed
+
+:depsDone
 
 rem --- 3. Run ----------------------------------------------------------------
 
