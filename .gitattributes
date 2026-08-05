@@ -1,0 +1,7 @@
+# Batch files need CRLF: cmd.exe mis-parses parenthesised blocks in an
+# LF-only file, and this one uses them for the error paths.
+*.cmd text eol=crlf
+
+# Everything else keeps LF, including the shell script that has to run on
+# machines where CRLF would break the shebang.
+*.sh text eol=lf
