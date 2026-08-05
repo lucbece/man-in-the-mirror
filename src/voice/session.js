@@ -322,12 +322,6 @@ export class VoiceSession extends EventEmitter {
     this.emit('update');
   }
 
-  /** Apply a live volume change to whatever is currently playing. */
-  applyVolume(volume) {
-    const resource = this.player.state.resource;
-    resource?.volume?.setVolume(volume);
-  }
-
   destroy() {
     this.cancelWake();
     try {

@@ -34,10 +34,20 @@ class SessionManager extends EventEmitter {
         values.openaiApiKey !== previous.openaiApiKey;
 
       for (const session of this.sessions.values()) {
-        // Volume is worth applying mid-sentence.
-        session.applyVolume(values.volume);
         session.receiver?.setWindow(values.bufferSeconds);
         if (hearingChanged) session.eager?.reset();
+      }
+
+      // Listening is a panel switch now, so it has to reach a session already
+      // in a channel — otherwise it would set the value for the *next* join
+      // and appear to do nothing, which is the kind of control that teaches
+      // people not to trust the panel.
+      if (values.agentEnabled !== previous.agentEnabled) {
+        for (const session of this.sessions.values()) {
+          session
+            .setAgentEnabled(values.agentEnabled)
+            .catch((err) => console.warn(`[voice] could not change listening: ${err.message}`));
+        }
       }
     });
 

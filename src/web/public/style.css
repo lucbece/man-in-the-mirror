@@ -116,7 +116,10 @@ main {
 
 form {
   display: grid;
-  gap: 0.9rem;
+  /* Each field carries a paragraph of explanation under it, so they need more
+     separation than a bare form would to stop one label reading as the tail of
+     the note above it. */
+  gap: 1.4rem;
 }
 
 label {
@@ -426,8 +429,10 @@ a:hover {
   border-color: var(--accent);
 }
 
-.card.setup #setupAdvice {
-  margin-bottom: 1.1rem;
+/* The line under each section heading explains the section; without this it
+   sits flush against the first field and reads as its label. */
+.card > h2 + .hint {
+  margin-bottom: 1.2rem;
 }
 
 .card.setup h2::after {
@@ -442,4 +447,95 @@ a:hover {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   vertical-align: middle;
+}
+
+
+/* --- section navigation --------------------------------------------------- */
+
+.tabs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 0.5rem;
+}
+
+.tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.85rem 0.5rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.tab svg {
+  width: 26px;
+  height: 26px;
+  /* Line art, so the icon takes the button's colour and the selected state
+     needs no second asset. */
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tab span {
+  font-size: 0.74rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.tab:hover {
+  color: var(--text);
+  border-color: #3a4055;
+}
+
+.tab[aria-selected="true"] {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* --- what it's set up to do ----------------------------------------------- */
+
+.pipeline {
+  max-width: 960px;
+  margin: 0 auto 1rem;
+  padding: 0 clamp(1rem, 4vw, 3rem);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--text);
+}
+
+.pipeline.muted {
+  opacity: 0.5;
+}
+
+.pipeline .stage em {
+  font-style: normal;
+  color: var(--muted);
+  margin-right: 0.25rem;
+}
+
+.pipeline .arrow {
+  color: var(--accent);
+}
+
+/* A heading inside a section, for the second group of settings in it. */
+.panel h3 {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  margin: 1.6rem 0 0.8rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--border);
 }

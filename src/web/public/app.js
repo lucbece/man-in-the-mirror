@@ -2,32 +2,42 @@ const $ = (sel) => document.querySelector(sel);
 
 const els = {
   botStatus: $('#botStatus'),
+  pipeline: $('#pipeline'),
+  tabs: $('#tabs'),
+
   setupCard: $('#setupCard'),
   setupForm: $('#setupForm'),
   setupAdvice: $('#setupAdvice'),
+
   connectionForm: $('#connectionForm'),
-  listeningForm: $('#listeningForm'),
-  transcriptionForm: $('#transcriptionForm'),
+  discordAdvice: $('#discordAdvice'),
+  guildSelect: $('#guildSelect'),
+  channelSelect: $('#channelSelect'),
+  joinBtn: $('#joinBtn'),
+  sessions: $('#sessions'),
+
+  keysForm: $('#keysForm'),
+  tokenHint: $('#tokenHint'),
+  keyHint: $('#keyHint'),
+  anthropicKeyHint: $('#anthropicKeyHint'),
+
+  hearingForm: $('#hearingForm'),
+  sttAdvice: $('#sttAdvice'),
+  sttModelSelect: $('#sttModelSelect'),
+  sttModelRow: $('#sttModelRow'),
+  bufferOut: $('#bufferOut'),
+
   thinkingForm: $('#thinkingForm'),
   brainAdvice: $('#brainAdvice'),
   chatProviderRow: $('#chatProviderRow'),
   agentRow: $('#agentRow'),
-  anthropicKeyHint: $('#anthropicKeyHint'),
+
+  speakingForm: $('#speakingForm'),
   voiceSelect: $('#voiceSelect'),
   localVoiceSelect: $('#localVoiceSelect'),
-  sttModelSelect: $('#sttModelSelect'),
-  sttModelRow: $('#sttModelRow'),
   openaiVoiceRow: $('#openaiVoiceRow'),
   localVoiceRow: $('#localVoiceRow'),
-  speakingForm: $('#speakingForm'),
-  tokenHint: $('#tokenHint'),
-  keyHint: $('#keyHint'),
-  sttAdvice: $('#sttAdvice'),
-  bufferOut: $('#bufferOut'),
-  sessions: $('#sessions'),
-  guildSelect: $('#guildSelect'),
-  channelSelect: $('#channelSelect'),
-  joinBtn: $('#joinBtn'),
+
   toast: $('#toast'),
 };
 
@@ -73,6 +83,41 @@ async function act(fn, okMessage) {
   }
 }
 
+// --- tabs -------------------------------------------------------------------
+
+const TAB_KEY = 'mitm.tab';
+
+function showTab(name) {
+  for (const tab of els.tabs.querySelectorAll('.tab')) {
+    tab.setAttribute('aria-selected', String(tab.dataset.tab === name));
+  }
+  for (const panel of document.querySelectorAll('.panel')) {
+    panel.hidden = panel.dataset.panel !== name;
+  }
+  try {
+    localStorage.setItem(TAB_KEY, name);
+  } catch {
+    // Private browsing, or storage disabled. The tab just won't be remembered.
+  }
+}
+
+els.tabs.addEventListener('click', (event) => {
+  const tab = event.target.closest('.tab');
+  if (tab) showTab(tab.dataset.tab);
+});
+
+// Arrow keys move between tabs, which is what a tab strip is expected to do.
+els.tabs.addEventListener('keydown', (event) => {
+  const step = { ArrowRight: 1, ArrowLeft: -1 }[event.key];
+  if (!step) return;
+  const tabs = [...els.tabs.querySelectorAll('.tab')];
+  const at = tabs.findIndex((t) => t.getAttribute('aria-selected') === 'true');
+  const next = tabs[(at + step + tabs.length) % tabs.length];
+  next.focus();
+  showTab(next.dataset.tab);
+  event.preventDefault();
+});
+
 // --- rendering --------------------------------------------------------------
 
 const STATE_LABELS = {
@@ -85,10 +130,11 @@ const STATE_LABELS = {
 function render(next) {
   state = next;
   renderBotStatus(next.bot);
+  renderPipeline(next.config);
   if (!isEditing(els.setupForm)) renderSetup(next.config);
-  if (!isEditing(els.connectionForm)) renderConnection(next.config);
-  if (!isEditing(els.listeningForm)) renderListening(next.config);
-  if (!isEditing(els.transcriptionForm)) renderTranscription(next.config);
+  if (!isEditing(els.connectionForm)) renderConnection(next.config, next.bot);
+  if (!isEditing(els.keysForm)) renderKeys(next.config);
+  if (!isEditing(els.hearingForm)) renderHearing(next.config);
   if (!isEditing(els.thinkingForm)) renderThinking(next.config);
   if (!isEditing(els.speakingForm)) renderSpeaking(next.config);
   renderSessions(next.sessions);
@@ -106,11 +152,51 @@ function renderBotStatus(bot) {
 }
 
 /**
+ * One line summarising what it's set up to do, on every tab.
+ *
+ * The old single-column panel answered "what is this actually using?" only by
+ * scrolling through all of it, and the tabbed one would have hidden the answer
+ * behind three clicks. This keeps it in front of you.
+ */
+function renderPipeline(cfg) {
+  const hearing = cfg.sttProvider === 'local' ? `whisper ${cfg.sttLocalModel}` : 'OpenAI whisper';
+  const thinking =
+    cfg.brainKind === 'agent'
+      ? `agent · ${cfg.brainModel || 'claude-sonnet-5'}`
+      : `${cfg.brainProvider} · ${cfg.brainModel || (cfg.brainProvider === 'openai' ? 'gpt-4.1' : 'claude-sonnet-5')}`;
+  const speaking = cfg.ttsProvider === 'local' ? `Piper ${cfg.ttsLocalVoice}` : `OpenAI ${cfg.ttsVoice}`;
+
+  els.pipeline.replaceChildren(
+    stage('hears', hearing),
+    arrow(),
+    stage('thinks', thinking + (cfg.webSearch ? ' + web' : '')),
+    arrow(),
+    stage('speaks', speaking),
+  );
+  els.pipeline.classList.toggle('muted', !cfg.agentEnabled);
+}
+
+function stage(what, detail) {
+  const el = document.createElement('span');
+  el.className = 'stage';
+  const label = document.createElement('em');
+  label.textContent = what;
+  el.append(label, document.createTextNode(` ${detail}`));
+  return el;
+}
+
+function arrow() {
+  const el = document.createElement('span');
+  el.className = 'arrow';
+  el.textContent = '→';
+  return el;
+}
+
+/**
  * The first-run card: everything needed to get going, in one place.
  *
- * It disappears once nothing is missing. Keeping it around after that would
- * mean two places to change the same key, and the one that isn't the card is
- * where it belongs — next to the setting it powers.
+ * It disappears once nothing is missing. Keeping it after that would mean two
+ * places to change the same key, and the other one is where it belongs.
  */
 function renderSetup(cfg) {
   const missing = [];
@@ -124,7 +210,7 @@ function renderSetup(cfg) {
   els.setupAdvice.textContent =
     `Three keys and it's ready. Still missing ${listOf(missing)}. ` +
     'Everything else already has a working default, and each of these can be ' +
-    'changed later in the card it belongs to.';
+    'changed later under Keys.';
 
   const f = els.setupForm.elements;
   if (document.activeElement !== f.guildId) f.guildId.value = cfg.guildId ?? '';
@@ -136,30 +222,41 @@ function listOf(items) {
   return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
 }
 
-function renderConnection(cfg) {
+function renderConnection(cfg, bot) {
+  const f = els.connectionForm.elements;
+  if (document.activeElement !== f.guildId) f.guildId.value = cfg.guildId ?? '';
+
+  els.discordAdvice.textContent = !cfg.hasToken
+    ? 'No bot token yet — add one under Keys and the bot can connect.'
+    : cfg.guildId
+      ? 'Slash commands register on your server as soon as the bot starts.'
+      : 'No server ID set, so slash commands register globally and can take an hour to appear.';
+  els.discordAdvice.classList.toggle('warn', !cfg.hasToken);
+}
+
+function renderKeys(cfg) {
   els.tokenHint.textContent = cfg.hasToken
-    ? `A token is stored (${cfg.tokenPreview}). Leave blank to keep it.`
-    : 'No token stored yet.';
-  const guildInput = els.connectionForm.elements.guildId;
-  if (document.activeElement !== guildInput) guildInput.value = cfg.guildId ?? '';
-}
-
-function renderListening(cfg) {
-  const f = els.listeningForm.elements;
-  f.bufferSeconds.value = cfg.bufferSeconds;
-  f.agentNames.value = cfg.agentNames ?? '';
-  f.eagerTranscription.checked = cfg.eagerTranscription;
-  f.wakeEnabled.checked = cfg.wakeEnabled;
-  els.bufferOut.textContent = describeSeconds(cfg.bufferSeconds);
-}
-
-function renderTranscription(cfg) {
-  const f = els.transcriptionForm.elements;
-  for (const radio of f.sttProvider) radio.checked = radio.value === cfg.sttProvider;
-
+    ? `Stored (${cfg.tokenPreview}). Leave blank to keep it.`
+    : 'Not set. The bot cannot connect without this.';
   els.keyHint.textContent = cfg.hasOpenaiApiKey
-    ? `A key is stored (${cfg.openaiApiKeyPreview}). Leave blank to keep it.`
-    : 'No key stored yet.';
+    ? `Stored (${cfg.openaiApiKeyPreview}). Leave blank to keep it.`
+    : 'Not set. Needed unless hearing and speaking both run on this machine.';
+  els.anthropicKeyHint.textContent = cfg.hasAnthropicApiKey
+    ? `Stored (${cfg.anthropicApiKeyPreview}). Leave blank to keep it.`
+    : 'Not set. Needed for the agent, and for Claude in chat mode.';
+
+  for (const [hint, has] of [
+    [els.tokenHint, cfg.hasToken],
+    [els.keyHint, cfg.hasOpenaiApiKey],
+    [els.anthropicKeyHint, cfg.hasAnthropicApiKey],
+  ]) {
+    hint.classList.toggle('warn', !has);
+  }
+}
+
+function renderHearing(cfg) {
+  const f = els.hearingForm.elements;
+  for (const radio of f.sttProvider) radio.checked = radio.value === cfg.sttProvider;
 
   const models = cfg.sttModels ?? [];
   if (els.sttModelSelect.options.length !== models.length) {
@@ -167,18 +264,25 @@ function renderTranscription(cfg) {
   }
   els.sttModelSelect.value = cfg.sttLocalModel;
 
-  // The key only matters for the cloud provider, the model only for the local one.
-  const usingOpenAi = cfg.sttProvider === 'openai';
-  f.openaiApiKey.closest('label').classList.toggle('dim', !usingOpenAi);
-  els.sttModelRow.classList.toggle('dim', usingOpenAi);
+  f.agentEnabled.checked = cfg.agentEnabled;
+  f.bufferSeconds.value = cfg.bufferSeconds;
+  f.agentNames.value = cfg.agentNames ?? '';
+  f.eagerTranscription.checked = cfg.eagerTranscription;
+  f.wakeEnabled.checked = cfg.wakeEnabled;
+  els.bufferOut.textContent = describeSeconds(cfg.bufferSeconds);
 
-  if (usingOpenAi && !cfg.hasOpenaiApiKey) {
+  // The local model only matters for the local provider.
+  els.sttModelRow.classList.toggle('dim', cfg.sttProvider === 'openai');
+
+  if (cfg.sttProvider === 'openai' && !cfg.hasOpenaiApiKey) {
     els.sttAdvice.textContent =
-      'Sin key la transcripción va a fallar. Pegá una de OpenAI abajo, o pasá a transcribir en esta máquina.';
+      'No OpenAI key, so transcription will fail. Add one under Keys, or switch to this machine.';
     els.sttAdvice.classList.add('warn');
   } else {
     els.sttAdvice.textContent =
-      'Es una decisión de hardware, no de calidad: es el mismo modelo Whisper en los dos lados. Con una GPU, local es más rápido y gratis. Sin GPU es más lento que la API — medido en una laptop: 2.4s contra ~1s.';
+      'A hardware question, not a quality one: it is the same Whisper model on both sides. ' +
+      'With a discrete GPU, local is faster and free. Without one it is slower than the ' +
+      'network round trip it replaces — measured on a laptop, 2.4s against about 1s.';
     els.sttAdvice.classList.remove('warn');
   }
 }
@@ -193,31 +297,27 @@ function renderThinking(cfg) {
   f.agentDirectories.value = cfg.agentDirectories ?? '';
   f.agentMaxTurns.value = cfg.agentMaxTurns ?? 8;
 
-  els.anthropicKeyHint.textContent = cfg.hasAnthropicApiKey
-    ? `A key is stored (${cfg.anthropicApiKeyPreview}). Leave blank to keep it.`
-    : 'No key stored yet.';
+  applyBrainKind(cfg.brainKind === 'agent');
 
-  // The agent *is* a Claude session, so the provider choice belongs to chat
-  // mode and the Anthropic key is always the relevant one in agent mode.
   const agent = cfg.brainKind === 'agent';
-  els.chatProviderRow.classList.toggle('dim', agent);
-  els.agentRow.classList.toggle('dim', !agent);
-
   const usingClaude = agent || cfg.brainProvider === 'anthropic';
-  f.anthropicApiKey.closest('label').classList.toggle('dim', !usingClaude);
-
   const missing = usingClaude ? !cfg.hasAnthropicApiKey : !cfg.hasOpenaiApiKey;
   els.brainAdvice.textContent = missing
-    ? `No ${usingClaude ? 'Anthropic' : 'OpenAI'} key set, so the agent can't answer yet.`
+    ? `No ${usingClaude ? 'Anthropic' : 'OpenAI'} key set, so it can't answer yet. Add one under Keys.`
     : agent
-      ? 'Agent mode: answers can use the MCP tools below.'
-      : 'Ready to answer.';
+      ? 'Agent mode: it remembers the conversation and can use the tools below.'
+      : 'Chat mode: one API call per answer, no memory between them.';
   els.brainAdvice.classList.toggle('warn', missing);
+}
+
+/** The provider choice belongs to chat mode; the tools belong to agent mode. */
+function applyBrainKind(agent) {
+  els.chatProviderRow.classList.toggle('dim', agent);
+  els.agentRow.classList.toggle('dim', !agent);
 }
 
 function renderSpeaking(cfg) {
   const f = els.speakingForm.elements;
-
   for (const radio of f.ttsProvider) radio.checked = radio.value === cfg.ttsProvider;
 
   const voices = cfg.voices ?? [];
@@ -228,19 +328,15 @@ function renderSpeaking(cfg) {
 
   const localVoices = cfg.localVoices ?? [];
   if (els.localVoiceSelect.options.length !== localVoices.length) {
-    els.localVoiceSelect.replaceChildren(
-      ...localVoices.map((v) => new Option(v.label, v.id)),
-    );
+    els.localVoiceSelect.replaceChildren(...localVoices.map((v) => new Option(v.label, v.id)));
   }
   els.localVoiceSelect.value = cfg.ttsLocalVoice;
 
-  // Dim whichever voice list isn't in play, rather than hiding it — seeing the
-  // other option exists is the point of offering both.
+  // Dim whichever list isn't in play rather than hiding it — seeing the other
+  // option exists is the point of offering both.
   const local = cfg.ttsProvider === 'local';
   els.openaiVoiceRow.classList.toggle('dim', local);
   els.localVoiceRow.classList.toggle('dim', !local);
-
-  f.webPort.value = cfg.webPort;
 }
 
 function describeSeconds(seconds) {
@@ -277,6 +373,7 @@ function renderSessions(sessions) {
         s.agentEnabled ? `${l.utterances} utterance(s), ${l.speechSeconds}s of speech` : null,
         s.speaking ? 'speaking now' : null,
         s.agentEnabled && s.wakeEnabled ? `answers to "${s.agentNames}"` : null,
+        s.eager?.failures ? `${s.eager.failures} transcription failure(s)` : null,
         s.eager?.error ? `transcription stopped: ${s.eager.error}` : null,
       ]
         .filter(Boolean)
@@ -289,11 +386,7 @@ function renderSessions(sessions) {
           s.agentEnabled ? 'Stop listening' : 'Start listening',
           () =>
             act(
-              () =>
-                post('/api/voice/listen', {
-                  guildId: s.guildId,
-                  listening: !s.agentEnabled,
-                }),
+              () => post('/api/voice/listen', { guildId: s.guildId, listening: !s.agentEnabled }),
               s.agentEnabled ? 'Deafened, buffer wiped.' : 'Listening.',
             ),
           s.agentEnabled ? '' : 'primary',
@@ -304,7 +397,9 @@ function renderSessions(sessions) {
         ),
       );
       if (s.speaking) {
-        row.append(button('Shush', () => act(() => post('/api/voice/shush', { guildId: s.guildId }))));
+        row.append(
+          button('Shush', () => act(() => post('/api/voice/shush', { guildId: s.guildId }))),
+        );
       }
 
       const askRow = document.createElement('form');
@@ -345,11 +440,8 @@ async function showTranscript(guildId) {
   try {
     const result = await post('/api/voice/transcript', { guildId });
     out.textContent =
-      result.transcript ||
-      'Got audio but no words out of it — likely too quiet or too short.';
-    toast(
-      `${result.transcribed} new chunk(s) in ${(result.elapsedMs / 1000).toFixed(1)}s`,
-    );
+      result.transcript || 'Got audio but no words out of it — likely too quiet or too short.';
+    toast(`${result.transcribed} new chunk(s) in ${(result.elapsedMs / 1000).toFixed(1)}s`);
   } catch (err) {
     out.textContent = `Transcription failed: ${err.message}`;
   }
@@ -366,15 +458,16 @@ async function askAgent(guildId, question) {
     const result = await post('/api/voice/ask', { guildId, question });
     const t = result.timings;
     if (out) {
+      // `first words at` is the number that matters — it's when a listener
+      // stops wondering whether the thing is broken.
       out.textContent =
         `You: ${question}\n\n${result.spoken}` +
-        `\n\n— heard ${(t.transcribeMs / 1000).toFixed(1)}s, ` +
-        `thought ${(t.thinkMs / 1000).toFixed(1)}s, ` +
-        `voiced ${(t.speakMs / 1000).toFixed(1)}s, ` +
-        `${(t.totalMs / 1000).toFixed(1)}s total`;
+        `\n\n— first words at ${((t.firstAudioMs ?? 0) / 1000).toFixed(1)}s, ` +
+        `finished thinking at ${((t.thinkMs ?? 0) / 1000).toFixed(1)}s, ` +
+        `${((t.totalMs ?? 0) / 1000).toFixed(1)}s total`;
     }
   } catch (err) {
-    if (out) out.textContent = `Couldn't answer: ${err.message}`;
+    if (out) out.textContent = `Could not answer: ${err.message}`;
   }
 }
 
@@ -402,13 +495,20 @@ function renderGuilds(guilds) {
 
 els.guildSelect.addEventListener('change', () => renderGuilds(state?.guilds ?? []));
 
-// Show the right half of the Thinking card the moment the kind is clicked,
-// not only after a save round-trips.
+// Reflect the choice the moment it's clicked, not only after a save round-trips.
 for (const radio of els.thinkingForm.elements.brainKind) {
+  radio.addEventListener('change', () => applyBrainKind(radio.value === 'agent' && radio.checked));
+}
+for (const radio of els.hearingForm.elements.sttProvider) {
+  radio.addEventListener('change', () =>
+    els.sttModelRow.classList.toggle('dim', radio.value === 'openai' && radio.checked),
+  );
+}
+for (const radio of els.speakingForm.elements.ttsProvider) {
   radio.addEventListener('change', () => {
-    const agent = radio.value === 'agent' && radio.checked;
-    els.chatProviderRow.classList.toggle('dim', agent);
-    els.agentRow.classList.toggle('dim', !agent);
+    const local = radio.value === 'local' && radio.checked;
+    els.openaiVoiceRow.classList.toggle('dim', local);
+    els.localVoiceRow.classList.toggle('dim', !local);
   });
 }
 
@@ -423,58 +523,11 @@ els.joinBtn.addEventListener('click', () =>
   ),
 );
 
-els.connectionForm.addEventListener('submit', (event) => {
-  event.preventDefault();
-  const f = els.connectionForm.elements;
-  act(
-    () => post('/api/config', { token: f.token.value, guildId: f.guildId.value }),
-    'Saved.',
-  ).then(() => {
-    f.token.value = '';
-  });
-});
-
-els.listeningForm.addEventListener('submit', (event) => {
-  event.preventDefault();
-  const f = els.listeningForm.elements;
-  act(
-    () =>
-      post('/api/config', {
-        bufferSeconds: Number(f.bufferSeconds.value),
-        agentNames: f.agentNames.value,
-        eagerTranscription: f.eagerTranscription.checked,
-        wakeEnabled: f.wakeEnabled.checked,
-      }),
-    'Saved.',
-  );
-});
-
-els.listeningForm.elements.bufferSeconds.addEventListener('input', (event) => {
-  els.bufferOut.textContent = describeSeconds(Number(event.target.value));
-});
-
-els.transcriptionForm.addEventListener('submit', (event) => {
-  event.preventDefault();
-  const f = els.transcriptionForm.elements;
-  const provider = [...f.sttProvider].find((r) => r.checked)?.value ?? 'openai';
-  act(
-    () =>
-      post('/api/config', {
-        sttProvider: provider,
-        sttLocalModel: f.sttLocalModel.value,
-        openaiApiKey: f.openaiApiKey.value,
-      }),
-    'Saved.',
-  ).then(() => {
-    f.openaiApiKey.value = '';
-  });
-});
-
 els.setupForm.addEventListener('submit', (event) => {
   event.preventDefault();
   const f = els.setupForm.elements;
-  // Blank fields mean "not touched" for secrets, so a partial fill is fine:
-  // paste what you have, save, and the card keeps asking for the rest.
+  // Blank secrets mean "not touched", so a partial fill is fine: paste what
+  // you have, save, and the card keeps asking for the rest.
   act(
     () =>
       post('/api/config', {
@@ -489,26 +542,61 @@ els.setupForm.addEventListener('submit', (event) => {
   });
 });
 
-els.thinkingForm.addEventListener('submit', (event) => {
+els.connectionForm.addEventListener('submit', (event) => {
   event.preventDefault();
-  const f = els.thinkingForm.elements;
-  const provider = [...f.brainProvider].find((r) => r.checked)?.value ?? 'anthropic';
+  act(() => post('/api/config', { guildId: els.connectionForm.elements.guildId.value }), 'Saved.');
+});
+
+els.keysForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  const f = els.keysForm.elements;
   act(
     () =>
       post('/api/config', {
-        brainKind: [...f.brainKind].find((r) => r.checked)?.value ?? 'chat',
-        brainProvider: provider,
+        token: f.token.value,
+        openaiApiKey: f.openaiApiKey.value,
+        anthropicApiKey: f.anthropicApiKey.value,
+      }),
+    'Saved.',
+  ).then(() => {
+    for (const name of ['token', 'openaiApiKey', 'anthropicApiKey']) f[name].value = '';
+  });
+});
+
+els.hearingForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  const f = els.hearingForm.elements;
+  act(
+    () =>
+      post('/api/config', {
+        sttProvider: [...f.sttProvider].find((r) => r.checked)?.value ?? 'openai',
+        sttLocalModel: f.sttLocalModel.value,
+        agentEnabled: f.agentEnabled.checked,
+        bufferSeconds: Number(f.bufferSeconds.value),
+        agentNames: f.agentNames.value,
+        eagerTranscription: f.eagerTranscription.checked,
+        wakeEnabled: f.wakeEnabled.checked,
+      }),
+    'Saved.',
+  );
+});
+
+els.thinkingForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  const f = els.thinkingForm.elements;
+  act(
+    () =>
+      post('/api/config', {
+        brainKind: [...f.brainKind].find((r) => r.checked)?.value ?? 'agent',
+        brainProvider: [...f.brainProvider].find((r) => r.checked)?.value ?? 'anthropic',
         brainModel: f.brainModel.value,
         webSearch: f.webSearch.checked,
-        anthropicApiKey: f.anthropicApiKey.value,
         mcpServers: f.mcpServers.value,
         agentDirectories: f.agentDirectories.value,
         agentMaxTurns: Number(f.agentMaxTurns.value) || 8,
       }),
     'Saved.',
-  ).then(() => {
-    f.anthropicApiKey.value = '';
-  });
+  );
 });
 
 els.speakingForm.addEventListener('submit', (event) => {
@@ -520,7 +608,6 @@ els.speakingForm.addEventListener('submit', (event) => {
         ttsProvider: [...f.ttsProvider].find((r) => r.checked)?.value ?? 'openai',
         ttsVoice: f.ttsVoice.value,
         ttsLocalVoice: f.ttsLocalVoice.value,
-        webPort: Number(f.webPort.value),
       }),
     'Saved.',
   );
@@ -552,6 +639,12 @@ async function refresh() {
     console.error('[panel] render failed:', err);
     els.botStatus.querySelector('.label').textContent = `Panel error: ${err.message}`;
   }
+}
+
+try {
+  showTab(localStorage.getItem(TAB_KEY) || 'discord');
+} catch {
+  showTab('discord');
 }
 
 refresh();

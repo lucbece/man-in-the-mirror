@@ -79,7 +79,6 @@ const DEFAULTS = {
   ttsProvider: 'openai', // 'openai' | 'local' (Piper, runs on this machine)
   ttsVoice: 'onyx', // OpenAI voice
   ttsLocalVoice: 'es_ES-davefx-medium', // Piper voice
-  volume: 0.6,
 
   // Web UI
   webPort: 3000,
@@ -89,7 +88,6 @@ const DEFAULTS = {
 const ENV_KEYS = {
   token: 'DISCORD_TOKEN',
   guildId: 'DISCORD_GUILD_ID',
-  volume: 'VOLUME',
   webPort: 'WEB_PORT',
   openaiApiKey: 'OPENAI_API_KEY',
   anthropicApiKey: 'ANTHROPIC_API_KEY',
@@ -101,19 +99,19 @@ const VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
 /** whisper.cpp models, described for the panel. */
 const STT_MODELS = [
-  { id: 'ggml-base', label: 'base — 142MB, rápido en CPU' },
-  { id: 'ggml-small', label: 'small — 466MB, mejor sin GPU' },
-  { id: 'ggml-large-v3-turbo', label: 'large-v3-turbo — 1.6GB, para GPU' },
+  { id: 'ggml-base', label: 'base — 142MB, quick on a CPU' },
+  { id: 'ggml-small', label: 'small — 466MB, better without a GPU' },
+  { id: 'ggml-large-v3-turbo', label: 'large-v3-turbo — 1.6GB, for a GPU' },
 ];
 
 /** Piper voices, described for the panel. Kept here to avoid a circular import. */
 const LOCAL_VOICE_INFO = [
-  { id: 'es_ES-davefx-medium', label: 'Español (España) — rápida' },
+  { id: 'es_ES-davefx-medium', label: 'Spanish (Spain) — the fastest' },
   { id: 'en_US-lessac-medium', label: 'English (US) — fast' },
-  { id: 'es_AR-daniela-high', label: 'Español (Argentina) — acento rioplatense' },
+  { id: 'es_AR-daniela-high', label: 'Spanish (Argentina) — Rioplatense accent, slower' },
 ];
 
-const NUMERIC_KEYS = new Set(['volume', 'webPort', 'bufferSeconds', 'agentMaxTurns']);
+const NUMERIC_KEYS = new Set(['webPort', 'bufferSeconds', 'agentMaxTurns']);
 const BOOLEAN_KEYS = new Set([
   'agentEnabled',
   'eagerTranscription',
@@ -147,7 +145,6 @@ function coerce(key, value) {
 function clampConfig(cfg) {
   const out = { ...cfg };
 
-  out.volume = Math.min(2, Math.max(0, out.volume));
   out.webPort = Math.min(65535, Math.max(1, Math.round(out.webPort)));
   out.token = out.token.trim();
   out.guildId = out.guildId.trim();
