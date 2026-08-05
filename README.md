@@ -32,6 +32,14 @@ Unzip anywhere and double-click **`ManInTheMirror`** (`.exe` on Windows). It
 finds Node or downloads a private copy, installs dependencies on first run,
 starts the bot, and opens the control panel. Nothing is installed system-wide.
 
+**If Windows says the file contains a virus**, use **`Start-Windows.cmd`**
+instead — same result, no compiled binary. Defender isn't being unreasonable
+about the `.exe`: it is unsigned, and it downloads Node, unpacks it and runs
+it, which is the behaviour signature of a dropper whatever the intent. The
+script can't be flagged that way and you can read it first. It won't fetch
+Node for you, so install it from [nodejs.org](https://nodejs.org) if you
+haven't. On macOS and Linux the equivalent is `./start.sh`.
+
 > Link the tag, not `/releases/latest`. This is published as a **prerelease**,
 > so "latest" resolves to v0.1.0 — which is the old Michael Jackson soundboard
 > from `main`, not this.
