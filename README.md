@@ -33,8 +33,12 @@ finds Node or downloads a private copy, installs dependencies on first run,
 starts the bot, and opens the control panel. Nothing is installed system-wide.
 
 **If Windows or Chrome calls it a virus**, download
-`ManInTheMirror-no-exe.zip` instead — 160KB, nothing executable in it at all,
-and it carries the same script launchers. Defender isn't being unreasonable
+`ManInTheMirror-no-exe.zip` instead and double-click `Start-Windows.cmd`. It
+does everything the `.exe` does — including fetching a private copy of Node
+if you don't have one — but it's readable text, so there's nothing for an
+antivirus to object to. Neither Defender nor Chrome was being unreasonable
+about the binary: it's unsigned, and it downloads an executable, unpacks it
+and runs it, which is what a dropper does too. Defender isn't being unreasonable
 about the `.exe`: it is unsigned, and it downloads Node, unpacks it and runs
 it, which is the behaviour signature of a dropper whatever the intent. The
 script can't be flagged that way and you can read it first. It won't fetch
