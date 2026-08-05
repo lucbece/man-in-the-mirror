@@ -34,11 +34,14 @@ const MODEL_BASE = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main';
 /**
  * Models, cheapest first. The turbo build of large is the one worth having on
  * a GPU: near large-v3 accuracy at a fraction of the compute.
+ *
+ * `size` is used in the download log. The descriptions shown in the panel live
+ * in STT_MODELS in config.js — a second copy here went stale and untranslated.
  */
 export const MODELS = {
-  'ggml-base': { size: '142MB', note: 'Rápido en CPU. Comete errores con acentos y ruido.' },
-  'ggml-small': { size: '466MB', note: 'Buen equilibrio si no hay GPU.' },
-  'ggml-large-v3-turbo': { size: '1.6GB', note: 'La mejor. Pensada para GPU.' },
+  'ggml-base': { size: '142MB' },
+  'ggml-small': { size: '466MB' },
+  'ggml-large-v3-turbo': { size: '1.6GB' },
 };
 
 /** True when an NVIDIA card is present and its driver responds. */
@@ -48,11 +51,6 @@ export function hasNvidiaGpu() {
       resolve(!err && Boolean(stdout.trim()));
     });
   });
-}
-
-/** Pick the model that suits the hardware, unless one was chosen explicitly. */
-export async function suggestedModel() {
-  return (await hasNvidiaGpu()) ? 'ggml-large-v3-turbo' : 'ggml-base';
 }
 
 async function platformAsset() {
@@ -95,14 +93,6 @@ export function whisperBinary() {
     }
   }
   return null;
-}
-
-export function isWhisperInstalled() {
-  return Boolean(whisperBinary());
-}
-
-export function isModelInstalled(name) {
-  return fs.existsSync(path.join(MODELS_DIR, `${name}.bin`));
 }
 
 /**
@@ -210,7 +200,7 @@ async function installWhisper() {
   const asset = await platformAsset();
   if (!asset) {
     throw new Error(
-      `No hay build de whisper.cpp para ${os.platform()}. Usá la transcripción por API.`,
+      `No whisper.cpp build is published for ${os.platform()}. Use API transcription instead.`,
     );
   }
 

@@ -98,9 +98,16 @@ class SessionManager extends EventEmitter {
     this.sessions.set(channel.guild.id, session);
 
     session.on('destroyed', () => {
-      if (this.sessions.get(channel.guild.id) === session) {
-        this.sessions.delete(channel.guild.id);
+      // Inside the identity check, not beside it. This event arrives from the
+      // voice connection's state handler, so it is late: moving the bot between
+      // channels destroys session A, builds B, pre-warms B's agent, and only
+      // then hears A's 'destroyed'. Ending the agent unconditionally there
+      // killed the session that had just been prepared for B.
+      if (this.sessions.get(channel.guild.id) !== session) {
+        this.emit('update');
+        return;
       }
+      this.sessions.delete(channel.guild.id);
       // The agent session's memory is that conversation; when the bot leaves
       // the channel, the conversation is over.
       endAgentSession(channel.guild.id);

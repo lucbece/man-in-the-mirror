@@ -37,23 +37,20 @@ const VOICE_BASE = 'https://huggingface.co/rhasspy/piper-voices/resolve/main';
  * one of the two local options but still beats the cloud — the accent doesn't
  * have to be given up for speed after all.
  */
+/* Only `path` and `sampleRate` are read here. The names shown in the panel
+   live in LOCAL_VOICE_INFO in config.js; keeping a second copy meant one of
+   them drifting, which is what happened. */
 export const VOICES = {
   'es_ES-davefx-medium': {
     path: 'es/es_ES/davefx/medium/es_ES-davefx-medium',
-    label: 'Español (España) — rápida',
-    note: 'La más rápida. Acento peninsular.',
     sampleRate: 22050,
   },
   'en_US-lessac-medium': {
     path: 'en/en_US/lessac/medium/en_US-lessac-medium',
-    label: 'English (US) — fast',
-    note: 'Fast. Use when the channel speaks English.',
     sampleRate: 22050,
   },
   'es_AR-daniela-high': {
     path: 'es/es_AR/daniela/high/es_AR-daniela-high',
-    label: 'Español (Argentina)',
-    note: 'Acento rioplatense. ~1.8s: más lenta que davefx, más rápida que la nube.',
     sampleRate: 22050,
   },
 };
@@ -83,10 +80,6 @@ export function isPiperInstalled() {
   } catch {
     return false;
   }
-}
-
-export function isVoiceInstalled(name) {
-  return fs.existsSync(path.join(VOICES_DIR, `${name}.onnx`));
 }
 
 /** Shared so concurrent callers wait on one download instead of racing it. */

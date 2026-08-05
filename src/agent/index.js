@@ -12,8 +12,43 @@ import { createTts, toAudioResource } from './tts.js';
 import { guessLanguage, takeFiller } from './filler.js';
 import { formatTranscript, transcribeBuffer } from './stt.js';
 
-/** Guard against a stuck stage wedging the session forever. */
+/**
+ * Longest a reply may spend playing before it is cut off.
+ *
+ * `ask()` releases the one-at-a-time guard for a guild only after playback
+ * finishes, so a queue that never drains — a stalled stream, a player that
+ * never reports going idle — leaves that guild answering "still working on the
+ * last one" to everything, until the process restarts. Generous enough that no
+ * real answer reaches it: the spoken length is capped at MAX_SPOKEN_CHARS,
+ * which is about twenty-five seconds of speech.
+ */
 const SPEAK_TIMEOUT_MS = 60_000;
+
+/**
+ * Wait for the reply to finish playing, but not forever.
+ *
+ * Returns rather than throwing on timeout: by then most of the answer has been
+ * spoken, so the caller's job is to report it, not to treat it as a failure.
+ */
+export async function finishSpeaking(speech, timeoutMs = SPEAK_TIMEOUT_MS) {
+  let timer;
+  const guard = new Promise((resolve) => {
+    timer = setTimeout(() => {
+      console.warn(
+        `[agent] playback did not finish within ${timeoutMs / 1000}s — cutting it off`,
+      );
+      speech.cancel();
+      resolve(true);
+    }, timeoutMs);
+    timer.unref?.();
+  });
+
+  try {
+    return (await Promise.race([speech.finished.then(() => false), guard])) === true;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /**
  * How long a silence has to last, once the bot has started talking, before it
@@ -148,7 +183,7 @@ export async function ask(session, { question, askedBy, askedById }) {
     const spoken = speech.spoken.join(' ').trim();
     if (!spoken) throw new BrainError('The model returned nothing to say.');
 
-    await speech.finished;
+    timings.cutOffPlayback = await finishSpeaking(speech);
     timings.totalMs = Date.now() - started;
 
     // Asked to disconnect: now, with the goodbye already said. Doing it inside
@@ -182,11 +217,6 @@ export async function ask(session, { question, askedBy, askedById }) {
   } finally {
     inFlight.delete(session.guildId);
   }
-}
-
-/** Whether a guild currently has a request in flight. */
-export function isBusy(guildId) {
-  return inFlight.has(guildId);
 }
 
 export { SPEAK_TIMEOUT_MS };

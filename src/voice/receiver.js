@@ -24,7 +24,19 @@ import { AudioBuffer, Utterance } from '../agent/buffer.js';
  */
 const SILENCE_MS = 500;
 
-/** Ignore anything longer than this — almost certainly a stuck stream. */
+/**
+ * Longest single utterance kept, in milliseconds.
+ *
+ * An utterance ends after {@link SILENCE_MS} of quiet, so reaching this means
+ * a minute of unbroken sound: someone reading aloud, or a microphone picking up
+ * something continuous. Both happen.
+ *
+ * Reaching it used to discard the whole utterance — not buffered, not emitted,
+ * not logged — so a minute of speech vanished with no trace, and the packets
+ * kept accumulating in memory until the stream chose to end. It is now
+ * truncated here and kept: the first minute is the part worth transcribing, and
+ * capping it is what bounds the memory.
+ */
 const MAX_UTTERANCE_MS = 60_000;
 
 export class VoiceReceiver extends EventEmitter {
@@ -93,18 +105,30 @@ export class VoiceReceiver extends EventEmitter {
       end: { behavior: EndBehaviorType.AfterSilence, duration: SILENCE_MS },
     });
 
+    let finished = false;
     const finish = () => {
+      if (finished) return;
+      finished = true;
       this.active.delete(userId);
       utterance.endedAt = Date.now();
-      if (utterance.durationMs <= MAX_UTTERANCE_MS) {
-        this.buffer.add(utterance);
-        // Whoever is listening decides what to do with it — transcribe it
-        // eagerly, watch it for a wake phrase, or nothing at all.
-        this.emit('utterance', utterance);
-      }
+      this.buffer.add(utterance);
+      // Whoever is listening decides what to do with it — transcribe it
+      // eagerly, watch it for a wake phrase, or nothing at all.
+      this.emit('utterance', utterance);
     };
 
-    stream.on('data', (packet) => utterance.push(packet));
+    stream.on('data', (packet) => {
+      if (utterance.durationMs >= MAX_UTTERANCE_MS) {
+        console.warn(
+          `[receiver:${this.guildId}] ${utterance.displayName} has been unbroken for ` +
+            `${MAX_UTTERANCE_MS / 1000}s — keeping that much and cutting here`,
+        );
+        finish();
+        stream.destroy();
+        return;
+      }
+      utterance.push(packet);
+    });
     stream.on('end', finish);
     stream.on('error', (err) => {
       console.warn(`[receiver:${this.guildId}] stream for ${userId}: ${err.message}`);
