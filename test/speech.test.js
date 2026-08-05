@@ -98,3 +98,27 @@ describe('web search citations', () => {
     assert.equal(clampForSpeech(text), text);
   });
 });
+
+describe('clampForSpeech never exceeds its limit', () => {
+  test('the ellipsis comes out of the budget, not on top of it', () => {
+    // Found by a test of ask(): the running budget subtracts what was returned,
+    // so one character over per chunk accumulated across an answer instead of
+    // staying a rounding error.
+    for (const limit of [10, 40, 59, 100, 380]) {
+      const largo = 'palabra '.repeat(80);
+      const out = clampForSpeech(largo, limit);
+      assert.ok(out.length <= limit, `limit ${limit} produced ${out.length} characters`);
+    }
+  });
+
+  test('still cuts at a sentence boundary when there is one', () => {
+    const texto = 'Primera oración corta. Y después una segunda mucho más larga que no entra.';
+    const out = clampForSpeech(texto, 40);
+    assert.ok(out.length <= 40);
+    assert.ok(out.endsWith('.'), `should end on a full stop, got: ${out}`);
+  });
+
+  test('a text within the limit is returned whole', () => {
+    assert.equal(clampForSpeech('Corto y listo.', 380), 'Corto y listo.');
+  });
+});

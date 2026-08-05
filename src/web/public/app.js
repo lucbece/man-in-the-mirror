@@ -384,6 +384,12 @@ function renderSessions(sessions) {
         s.agentEnabled && s.wakeEnabled ? `answers to "${s.agentNames}"` : null,
         s.eager?.failures ? `${s.eager.failures} transcription failure(s)` : null,
         s.eager?.error ? `transcription stopped: ${s.eager.error}` : null,
+        // The agent session is the expensive part and was only ever visible in
+        // the console, and then only once it had already ended.
+        s.agent
+          ? `agent: ${s.agent.answers} answer(s), $${s.agent.spentUsd.toFixed(2)}` +
+            (s.agent.answering ? ', answering now' : '')
+          : null,
       ]
         .filter(Boolean)
         .join(' · ');

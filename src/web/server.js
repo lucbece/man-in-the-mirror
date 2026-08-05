@@ -9,6 +9,7 @@ import { sessionManager } from '../voice/manager.js';
 import { formatTranscript, transcribeBuffer } from '../agent/stt.js';
 import { ask, AgentBusyError } from '../agent/index.js';
 import { parseMcpServers, parseDirectories } from '../agent/mcp.js';
+import { agentSessionStatus } from '../agent/agent-brain.js';
 
 const HOST = process.env.WEB_HOST || '127.0.0.1';
 
@@ -26,7 +27,9 @@ export function startWebServer() {
       config: config.publicView(),
       bot: bot.status(),
       guilds: bot.guildOverview(),
-      sessions: sessionManager.status(),
+      sessions: sessionManager
+        .status()
+        .map((session) => ({ ...session, agent: agentSessionStatus(session.guildId) })),
     });
   });
 

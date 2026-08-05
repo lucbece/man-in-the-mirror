@@ -134,15 +134,19 @@ async function searchWeb(query) {
 
 /** One live SDK session. Input is pushed; output is pumped in the background. */
 class AgentSession {
-  constructor({ signature, options, turn }) {
+  constructor({ signature, options, turn, model, toolNames }) {
     this.signature = signature;
+    this.model = model ?? null;
+    this.toolNames = toolNames ?? [];
     this.turn_ = turn ?? null;
     this.closed = false;
     this.queue = [];
     this.wakeInput = null; // resolver the input generator parks on when idle
     this.turn = null; // the in-flight answer: {resolve, reject, onToolUse, lastText}
     this.lastUsedAt = Date.now();
+    this.startedAt = Date.now();
     this.spentUsd = 0;
+    this.answers = 0;
 
     this.stream = query({ prompt: this.#input(), options });
     this.#pump();
@@ -210,6 +214,7 @@ class AgentSession {
           if (!turn) continue;
           const tail = turn.splitter.flush();
           if (tail) turn.onSentence?.(tail);
+          this.answers += 1;
           if (message.subtype === 'success') {
             turn.resolve(message.result?.trim() || turn.lastText || '');
           } else if (message.subtype === 'error_max_turns' && turn.lastText) {
@@ -518,6 +523,8 @@ function buildSession(guildId) {
 
   return new AgentSession({
     signature: currentSignature(),
+    model,
+    toolNames: serverNames,
     turn,
     options: {
       model,
@@ -581,6 +588,27 @@ export function warmAgentSession(guildId) {
     // discovering it mid-conversation, but it must not stop the bot joining.
     console.warn(`[agent-brain] could not pre-start the session: ${err.message}`);
   }
+}
+
+/**
+ * What the agent session for a guild is currently costing, or null.
+ *
+ * A session holds about a gigabyte and bills per answer, so "is one running,
+ * how long has it been, and what has it spent" is worth being able to ask
+ * without reading the console.
+ */
+export function agentSessionStatus(guildId) {
+  const session = sessions.get(guildId);
+  if (!session || session.closed) return null;
+  return {
+    model: session.model,
+    ageMs: Date.now() - session.startedAt,
+    idleMs: Date.now() - session.lastUsedAt,
+    answers: session.answers,
+    spentUsd: session.spentUsd,
+    answering: Boolean(session.turn),
+    tools: session.toolNames ?? [],
+  };
 }
 
 /** Kill a guild's session (voice session ended, config reset, …). */

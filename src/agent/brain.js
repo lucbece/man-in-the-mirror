@@ -364,7 +364,11 @@ export function clampForSpeech(text, limit = MAX_SPOKEN_CHARS) {
   const cut = clean.slice(0, limit);
   const lastStop = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '));
   if (lastStop > limit * 0.5) return cut.slice(0, lastStop + 1);
-  return `${cut.trimEnd()}…`;
+  // The ellipsis has to come out of the budget, not be added on top of it.
+  // Returning limit + 1 characters let a reply run one past the cap on every
+  // chunk, which `ask()` subtracts from a running budget — so the overshoot
+  // accumulated across an answer rather than staying a rounding error.
+  return `${clean.slice(0, Math.max(0, limit - 1)).trimEnd()}…`;
 }
 
 export { BrainError, MAX_SPOKEN_CHARS, SYSTEM_PROMPT };

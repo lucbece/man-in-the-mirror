@@ -8,6 +8,7 @@ import {
 
 import { config } from '../config.js';
 import { sessionManager } from '../voice/manager.js';
+import { agentSessionStatus } from '../agent/agent-brain.js';
 import { formatTranscript, transcribeBuffer } from '../agent/stt.js';
 import { ask, AgentBusyError } from '../agent/index.js';
 
@@ -294,6 +295,17 @@ async function cmdStatus(interaction) {
     } else {
       lines.push('**Listening:** no (deafened)');
     }
+  }
+
+  const agent = agentSessionStatus(interaction.guildId);
+  if (agent) {
+    const mins = (ms) => Math.round(ms / 60_000);
+    lines.push(
+      `**Agent session:** ${agent.model} · ${agent.answers} answer(s) · ` +
+        `$${agent.spentUsd.toFixed(2)} · up ${mins(agent.ageMs)}min, idle ${mins(agent.idleMs)}min` +
+        (agent.tools.length ? ` · MCP: ${agent.tools.join(', ')}` : '') +
+        (agent.answering ? ' · answering now' : ''),
+    );
   }
 
   lines.push(

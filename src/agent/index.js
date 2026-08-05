@@ -71,7 +71,22 @@ const inFlight = new Set();
  * Returns the timings and the text that was spoken, so callers can show the
  * user what happened rather than just "done".
  */
-export async function ask(session, { question, askedBy, askedById }) {
+export async function ask(session, { question, askedBy, askedById }, deps = {}) {
+  // The collaborators are injectable, defaulting to the real ones, purely so
+  // this function can be tested. It is where the brain, the synthesiser, the
+  // filler clips and the speech queue meet — and it had no coverage at all,
+  // which is where two of three defects found by reading the code were living.
+  // The alternative was Node's module mocking, which is experimental and would
+  // put a warning on every test run.
+  const {
+    createBrain: makeBrain = createBrain,
+    createTts: makeTts = createTts,
+    takeFiller: getFiller = takeFiller,
+    toAudioResource: toResource = toAudioResource,
+    transcribeBuffer: transcribe = transcribeBuffer,
+    formatTranscript: format = formatTranscript,
+  } = deps;
+
   if (inFlight.has(session.guildId)) {
     throw new AgentBusyError('Still working on the last one.');
   }
@@ -87,9 +102,9 @@ export async function ask(session, { question, askedBy, askedById }) {
     let transcript = '';
     let utterances = [];
     if (session.agentEnabled) {
-      await transcribeBuffer(session.receiver.buffer);
+      await transcribe(session.receiver.buffer);
       utterances = session.receiver.buffer.recent();
-      transcript = formatTranscript(utterances);
+      transcript = format(utterances);
     }
     timings.transcribeMs = Date.now() - t0;
 
@@ -103,8 +118,8 @@ export async function ask(session, { question, askedBy, askedById }) {
     //    synthesis — a sentence takes two or three seconds to say and under
     //    one to render, so the queue stays ahead. The only gap is the first.
     const t1 = Date.now();
-    const brain = createBrain({ guildId: session.guildId });
-    const tts = createTts();
+    const brain = makeBrain({ guildId: session.guildId });
+    const tts = makeTts();
     const speech = session.startSpeech();
 
     let budget = MAX_SPOKEN_CHARS;
@@ -120,9 +135,9 @@ export async function ask(session, { question, askedBy, askedById }) {
       clearTimeout(quietTimer);
       if (finishedThinking) return;
       quietTimer = setTimeout(() => {
-        const filler = takeFiller(guessLanguage(question), 'waiting');
+        const filler = getFiller(guessLanguage(question), 'waiting');
         if (filler) {
-          speech.push(toAudioResource(filler.audio), null);
+          speech.push(toResource(filler.audio), null);
           timings.waited = (timings.waited ?? 0) + 1;
         }
         nudge(); // and again if it keeps dragging
@@ -145,10 +160,16 @@ export async function ask(session, { question, askedBy, askedById }) {
         .then(async () => {
           const audio = await tts.synthesizeStream(clean);
           timings.firstAudioMs ??= Date.now() - t1;
-          speech.push(toAudioResource(audio), clean);
+          speech.push(toResource(audio), clean);
           nudge();
         })
-        .catch((err) => console.warn(`[speech] could not render: ${err.message}`));
+        .catch((err) => {
+          // Counted as well as logged: a reply that renders nothing at all
+          // otherwise surfaces as "the model returned nothing to say", which
+          // points at the wrong stage entirely.
+          timings.renderFailures = (timings.renderFailures ?? 0) + 1;
+          console.warn(`[speech] could not render: ${err.message}`);
+        });
     };
 
     try {
@@ -162,9 +183,9 @@ export async function ask(session, { question, askedBy, askedById }) {
           // of the model's own words would be two fillers in a row.
           onSearchStart: () => {
             timings.searchedAtMs = Date.now() - t1;
-            const filler = takeFiller(guessLanguage(question));
+            const filler = getFiller(guessLanguage(question));
             if (!filler) return;
-            speech.push(toAudioResource(filler.audio), null);
+            speech.push(toResource(filler.audio), null);
             timings.filler = filler.line;
             nudge();
           },
