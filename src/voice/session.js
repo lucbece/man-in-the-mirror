@@ -210,6 +210,10 @@ export class VoiceSession extends EventEmitter {
           ? 'They said your name but nothing else. Ask what they want, in a few words.'
           : question,
       askedBy: pending.askedBy,
+      // Discord attributes this to the audio stream it arrived on, so it is
+      // the one part of a spoken request that can't be claimed by saying it.
+      // Every permission check downstream rests on that.
+      askedById: pending.userId,
       heard: pending.heard,
     });
   }

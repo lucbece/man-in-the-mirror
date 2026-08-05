@@ -35,7 +35,7 @@ const inFlight = new Set();
  * Returns the timings and the text that was spoken, so callers can show the
  * user what happened rather than just "done".
  */
-export async function ask(session, { question, askedBy }) {
+export async function ask(session, { question, askedBy, askedById }) {
   if (inFlight.has(session.guildId)) {
     throw new AgentBusyError('Still working on the last one.');
   }
@@ -119,7 +119,7 @@ export async function ask(session, { question, askedBy }) {
       // The return value is the whole reply, but everything sayable has
       // already gone out through onSentence by the time it resolves.
       await brain.answer(
-        { transcript, utterances, question, askedBy },
+        { transcript, utterances, question, askedBy, askedById },
         {
           onSentence: say,
           // Only reached when nothing has been said yet — a canned clip on top

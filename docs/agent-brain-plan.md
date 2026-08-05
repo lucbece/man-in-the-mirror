@@ -165,6 +165,28 @@ apologising for its speed sounds slow even when it isn't. Saying it only once
 the wait is real is both honest and what a person does — you say "hold on",
 and if it drags, you say "still looking".
 
+## Acting on the call: the permission trap
+
+Moving, disconnecting and muting people are the first tools that touch other
+*people* rather than data, and they carry a risk none of the others do.
+
+The bot needs Move Members and Mute Members to do any of it. Without a check,
+that makes the bot a way around Discord's permissions: anyone in the channel
+could say "espejo, desconectá a fulano" and borrow authority they don't have.
+So every action checks **the person who asked**, never the bot. That rests on
+Discord attributing each request to the audio stream it arrived on — the one
+part of a spoken request that cannot be claimed by saying it.
+
+The second risk is the name. It comes out of speech recognition, which mangles
+names, and the cost of getting it wrong is throwing the wrong person out of a
+call. So resolution refuses on doubt: below a confidence threshold, or on a tie
+between two people, it names who is actually in voice and asks. A repeat is
+cheap; an apology isn't.
+
+The candidate set is only people currently in voice — which is both the only
+set these actions make sense on, and the only one the bot can see, since it
+carries no privileged Guild Members intent.
+
 ## The trap: who decides what a filesystem server can see
 
 Worth writing down because it cost an hour and would cost it again.

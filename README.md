@@ -137,6 +137,13 @@ answers take longer (~9s measured through a stdio server) and cost more; the
 bot says "dame un segundo" while it works. The agent gets *only* your MCP
 tools and web search — no files, no shell.
 
+The agent can also act on the call: move people between channels, disconnect
+them, mute them, or leave. Each of those checks **the permissions of whoever
+asked**, not the bot's — otherwise the bot would be a way around Discord's
+permission system for anyone who can talk. It refuses rather than guess when a
+spoken name doesn't clearly match one person. The bot's role needs Move
+Members and Mute Members for any of it to work.
+
 The agent also gets tools for the bot itself. Ask *"espejo, recordame en
 diez minutos que saque la basura"* and it sets a real timer; ten minutes
 later the bot speaks the reminder into the channel — the one case where it
@@ -212,6 +219,9 @@ src/
   agent/agent-brain.js  thinking, agent mode — persistent Claude session + MCP tools
   agent/mcp.js        validates the MCP servers pasted into the panel
   agent/reminders.js  timers the agent sets; the bot speaks them when they fire
+  agent/discord-tools.js  moving, disconnecting and muting — gated on the asker's permissions
+  agent/sentences.js  cutting a token stream into things worth saying
+  voice/speech-queue.js  playing those pieces back to back as one answer
   agent/tts.js        speaking — API or Piper
   agent/filler.js     "dame un segundo" while it searches
   agent/whisper.js    whisper.cpp runtime, downloaded on demand
