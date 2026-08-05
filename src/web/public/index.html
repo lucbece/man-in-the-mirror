@@ -23,6 +23,64 @@
   </header>
 
   <main>
+    <!-- Shown only until everything it asks for is filled in. The three keys
+         live in three different cards further down, which is the right place
+         once you know the tool and the wrong place on day one. -->
+    <section class="card setup" id="setupCard" hidden>
+      <h2>Start here</h2>
+      <p class="hint" id="setupAdvice"></p>
+
+      <form id="setupForm">
+        <label>
+          Discord bot token
+          <input type="password" name="token" autocomplete="off" spellcheck="false" />
+          <small class="hint">
+            <a href="https://discord.com/developers/applications" target="_blank" rel="noopener noreferrer">Developer Portal</a>
+            → your app → <strong>Bot</strong> → <strong>Reset Token</strong>.
+            While you're there, give it <strong>Move Members</strong> and
+            <strong>Mute Members</strong> under Bot Permissions if you want it
+            to manage the call.
+          </small>
+        </label>
+
+        <label>
+          OpenAI API key <span class="optional">hearing and speaking</span>
+          <input type="password" name="openaiApiKey" autocomplete="off" spellcheck="false" />
+          <small class="hint">
+            <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">platform.openai.com</a>
+            — transcription and the voice. Both can run on this machine
+            instead, which is a switch further down, but this is the path that
+            works everywhere with no download.
+          </small>
+        </label>
+
+        <label>
+          Anthropic API key <span class="optional">thinking</span>
+          <input type="password" name="anthropicApiKey" autocomplete="off" spellcheck="false" />
+          <small class="hint">
+            <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">console.anthropic.com</a>
+            — what the agent runs on. The account needs credit, not just a
+            valid key.
+          </small>
+        </label>
+
+        <label>
+          Server ID <span class="optional">recommended</span>
+          <input type="text" name="guildId" autocomplete="off" spellcheck="false" inputmode="numeric" />
+          <small class="hint">
+            Right-click your server → <strong>Copy Server ID</strong> (needs
+            Developer Mode on in Discord's Advanced settings). Slash commands
+            show up straight away with it; without it Discord registers them
+            globally and that can take an hour.
+          </small>
+        </label>
+
+        <div class="row">
+          <button type="submit" class="primary">Save and start</button>
+        </div>
+      </form>
+    </section>
+
     <section class="card">
       <h2>Connection</h2>
       <p class="hint">

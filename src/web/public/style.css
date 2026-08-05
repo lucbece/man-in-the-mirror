@@ -419,3 +419,27 @@ a:hover {
   flex: 1 1 12rem;
   min-width: 0;
 }
+
+/* The first-run card. Marked out because it's the one thing to do right now,
+   and it disappears for good once it's done. */
+.card.setup {
+  border-color: var(--accent);
+}
+
+.card.setup #setupAdvice {
+  margin-bottom: 1.1rem;
+}
+
+.card.setup h2::after {
+  content: 'first run';
+  margin-left: 0.6rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #1a1400;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}

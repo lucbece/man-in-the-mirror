@@ -15,9 +15,16 @@ const DEFAULTS = {
   guildId: '', // optional: registers slash commands instantly on this guild only
 
   // Listening
-  // Off by default. While off the bot joins self-deafened and never receives a
-  // byte of audio — enabling it is an explicit, and visible, act.
-  agentEnabled: false,
+  //
+  // On by default, which is a deliberate change from how this started. The
+  // reasoning for `false` was that hearing should be an explicit act — but the
+  // bot only enters a channel when someone runs /mj join or picks one in the
+  // panel, so that explicit act already happened, and a bot that sits there
+  // deaf until you find a second switch reads as broken rather than as
+  // careful. What actually communicates the state is unchanged: while off it
+  // is self-deafened, which is both the mechanism that stops Discord sending
+  // audio and a badge Discord shows next to it in the member list.
+  agentEnabled: true,
   bufferSeconds: 90, // rolling audio kept in memory, never written to disk
   // Names it answers to, comma-separated. Not a fixed phrase — people address
   // it however they like ("che, mirror, qué opinás?"), so any mention counts.
@@ -45,10 +52,12 @@ const DEFAULTS = {
   brainModel: '', // blank = the provider's default
   anthropicApiKey: '',
 
-  // 'chat' answers from one API call, as always. 'agent' runs a persistent
-  // Claude agent session that can use the MCP tools configured below —
-  // slower per answer, but it can actually *do* things.
-  brainKind: 'chat', // 'chat' | 'agent'
+  // 'chat' answers from one API call. 'agent' runs a persistent Claude session
+  // that remembers the conversation and can use tools — its own (reminders,
+  // moving people around the call, web search) plus any MCP servers configured
+  // below. The default, because it is what the thing is for; 'chat' is there
+  // for when you want the fastest possible answer and nothing else.
+  brainKind: 'agent', // 'chat' | 'agent'
   // MCP servers the agent may use, as a JSON object — same shape Claude
   // Desktop and Claude Code use: { "name": { "command": ..., "args": [...] } }
   // or { "name": { "type": "http", "url": ... } }.

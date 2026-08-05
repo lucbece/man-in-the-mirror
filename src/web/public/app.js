@@ -2,6 +2,9 @@ const $ = (sel) => document.querySelector(sel);
 
 const els = {
   botStatus: $('#botStatus'),
+  setupCard: $('#setupCard'),
+  setupForm: $('#setupForm'),
+  setupAdvice: $('#setupAdvice'),
   connectionForm: $('#connectionForm'),
   listeningForm: $('#listeningForm'),
   transcriptionForm: $('#transcriptionForm'),
@@ -82,6 +85,7 @@ const STATE_LABELS = {
 function render(next) {
   state = next;
   renderBotStatus(next.bot);
+  if (!isEditing(els.setupForm)) renderSetup(next.config);
   if (!isEditing(els.connectionForm)) renderConnection(next.config);
   if (!isEditing(els.listeningForm)) renderListening(next.config);
   if (!isEditing(els.transcriptionForm)) renderTranscription(next.config);
@@ -99,6 +103,37 @@ function renderBotStatus(bot) {
   if (bot.state === 'ready' && bot.user) text = `${bot.user.tag} · ${bot.guildCount} server(s)`;
   if (bot.error) text += ` — ${bot.error}`;
   label.textContent = text;
+}
+
+/**
+ * The first-run card: everything needed to get going, in one place.
+ *
+ * It disappears once nothing is missing. Keeping it around after that would
+ * mean two places to change the same key, and the one that isn't the card is
+ * where it belongs — next to the setting it powers.
+ */
+function renderSetup(cfg) {
+  const missing = [];
+  if (!cfg.hasToken) missing.push('the Discord token');
+  if (!cfg.hasOpenaiApiKey) missing.push('the OpenAI key');
+  if (!cfg.hasAnthropicApiKey) missing.push('the Anthropic key');
+
+  els.setupCard.hidden = missing.length === 0;
+  if (els.setupCard.hidden) return;
+
+  els.setupAdvice.textContent =
+    `Three keys and it's ready. Still missing ${listOf(missing)}. ` +
+    'Everything else already has a working default, and each of these can be ' +
+    'changed later in the card it belongs to.';
+
+  const f = els.setupForm.elements;
+  if (document.activeElement !== f.guildId) f.guildId.value = cfg.guildId ?? '';
+}
+
+/** "a, b and c" — reads better than a bare join in a sentence. */
+function listOf(items) {
+  if (items.length <= 1) return items[0] ?? '';
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
 }
 
 function renderConnection(cfg) {
@@ -432,6 +467,25 @@ els.transcriptionForm.addEventListener('submit', (event) => {
     'Saved.',
   ).then(() => {
     f.openaiApiKey.value = '';
+  });
+});
+
+els.setupForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  const f = els.setupForm.elements;
+  // Blank fields mean "not touched" for secrets, so a partial fill is fine:
+  // paste what you have, save, and the card keeps asking for the rest.
+  act(
+    () =>
+      post('/api/config', {
+        token: f.token.value,
+        openaiApiKey: f.openaiApiKey.value,
+        anthropicApiKey: f.anthropicApiKey.value,
+        guildId: f.guildId.value,
+      }),
+    'Saved.',
+  ).then(() => {
+    for (const name of ['token', 'openaiApiKey', 'anthropicApiKey']) f[name].value = '';
   });
 });
 
