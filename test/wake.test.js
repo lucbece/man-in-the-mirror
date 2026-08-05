@@ -116,3 +116,35 @@ describe('loose matching without false positives', () => {
     assert.equal(detectAddress('espera decime algo', 'espera').matched, true);
   });
 });
+
+describe('words a real call proved were missing', () => {
+  const NAMES = 'mirror, espejo';
+
+  test('the infinitive of mirar is not a summons', () => {
+    // "El que se debe mirar" woke the bot in a live call. The conjugations
+    // were all excluded; the infinitive — the form people actually reach for —
+    // was not, and it scores 0.667 against "mirror".
+    for (const heard of [
+      'el que se debe mirar',
+      'hay que mirar bien eso',
+      'vine a mirarte nomás',
+      'nos miraron raro',
+      'subimos al mirador',
+    ]) {
+      assert.equal(detectAddress(heard, NAMES).matched, false, `false positive: ${heard}`);
+    }
+  });
+
+  test('the subjunctive of esperar is not a summons either', () => {
+    for (const heard of ['espere un momento', 'esperes lo que esperes', 'esperemos a que llegue']) {
+      assert.equal(detectAddress(heard, NAMES).matched, false, `false positive: ${heard}`);
+    }
+  });
+
+  test('diminutives and plurals of the name still call it', () => {
+    // The other half: excluding too much would be its own failure.
+    for (const heard of ['espejito, decime algo', 'espejo, qué hacés']) {
+      assert.equal(detectAddress(heard, NAMES).matched, true, `missed: ${heard}`);
+    }
+  });
+});

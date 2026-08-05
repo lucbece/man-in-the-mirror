@@ -26,10 +26,18 @@ class SessionManager extends EventEmitter {
         values.ttsLocalVoice !== previous.ttsLocalVoice;
       if (voiceChanged) warmFillers().catch(() => {});
 
+      // A provider or key change is exactly the fix someone reaches for after
+      // transcription failed, so it has to clear the latch that failure set.
+      const hearingChanged =
+        values.sttProvider !== previous.sttProvider ||
+        values.sttLocalModel !== previous.sttLocalModel ||
+        values.openaiApiKey !== previous.openaiApiKey;
+
       for (const session of this.sessions.values()) {
         // Volume is worth applying mid-sentence.
         session.applyVolume(values.volume);
         session.receiver?.setWindow(values.bufferSeconds);
+        if (hearingChanged) session.eager?.reset();
       }
     });
 

@@ -93,9 +93,21 @@ export class EagerTranscriber extends EventEmitter {
     this.emit('failed', err);
   }
 
-  /** Clear the fatal state so a fixed key or provider takes effect. */
+  /**
+   * Clear the fatal state so a fixed key or a switched provider takes effect.
+   *
+   * Nothing called this for a long time, which made a fatal error permanent:
+   * one bad key, or one run out of quota, stopped the queue for good, and
+   * switching to local transcription in the panel changed nothing because the
+   * old failure was still latched. From outside, the bot had simply gone deaf
+   * and only a restart brought it back.
+   */
   reset() {
+    if (this.fatalError) {
+      console.log(`[eager${this.label}] clearing the previous failure and listening again`);
+    }
     this.fatalError = null;
+    this.failures = 0;
   }
 
   stop() {

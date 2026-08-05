@@ -16,6 +16,29 @@ class BotRunner extends EventEmitter {
     this.state = 'stopped'; // stopped | starting | ready | error
     this.error = null;
     this.user = null;
+    /**
+     * Lifecycle operations run one at a time, chained onto this.
+     *
+     * Seen in a real log: two "logged in as" lines from one process, meaning
+     * two gateway connections on one token. Every handler is then registered
+     * twice, so a single slash command is handled twice — and the guard that
+     * was supposed to prevent it (`if (this.isRunning) return`) can't, because
+     * stop() and start() interleave across their awaits. Restarts come from
+     * the web panel and aren't awaited, so two saves in quick succession are
+     * all it takes.
+     */
+    this.chain = Promise.resolve();
+  }
+
+  /** Run `fn` after whatever lifecycle work is already queued. */
+  #serial(fn) {
+    const next = this.chain.then(fn, fn);
+    // Keep the chain alive even if this operation rejects.
+    this.chain = next.then(
+      () => {},
+      () => {},
+    );
+    return next;
   }
 
   get isRunning() {
@@ -28,7 +51,22 @@ class BotRunner extends EventEmitter {
     this.emit('state', this.status());
   }
 
-  async start(token = config.get('token')) {
+  start(token = config.get('token')) {
+    return this.#serial(() => this.#start(token));
+  }
+
+  stop() {
+    return this.#serial(() => this.#stop());
+  }
+
+  restart(token = config.get('token')) {
+    return this.#serial(async () => {
+      await this.#stop();
+      return this.#start(token);
+    });
+  }
+
+  async #start(token) {
     if (this.isRunning) return this.status();
     if (!token) {
       this.setState('stopped', 'No bot token configured.');
@@ -48,6 +86,14 @@ class BotRunner extends EventEmitter {
     client.on(Events.Error, (err) => console.error('[bot] client error:', err.message));
 
     client.once(Events.ClientReady, async (ready) => {
+      // Something replaced us while we were connecting. Two live gateway
+      // connections on one token means every event fires twice, so this one
+      // goes rather than lingering as a second brain.
+      if (this.client !== client) {
+        console.warn('[bot] a stale connection became ready — dropping it');
+        await client.destroy().catch(() => {});
+        return;
+      }
       this.user = { id: ready.user.id, tag: ready.user.tag };
       console.log(`[bot] logged in as ${ready.user.tag}`);
       try {
@@ -79,7 +125,7 @@ class BotRunner extends EventEmitter {
     return this.status();
   }
 
-  async stop() {
+  async #stop() {
     sessionManager.leaveAll();
     if (this.client) {
       await this.client.destroy().catch(() => {});
@@ -88,11 +134,6 @@ class BotRunner extends EventEmitter {
     this.user = null;
     this.setState('stopped');
     return this.status();
-  }
-
-  async restart(token = config.get('token')) {
-    await this.stop();
-    return this.start(token);
   }
 
   /** Voice channels the bot can see, for the UI's channel picker. */

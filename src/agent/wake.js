@@ -40,9 +40,17 @@ const SIMILARITY_THRESHOLD = 0.65;
  * happens. Cheaper to name the collisions.
  */
 const COMMON_WORDS = new Set([
-  // Spanish — mostly forms of mirar/esperar, which collide hard with both names
+  // Spanish — mostly forms of mirar/esperar, which collide hard with both names.
+  //
+  // The infinitive was missing from this list for a while and it showed: "el
+  // que se debe mirar" woke the bot in a real call, because `mirar` scores
+  // 0.667 against `mirror`. Conjugations were here; the one form people use
+  // most was not. `espere` was the same oversight on the other verb.
   'mira', 'miro', 'mire', 'miren', 'mirad', 'miras', 'miralo', 'mirale',
+  'mirar', 'mirarme', 'mirarte', 'mirarlo', 'mirarla', 'mirarnos', 'mirarse',
+  'miraron', 'mirador', 'miradores', 'mirada', 'miradas', 'mirado', 'mirados',
   'espero', 'espera', 'esperen', 'esperá', 'esperar', 'esperando',
+  'espere', 'esperes', 'esperemos', 'esperamos', 'esperaron',
   'mejor', 'viejo', 'dejo', 'dejó', 'pero', 'lejos', 'consejo', 'espejismo',
   'herrero', 'quiero', 'primero', 'tercero', 'sendero', 'dinero',
   // English
