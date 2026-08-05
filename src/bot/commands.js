@@ -232,6 +232,11 @@ async function cmdAsk(interaction) {
     result = await ask(session, {
       question,
       askedBy: interaction.member?.displayName ?? interaction.user.username,
+      // Without this, anything the agent does to the call is refused from a
+      // slash command — the Discord tools check the asker's permissions, and
+      // an ask with no id can't be trusted with anyone's. The interaction
+      // carries the id already; it just wasn't being passed on.
+      askedById: interaction.user.id,
     });
   } catch (err) {
     if (err instanceof AgentBusyError) {
