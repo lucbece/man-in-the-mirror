@@ -19,7 +19,7 @@ through an API or on your own machine, mixed however you like.
 
 ## Download
 
-**[⬇ v0.2.3-preview — the voice agent](https://github.com/lucbece/man-in-the-mirror/releases/tag/v0.2.3-preview)**
+**[⬇ v0.3.0-preview — the agent](https://github.com/lucbece/man-in-the-mirror/releases/tag/v0.3.0-preview)**
 
 | You're on | File |
 | --- | --- |
@@ -43,8 +43,12 @@ npm install
 npm start          # → control panel on http://localhost:3000
 ```
 
-Open the panel, paste your bot token, hit **Save & apply**. The bot connects
-immediately; no process restart needed.
+Open the panel. A **Start here** card asks for everything it needs — the
+Discord token, an OpenAI key for hearing and speaking, an Anthropic key for
+thinking, and your server id. Save, and the bot connects immediately; no
+process restart needed. The card disappears once nothing is missing.
+
+A `.env` file works too — copy `.env.example`, which lists the same four.
 
 Then pick a channel in the panel's **Voice channel** section, or type `/mj join`
 in Discord while you're in a voice channel.
