@@ -1,17 +1,16 @@
-# The agent brain
+# Agent brain — design record
 
-The two complaints that drove the voice agent to this branch, stated the way
-they were felt:
+Design and measurements for `brainKind: agent`. Implemented; see the phase
+table below for the remaining item.
 
-- **It's slow.** Every reply waits for the whole pipeline before the first
-  word comes out.
-- **It's dumb.** A single stateless API call can answer questions; it can't
-  *do* things, and it re-reads a 90-second transcript cold every time.
+Two problems motivated it, with solutions that pull in opposite directions:
 
-These feel like one problem and are actually two, with solutions that pull in
-opposite directions. Naming that tension up front is the whole design.
+- **Latency.** Every reply waited for the entire pipeline before producing
+  audio.
+- **Capability.** A stateless API call can answer questions but cannot perform
+  actions, and re-reads the transcript on every request.
 
-## Two problems, not one
+## The two are unrelated
 
 **Latency does not come from the connection.** Keeping a socket open saves a
 TLS handshake — tens of milliseconds on a reply that takes four seconds. The
@@ -21,12 +20,10 @@ synthesising any of it. So the latency fix is not architectural at all: it's
 (phase 1). That works with the brain we already have, before any agent
 exists.
 
-**Intelligence costs latency; it does not save it.** An agent that can call
-tools takes *more* model turns per reply, not fewer. Anyone promising an
-agent will make the bot faster is selling something. What the agent buys is
-capability — MCP tools, persistent memory, multi-step work — and the filler
-system ("dame un segundo") already exists to cover the extra seconds
-honestly.
+**Capability costs latency rather than saving it.** An agent that calls tools
+uses more model turns per reply, not fewer. What it provides is capability —
+MCP tools, persistent memory, multi-step work. The existing filler clips cover
+the additional seconds.
 
 What a persistent session *does* buy is not speed but continuity: the
 conversation accumulates in one place instead of being re-sent cold on every
@@ -66,8 +63,10 @@ Verified against the SDK docs (2026-08):
   (`{command, args, env}`) and remote (`{type: "http"|"sse", url, headers}`).
   `allowedTools: ["mcp__<server>__*", "WebSearch"]` and nothing else — no
   file access, no bash. The bot's machine is not the agent's workspace.
-- **`permissionMode: "bypassPermissions"`** — there is no one at a terminal
-  to approve anything. The tool surface is already fenced by `allowedTools`.
+- **`permissionMode: "dontAsk"`** — no terminal is available to approve tool
+  use, and this denies anything outside `allowedTools` rather than prompting.
+  (The plan originally specified `bypassPermissions`; `dontAsk` is stricter
+  and was used instead.)
 - **`includePartialMessages: true`** gives `text_delta` events, which feed
   the same sentence-streaming TTS as the fast path.
 - **`maxTurns` caps the loop** so a confused agent can't spiral; start
@@ -80,9 +79,9 @@ Verified against the SDK docs (2026-08):
 subscription login (Pro/Max) in third-party apps, SDK included. The panel's
 existing Anthropic key is what the agent runs on.
 
-**Cost note:** each session subprocess wants ~1GiB of RAM, and an agentic
-reply spends multiples of a chat reply in tokens. One session per voice
-channel, killed on `/mj leave`, is the only sane default.
+**Cost.** Each session subprocess uses approximately 1 GiB of RAM, and an
+agent reply costs several times a chat reply in tokens. One session per voice
+channel, released on `/mj leave` and after 30 minutes idle.
 
 ## Phases
 
@@ -93,10 +92,10 @@ channel, killed on `/mj leave`, is the only sane default.
 | 3 | Panel: brain kind selector (chat / agent), MCP server list (JSON textarea), maxTurns. | **done** — validated at save time, errors name the field |
 | 4 | Session lifecycle polish: restart on crash, `/mj status` shows session age and spend. | partial — idle reap (30min) and crash-fail exist; status display pending |
 
-Measured on the live SDK: first turn 4.0s cold, second turn 1.9s warm —
-the persistent session makes follow-ups *faster* than the stateless chat
-brain, because nothing is re-sent. A tool-using answer through a stdio MCP
-server measured 9.0s end to end, which is what the filler exists for.
+Measured against the live SDK: 4.0s for the first turn, 1.9s for the second.
+The persistent session makes follow-ups faster than the stateless path because
+the transcript is not re-sent. A tool-using answer through a stdio MCP server
+measured 9.0s end to end.
 
 ## Latency: what actually moved
 
@@ -128,8 +127,7 @@ go and do.
 the SDK defers tools behind a tool-search call, which costs a full model turn
 before the first real tool. The trade is tokens for latency, and a handful of
 servers is what people configure. It also blocks session startup on connecting
-those servers, so sessions are now pre-started when the bot joins the channel,
-where nobody is waiting.
+those servers, so sessions are pre-started when the bot joins the channel.
 
 ### Search, replaced rather than waited out
 
@@ -158,12 +156,10 @@ Agent totals, same two questions: web search 20.6s → 16.7s, MCP tool 9.4s →
 Some tool calls are just slow. After the bot has started talking, a silence
 longer than seven seconds gets another line — "perdón, sigo buscando esto".
 
-Deliberately *not* announced up front. Warning about a long wait before
-knowing there is one is wrong in both directions: most calls come back
-quickly, so the warning is usually a lie, and a bot that opens every answer
-apologising for its speed sounds slow even when it isn't. Saying it only once
-the wait is real is both honest and what a person does — you say "hold on",
-and if it drags, you say "still looking".
+Not announced in advance. Most tool calls return quickly, so a warning issued
+before the delay is known would be wrong in the majority of cases and would
+make fast answers appear slow. The second line is emitted only once the delay
+has occurred.
 
 ## Acting on the call: the permission trap
 
@@ -189,7 +185,8 @@ carries no privileged Guild Members intent.
 
 ## The trap: who decides what a filesystem server can see
 
-Worth writing down because it cost an hour and would cost it again.
+Recorded because the behaviour is not documented in the SDK and is not
+obvious from the configuration.
 
 The SDK advertises its working directories to MCP servers as **roots**, and a
 root-aware server — the standard filesystem one included — honours those over
@@ -246,6 +243,17 @@ The embedded agent answers the question "what if the bot had an agent?".
 The more interesting question is the inverse — "what if my agent had a voice
 channel?" — which points at exposing the bot itself as an MCP server rather
 than having it host one. See [bot-as-mcp-server.md](bot-as-mcp-server.md).
+
+## Open
+
+- **Screen-share audio.** Audio from a shared screen reaches the transcript as
+  speech. A video playing during a call is transcribed as if someone said it.
+  Carried over from the previous design document; no mitigation implemented.
+- **Wake latency.** The measured figures start when `ask()` is called, which is
+  after silence detection (500ms), eager transcription of the utterance, and
+  the grace period that waits for more speech (900ms). Perceived latency from
+  the end of a sentence is therefore several seconds higher than the reported
+  time to first word. None of those three stages has been tuned.
 
 ## Rejected alternatives
 

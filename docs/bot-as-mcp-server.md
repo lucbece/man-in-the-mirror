@@ -65,9 +65,9 @@ on paper — the transcript as a subscribable resource — but it only tells the
 client something changed. Most agent hosts have no "wake up and think about
 it" loop, so the notification lands nowhere.
 
-Honest read: **A now, and treat B/C as an open question** to revisit once
-there are real users with real agents to ask. Committing to the inbound
-design before that is guessing.
+Recommended order: **A first**, with B and C deferred until there are users
+with existing agents to evaluate against. The inbound design depends on what
+those agents actually support.
 
 ## What this does not replace
 
