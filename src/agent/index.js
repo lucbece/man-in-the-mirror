@@ -7,6 +7,7 @@
  * wondering whether the thing is broken.
  */
 import { createBrain, clampForSpeech, BrainError, MAX_SPOKEN_CHARS } from './brain.js';
+import { takePendingLeave } from './agent-brain.js';
 import { createTts, toAudioResource } from './tts.js';
 import { guessLanguage, takeFiller } from './filler.js';
 import { formatTranscript, transcribeBuffer } from './stt.js';
@@ -149,6 +150,15 @@ export async function ask(session, { question, askedBy, askedById }) {
 
     await speech.finished;
     timings.totalMs = Date.now() - started;
+
+    // Asked to disconnect: now, with the goodbye already said. Doing it inside
+    // the tool call would tear down the agent session that was still running
+    // that very call.
+    if (takePendingLeave(session.guildId)) {
+      const { sessionManager } = await import('../voice/manager.js');
+      sessionManager.leave(session.guildId);
+      console.log('[agent] left the channel, as asked');
+    }
 
     console.log(
       `[agent] answered in ${(timings.totalMs / 1000).toFixed(1)}s ` +

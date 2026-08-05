@@ -282,6 +282,27 @@ class AgentSession {
 /** Live sessions by guild. */
 const sessions = new Map();
 
+/**
+ * Guilds where the agent has asked to leave once it stops talking.
+ *
+ * Leaving cannot happen inside the tool call that requests it. Found in use:
+ * "traelo a Maki de vuelta y desconectate vos" moved Maki, then called
+ * leave_voice, which destroyed the voice session — which ends the agent
+ * session — while that very tool call was still open. Both actions actually
+ * happened, but the run died with `stop_reason=tool_use` and the bot never
+ * said a word about it.
+ *
+ * So the tool records the intent and returns; the leave happens once the
+ * answer has finished playing, which is also when you'd want it to. It gets
+ * to say goodbye before it goes.
+ */
+const wantsToLeave = new Set();
+
+/** Whether this guild's agent asked to leave, clearing the request. */
+export function takePendingLeave(guildId) {
+  return wantsToLeave.delete(guildId);
+}
+
 /** What a session was built from; a change here means a different session. */
 function currentSignature() {
   return [
@@ -390,12 +411,14 @@ function botToolsServer(guildId, turn) {
         'Leave the voice channel. Use when asked to disconnect, go away, or stop listening.',
         {},
         async () => {
-          // Imported here rather than at the top: the manager imports this
-          // module, and a cycle at load time leaves one side undefined.
-          const { sessionManager } = await import('../voice/manager.js');
-          const left = sessionManager.leave(guildId);
+          wantsToLeave.add(guildId);
           return {
-            content: [{ type: 'text', text: left ? 'Left the channel.' : 'Not in a channel.' }],
+            content: [
+              {
+                type: 'text',
+                text: 'Leaving as soon as you finish speaking. Say a short goodbye now.',
+              },
+            ],
           };
         },
       ),

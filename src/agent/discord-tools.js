@@ -54,42 +54,59 @@ function namesOf(member) {
 }
 
 /**
- * Work out who was meant, or refuse.
+ * How well a spoken word matches something with a name.
  *
- * Tiers, best first: an exact match on one of their names; the spoken name
- * being one of the words in their name ("fulanito" in "Fulanito Pérez"); then
- * fuzzy similarity. A tie inside the winning tier is an ambiguity, not a
- * coin flip.
+ * Tiers, best first: exact; the spoken name being one of the words in the
+ * full name; then fuzzy similarity. The middle tier is what makes real names
+ * work — people say "fulanito" for "Fulanito Pérez" and "AFK" for a channel
+ * called "AFK - Muted (en plena paja)", and both are the common case rather
+ * than the exception.
  */
-export function resolveMember(spoken, members) {
+function scoreName(names, needle) {
+  let best = 0;
+  for (const name of names) {
+    if (name === needle) best = Math.max(best, 3);
+    else if (name.split(' ').includes(needle)) best = Math.max(best, 2);
+    else if (needle.length >= 4 && name.includes(needle)) best = Math.max(best, 2);
+    else best = Math.max(best, similarity(name, needle));
+  }
+  return best;
+}
+
+/**
+ * Pick the one thing that was meant, or refuse.
+ *
+ * A tie inside the winning tier is an ambiguity, not a coin flip: acting on
+ * the wrong person or moving someone to the wrong room is worse than asking.
+ */
+function pickOne(spoken, candidates, { label, nothingMatched }) {
   const needle = normalise(spoken ?? '');
   if (!needle) throw new DiscordToolError('No name given.');
 
-  const scored = members.map((member) => {
-    let best = 0;
-    for (const name of namesOf(member)) {
-      if (name === needle) best = Math.max(best, 3);
-      else if (name.split(' ').includes(needle)) best = Math.max(best, 2);
-      else best = Math.max(best, similarity(name, needle));
-    }
-    return { member, score: best };
-  });
-
+  const scored = candidates.map((item) => ({ item, score: scoreName(item.names, needle) }));
   const top = Math.max(0, ...scored.map((s) => s.score));
-  if (top < NAME_THRESHOLD) {
-    const who = members.map((m) => m.displayName).join(', ') || 'nobody';
-    throw new DiscordToolError(
-      `No one here matches "${spoken}". In voice right now: ${who}.`,
-    );
-  }
+  if (top < NAME_THRESHOLD) throw new DiscordToolError(nothingMatched(spoken));
 
   const winners = scored.filter((s) => s.score === top);
   if (winners.length > 1) {
     throw new DiscordToolError(
-      `"${spoken}" could be ${winners.map((w) => w.member.displayName).join(' or ')} — ask which.`,
+      `"${spoken}" could be ${winners.map((w) => label(w.item)).join(' or ')} — ask which.`,
     );
   }
-  return winners[0].member;
+  return winners[0].item;
+}
+
+/** Work out who was meant, or refuse. */
+export function resolveMember(spoken, members) {
+  const candidates = members.map((member) => ({ member, names: namesOf(member) }));
+  const picked = pickOne(spoken, candidates, {
+    label: (c) => c.member.displayName,
+    nothingMatched: (said) => {
+      const who = members.map((m) => m.displayName).join(', ') || 'nobody';
+      return `No one here matches "${said}". In voice right now: ${who}.`;
+    },
+  });
+  return picked.member;
 }
 
 /**
@@ -124,17 +141,22 @@ function resolveChannel(guild, spoken, asker) {
     return channel;
   }
 
-  const needle = normalise(spoken);
-  const channels = guild.channels.cache.filter((c) => c.isVoiceBased?.());
-  let best = null;
-  for (const channel of channels.values()) {
-    const score = normalise(channel.name) === needle ? 1 : similarity(normalise(channel.name), needle);
-    if (!best || score > best.score) best = { channel, score };
-  }
-  if (!best || best.score < NAME_THRESHOLD) {
-    throw new DiscordToolError(`No voice channel called "${spoken}".`);
-  }
-  return best.channel;
+  // Same matching as for people, and for the same reason: channel names are
+  // long and decorated ("AFK - Muted (en plena paja)") and nobody says the
+  // whole thing. Comparing only the full name was a real refusal in use.
+  const channels = [...guild.channels.cache.values()].filter((c) => c.isVoiceBased?.());
+  const picked = pickOne(
+    spoken,
+    channels.map((channel) => ({ channel, names: [normalise(channel.name)] })),
+    {
+      label: (c) => c.channel.name,
+      nothingMatched: (said) => {
+        const names = channels.map((c) => c.name).join(', ') || 'none';
+        return `No voice channel matches "${said}". There is: ${names}.`;
+      },
+    },
+  );
+  return picked.channel;
 }
 
 /** Human-readable summary of who is where, for the agent to reason over. */
