@@ -212,7 +212,49 @@ export function namePrompt() {
     .map((n) => n.trim())
     .filter(Boolean);
   if (names.length === 0) return '';
-  return `Conversación en un canal de voz con un asistente llamado ${names.join(' o ')}.`;
+  // Bare names, not a sentence.
+  //
+  // This used to read "Conversación en un canal de voz con un asistente
+  // llamado mirror o espejo." — and Whisper handed it straight back whenever
+  // it got silence, which is what a prompt is *for*: it conditions what the
+  // model expects to hear. A grammatical sentence is a template it can emit
+  // happily. Worse, the echo contained the bot's name, so the bot woke itself
+  // up on a line nobody said. A word list still biases the spelling and is
+  // far less quotable, and echoesPrompt below catches it when it comes back
+  // anyway.
+  return names.join(', ');
+}
+
+/**
+ * Did the model just hand our own prompt back?
+ *
+ * Whisper conditions on the prompt, so on silence it will reproduce it — and
+ * since the prompt is the bot's names, the echo reads as someone calling the
+ * bot. It has to be discarded before anything else looks at the text.
+ */
+export function echoesPrompt(text, prompt) {
+  const said = normaliseForMatch(text);
+  const asked = normaliseForMatch(prompt ?? '');
+  if (!said || !asked) return false;
+  if (said === asked) return true;
+
+  const promptWords = asked.split(' ');
+  const words = said.split(' ');
+
+  // A prompt that is just the names can only be an echo if it comes back
+  // whole. One name on its own is somebody calling the bot — the entire point
+  // of the thing — so that must never be mistaken for an echo.
+  if (promptWords.length <= 4) {
+    return (
+      promptWords.every((w) => words.includes(w)) && words.length <= promptWords.length + 1
+    );
+  }
+
+  // A longer prompt: mostly its words and little else, at about its length.
+  if (words.length > promptWords.length + 4) return false;
+  const set = new Set(promptWords);
+  const shared = words.filter((w) => set.has(w)).length;
+  return shared / words.length >= 0.7;
 }
 
 /**
@@ -314,6 +356,7 @@ function buildProvider() {
  */
 export async function transcribeUtterance(utterance, stt) {
   if (utterance.text !== null) return true;
+  const prompt = namePrompt();
   if (utterance.durationMs < MIN_UTTERANCE_MS) {
     utterance.text = '';
     return false;
@@ -321,9 +364,15 @@ export async function transcribeUtterance(utterance, stt) {
 
   try {
     const text = await stt.transcribe(packetsToWav(utterance.packets), {
-      prompt: namePrompt(),
+      prompt,
     });
-    utterance.text = looksHallucinated(text, utterance.durationMs) ? '' : text;
+    // The prompt echo has to go before anything else reads the text: it
+    // contains the bot's names, so it reads as someone calling the bot.
+    const junk = echoesPrompt(text, prompt) || looksHallucinated(text, utterance.durationMs);
+    if (junk && text.trim()) {
+      console.log(`[stt] discarded, nobody said this: "${text.trim().slice(0, 80)}"`);
+    }
+    utterance.text = junk ? '' : text;
     return Boolean(utterance.text);
   } catch (err) {
     if (err.fatal) throw err; // leave text null; the audio is still usable later

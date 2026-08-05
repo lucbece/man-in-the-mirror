@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { describe } from 'node:test';
 
-import { looksHallucinated } from '../src/agent/stt.js';
+import { looksHallucinated, echoesPrompt, namePrompt } from '../src/agent/stt.js';
 
 // The one that started this. Reported from a live channel with nobody
 // speaking, and repeated verbatim — which is the tell.
@@ -60,5 +60,44 @@ describe('Whisper hallucinations', () => {
   test('empty and whitespace are not hallucinations, just nothing', () => {
     assert.equal(looksHallucinated('', 3000), false);
     assert.equal(looksHallucinated('   ', 3000), false);
+  });
+});
+
+describe('the prompt coming back as if someone said it', () => {
+  // The worst of these, because the prompt is the bot's own names: the echo
+  // reads as somebody calling the bot, and the bot answers itself. Reported
+  // live, over and over, with nobody speaking.
+  const VIEJO = 'Conversación en un canal de voz con un asistente llamado mirror o espejo.';
+
+  test('rejects the old sentence-shaped prompt, however it comes back', () => {
+    for (const eco of [
+      'Ese es el canal de voz con un asistente llamado mirror o espejo',
+      'Este es el canal de voz con un asistente llamado mirror o espejo.',
+      'Conversación en un canal de voz con un asistente llamado mirror o espejo.',
+    ]) {
+      assert.equal(echoesPrompt(eco, VIEJO), true, `dejó pasar: ${eco}`);
+    }
+  });
+
+  test('rejects the bare name list coming back', () => {
+    assert.equal(echoesPrompt('mirror, espejo', 'mirror, espejo'), true);
+    assert.equal(echoesPrompt('Mirror. Espejo.', 'mirror, espejo'), true);
+  });
+
+  test('lets someone actually calling the bot through', () => {
+    // The whole point of the bot. Over-filtering here would make it deaf.
+    for (const real of [
+      'Espejo, decime si conviene el jueves',
+      'Che mirror, qué opinás de esto',
+      '¿Espejo estás ahí? Te estoy hablando',
+      'mirror',
+    ]) {
+      assert.equal(echoesPrompt(real, 'mirror, espejo'), false, `descartó: ${real}`);
+    }
+  });
+
+  test('an empty prompt cannot be echoed', () => {
+    assert.equal(echoesPrompt('cualquier cosa', ''), false);
+    assert.equal(echoesPrompt('', 'mirror, espejo'), false);
   });
 });
