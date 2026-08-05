@@ -154,6 +154,12 @@ answers take longer (~9s measured through a stdio server) and cost more; the
 bot says "dame un segundo" while it works. The agent gets *only* your MCP
 tools and web search — no files, no shell.
 
+Those tools are available to **anyone in the voice channel**, deliberately: a
+bot that answers the room is the point, and there is no permission model
+inside an arbitrary MCP server for it to consult. So connect what you'd let
+the room use. `"allow": [...]` on a server narrows it to named tools, which is
+the lever when a server can both read and write.
+
 The agent can also act on the call: move people between channels, disconnect
 them, mute them, or leave. Each of those checks **the permissions of whoever
 asked**, not the bot's — otherwise the bot would be a way around Discord's

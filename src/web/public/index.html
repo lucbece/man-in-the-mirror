@@ -446,7 +446,10 @@
                 Claude Code use — paste yours as-is, wrapper and all. These are
                 the <em>only</em> outside tools the agent gets: it has no
                 access to files or the shell on this machine beyond what you
-                grant here.
+                grant here. Whatever you connect is usable by
+                <strong>anyone in the voice channel</strong> — the bot answers
+                the room, and an arbitrary MCP server has no permission model
+                for it to check.
               </small>
               <small class="hint">
                 Add <code>"allow": ["tool_name", …]</code> to a server to grant
