@@ -19,7 +19,7 @@ through an API or on your own machine, mixed however you like.
 
 ## Download
 
-**[⬇ v0.3.0-preview — the agent](https://github.com/lucbece/man-in-the-mirror/releases/tag/v0.3.0-preview)**
+**[⬇ v0.3.1-preview — the agent](https://github.com/lucbece/man-in-the-mirror/releases/tag/v0.3.1-preview)**
 
 | You're on | File |
 | --- | --- |
