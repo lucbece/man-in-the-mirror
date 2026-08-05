@@ -88,12 +88,21 @@ async function act(fn, okMessage) {
 const TAB_KEY = 'mitm.tab';
 
 function showTab(name) {
-  for (const tab of els.tabs.querySelectorAll('.tab')) {
-    tab.setAttribute('aria-selected', String(tab.dataset.tab === name));
-  }
-  for (const panel of document.querySelectorAll('.panel')) {
-    panel.hidden = panel.dataset.panel !== name;
-  }
+  const swap = () => {
+    for (const tab of els.tabs.querySelectorAll('.tab')) {
+      tab.setAttribute('aria-selected', String(tab.dataset.tab === name));
+    }
+    for (const panel of document.querySelectorAll('.panel')) {
+      panel.hidden = panel.dataset.panel !== name;
+    }
+  };
+
+  // Let the browser cross-fade the two sections when it can. Without it the
+  // new section simply appears, which reads as a page reload rather than as
+  // this thing responding. Falls straight through where unsupported.
+  if (document.startViewTransition) document.startViewTransition(swap);
+  else swap();
+
   try {
     localStorage.setItem(TAB_KEY, name);
   } catch {
