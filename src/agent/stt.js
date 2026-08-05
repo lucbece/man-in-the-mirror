@@ -35,16 +35,81 @@ const HALLUCINATIONS = new Set([
 /** Short clips whose entire content is a stock phrase are almost certainly noise. */
 const HALLUCINATION_MAX_MS = 2_500;
 
-function looksHallucinated(text, durationMs) {
-  if (durationMs > HALLUCINATION_MAX_MS) return false;
-  const bare = text
+/**
+ * Boilerplate distinctive enough to reject wherever it appears, at any length.
+ *
+ * These come out of the subtitle corpora Whisper was trained on, and the first
+ * one turned up in a live channel word for word: "este es el canal de
+ * subt\u00edtulos en espa\u00f1ol de la Iglesia de Jesucristo de los santos de los
+ * \u00faltimos d\u00edas", twice over, with nobody speaking. Unlike "gracias", nobody in
+ * a Discord call says any of these, so matching them anywhere in the text is
+ * safe where the short-phrase list has to be exact.
+ */
+const BOILERPLATE = [
+  'canal de subtitulos',
+  'iglesia de jesucristo de los santos',
+  'subtitulos realizados por',
+  'subtitulos por la comunidad',
+  'amara org',
+  'subtitled by',
+  'subtitles by the amara',
+  'www ted com',
+  'subscribe to my channel',
+  'no olvides suscribirte',
+  'mas videos como este',
+];
+
+/**
+ * Fastest anyone speaks, in words per second, with room to spare.
+ *
+ * Conversation runs two to three; an auctioneer reaches six. Text arriving
+ * faster than this did not come from the audio it claims to describe \u2014 which
+ * is what a hallucination on near-silence looks like from here, without
+ * needing to recognise the phrase.
+ */
+const MAX_WORDS_PER_SECOND = 7;
+
+function normaliseForMatch(text) {
+  return text
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  return HALLUCINATIONS.has(bare);
+}
+
+/**
+ * Did the model say something nobody said?
+ *
+ * Three signals, in order of how general they are. The last one is the phrase
+ * list, which only ever catches what has already been seen; the first two
+ * catch boilerplate nobody has reported yet.
+ */
+function looksHallucinated(text, durationMs) {
+  const bare = normaliseForMatch(text);
+  if (!bare) return false;
+
+  // 1. More words than the clip has room for.
+  const words = bare.split(' ').length;
+  if (durationMs > 0 && words / (durationMs / 1000) > MAX_WORDS_PER_SECOND) return true;
+
+  // 2. The same sentence over and over. Whisper loops when it has nothing to
+  //    work with, and people repeat themselves in different words, not in
+  //    identical ones.
+  const sentences = text
+    .split(/[.!?\u2026]+/)
+    .map((s) => normaliseForMatch(s))
+    .filter((s) => s.split(' ').length >= 4);
+  if (sentences.length >= 2 && new Set(sentences).size === 1) return true;
+
+  // 3. Known subtitle boilerplate, anywhere in the text.
+  if (BOILERPLATE.some((phrase) => bare.includes(phrase))) return true;
+
+  // 4. A short clip that is nothing but a stock phrase.
+  if (durationMs <= HALLUCINATION_MAX_MS && HALLUCINATIONS.has(bare)) return true;
+
+  return false;
 }
 
 /**
