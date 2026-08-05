@@ -115,6 +115,16 @@ export function isModelInstalled(name) {
  */
 const inFlight = new Map();
 
+/**
+ * Fetch to disk, saying how it's going.
+ *
+ * The progress is the point. Setting this up on Windows means pulling 646MB of
+ * CUDA build and up to 1.6GB of model, and the previous version buffered the
+ * whole thing in memory behind a single "downloading…" line — several minutes
+ * that look exactly like a hang, with nothing to tell you otherwise. Streaming
+ * to disk with a percentage is the difference between "it's working" and
+ * "this is broken".
+ */
 async function download(url, target, label) {
   if (fs.existsSync(target)) return target;
   if (inFlight.has(target)) return inFlight.get(target);
@@ -124,11 +134,43 @@ async function download(url, target, label) {
     if (!res.ok) throw new Error(`${res.status} fetching ${label}`);
     fs.mkdirSync(path.dirname(target), { recursive: true });
 
+    const total = Number(res.headers.get('content-length')) || 0;
+    const mb = (bytes) => (bytes / 1024 / 1024).toFixed(0);
+
     // Write to a temp name and rename, so an interrupted download can never be
     // mistaken for a complete one on the next run.
     const partial = `${target}.part`;
-    fs.writeFileSync(partial, Buffer.from(await res.arrayBuffer()));
+    const file = fs.createWriteStream(partial);
+    const started = Date.now();
+    let done = 0;
+    let lastReport = 0;
+
+    try {
+      for await (const chunk of res.body) {
+        done += chunk.length;
+        if (!file.write(chunk)) {
+          await new Promise((resolve) => file.once('drain', resolve));
+        }
+        // Every 10%, or every 25MB when the server didn't say how big it is.
+        const step = total ? Math.floor((done / total) * 10) : Math.floor(done / (25 * 1024 * 1024));
+        if (step > lastReport) {
+          lastReport = step;
+          const secs = (Date.now() - started) / 1000;
+          console.log(
+            `[whisper] ${label}: ${mb(done)}MB${total ? ` of ${mb(total)}MB (${Math.round((done / total) * 100)}%)` : ''}` +
+              ` · ${(done / 1024 / 1024 / secs).toFixed(1)}MB/s`,
+          );
+        }
+      }
+      await new Promise((resolve, reject) => file.end((err) => (err ? reject(err) : resolve())));
+    } catch (err) {
+      file.destroy();
+      fs.rmSync(partial, { force: true });
+      throw new Error(`${label} download failed after ${mb(done)}MB: ${err.message}`);
+    }
+
     fs.renameSync(partial, target);
+    console.log(`[whisper] ${label}: done, ${mb(done)}MB in ${((Date.now() - started) / 1000).toFixed(0)}s`);
     return target;
   })().finally(() => inFlight.delete(target));
 
@@ -159,6 +201,11 @@ export async function ensureWhisper() {
 }
 
 async function installWhisper() {
+  const gpu = await hasNvidiaGpu();
+  console.log(
+    `[whisper] setting up on ${os.platform()}/${os.arch()} — ` +
+      (gpu ? 'NVIDIA GPU found, using the CUDA build' : 'no NVIDIA GPU, using the CPU build'),
+  );
 
   const asset = await platformAsset();
   if (!asset) {
@@ -173,6 +220,8 @@ async function installWhisper() {
   console.log(`[whisper] downloading ${asset.name}${asset.gpu ? ' (CUDA build, 646MB)' : ''}…`);
   await download(`${RELEASES}/${asset.name}`, archive, asset.name);
 
+  console.log(`[whisper] unpacking ${asset.name}…`);
+  const unpackStarted = Date.now();
   if (asset.name.endsWith('.zip')) {
     await run('powershell', [
       '-NoProfile',
@@ -183,12 +232,18 @@ async function installWhisper() {
     await run('tar', ['xzf', archive, '-C', WHISPER_DIR]);
   }
   fs.rmSync(archive, { force: true });
+  console.log(`[whisper] unpacked in ${((Date.now() - unpackStarted) / 1000).toFixed(0)}s`);
 
   const binary = whisperBinary();
-  if (!binary) throw new Error('whisper.cpp unpacked but whisper-cli is missing.');
+  if (!binary) {
+    throw new Error(
+      `whisper.cpp unpacked into ${WHISPER_DIR} but whisper-cli is not in there. ` +
+        'Delete the runtime folder and let it download again.',
+    );
+  }
   if (os.platform() !== 'win32') fs.chmodSync(binary, 0o755);
 
-  console.log(`[whisper] ready${asset.gpu ? ' (GPU)' : ''}`);
+  console.log(`[whisper] binary ready${asset.gpu ? ' (GPU build)' : ''}: ${binary}`);
   return binary;
 }
 

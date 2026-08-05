@@ -26,6 +26,7 @@ export class EagerTranscriber extends EventEmitter {
     /** Set when the provider says something unrecoverable — no point retrying. */
     this.fatalError = null;
     this.completed = 0;
+    this.failures = 0;
   }
 
   push(utterance) {
@@ -64,7 +65,24 @@ export class EagerTranscriber extends EventEmitter {
         this.emit('transcribed', utterance);
       }
     } catch (err) {
-      if (err.fatal) this.fail(err);
+      if (err.fatal) {
+        this.fail(err);
+        return;
+      }
+      // Everything else used to vanish here. A local runtime that won't start,
+      // a model that won't load, a binary that exits non-zero — all of it
+      // looked from the outside like the bot simply not hearing anything,
+      // which is the hardest possible thing to debug. The first few are worth
+      // seeing; after that it's the same message over and over.
+      this.failures += 1;
+      if (this.failures <= 3) {
+        console.warn(
+          `[eager${this.label}] could not transcribe utterance ${utterance.id}: ${err.message}`,
+        );
+        if (this.failures === 3) {
+          console.warn(`[eager${this.label}] further failures will be counted, not logged`);
+        }
+      }
     }
   }
 
@@ -90,6 +108,7 @@ export class EagerTranscriber extends EventEmitter {
       queued: this.queue.length,
       running: this.running,
       completed: this.completed,
+      failures: this.failures,
       error: this.fatalError?.message ?? null,
     };
   }
