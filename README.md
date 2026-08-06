@@ -9,8 +9,7 @@ required: the name is matched anywhere in a sentence, in any language.
 Hearing, thinking and speaking are configured independently. Each runs either
 through an API or on the host machine.
 
-> **Preview release.** In daily use, but interfaces and defaults may still
-> change. Development happens on `development` and lands here.
+Development happens on `development` and lands on `main`.
 
 This repository began as a soundboard that played clips at random intervals.
 That version is preserved on the `legacy/soundboard` branch; nothing of it
@@ -26,7 +25,7 @@ remains here.
 
 ## Download
 
-**[v0.4.0-preview](https://github.com/lucbece/man-in-the-mirror/releases/tag/v0.4.0-preview)**
+**[Latest release](https://github.com/lucbece/man-in-the-mirror/releases/latest)**
 
 | Platform | File |
 | --- | --- |
@@ -50,10 +49,6 @@ installed system-wide.
 **Extract before running.** Windows can execute a file from inside a `.zip`,
 which copies that file alone to a temporary folder where the rest of the
 project is absent.
-
-Link the release tag rather than `/releases/latest`. Every release here is
-published as a prerelease, so "latest" still resolves to `v0.1.0` — the
-soundboard this repository started as, not the voice agent.
 
 ### Why the scripts are recommended over the executable
 
