@@ -10,8 +10,11 @@ Hearing, thinking and speaking are configured independently. Each runs either
 through an API or on the host machine.
 
 > **Preview release.** In daily use, but interfaces and defaults may still
-> change. `main` holds an unrelated earlier project; all current work is on
-> `development`.
+> change. Development happens on `development` and lands here.
+
+This repository began as a soundboard that played clips at random intervals.
+That version is preserved on the `legacy/soundboard` branch; nothing of it
+remains here.
 
 ## Contents
 
@@ -38,8 +41,9 @@ Node or downloads a private copy into `runtime/`, installs dependencies on
 first run, starts the bot and opens the control panel. Nothing is installed
 system-wide.
 
-Link the release tag rather than `/releases/latest`: these are published as
-prereleases, so "latest" resolves to `v0.1.0` on `main`.
+Link the release tag rather than `/releases/latest`. Every release here is
+published as a prerelease, so "latest" still resolves to `v0.1.0` — the
+soundboard this repository started as, not the voice agent.
 
 ### If antivirus software blocks the download or the executable
 
