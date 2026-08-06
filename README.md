@@ -26,15 +26,20 @@ remains here.
 
 ## Download
 
-**[v0.3.1-preview](https://github.com/lucbece/man-in-the-mirror/releases/tag/v0.3.1-preview)**
+**[v0.4.0-preview](https://github.com/lucbece/man-in-the-mirror/releases/tag/v0.4.0-preview)**
 
 | Platform | File |
 | --- | --- |
+| **Any — recommended** | `ManInTheMirror-no-exe.zip` |
 | Windows x64 | `ManInTheMirror-windows-x64.zip` |
 | Windows ARM64 | `ManInTheMirror-windows-arm64.zip` |
 | macOS (Apple silicon) | `ManInTheMirror-macos-arm64.zip` |
 | Linux x64 | `ManInTheMirror-linux-x64.zip` |
-| Any, no binary | `ManInTheMirror-no-exe.zip` |
+
+`ManInTheMirror-no-exe.zip` contains no compiled binary — run
+`Start-Windows.cmd` or `./start.sh`, which fetch Node if it is missing and do
+everything the launcher does. It is listed first because the compiled launcher
+is blocked by both Windows Defender and Chrome Safe Browsing; see below.
 
 Extract the archive and run `ManInTheMirror` (`.exe` on Windows). It locates
 Node or downloads a private copy into `runtime/`, installs dependencies on
