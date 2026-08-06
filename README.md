@@ -36,34 +36,33 @@ remains here.
 | macOS (Apple silicon) | `ManInTheMirror-macos-arm64.zip` |
 | Linux x64 | `ManInTheMirror-linux-x64.zip` |
 
-`ManInTheMirror-no-exe.zip` contains no compiled binary — run
-`Start-Windows.cmd` or `./start.sh`, which fetch Node if it is missing and do
-everything the launcher does. It is listed first because the compiled launcher
-is blocked by both Windows Defender and Chrome Safe Browsing; see below.
+Extract the archive, then run one of:
 
-Extract the archive and run `ManInTheMirror` (`.exe` on Windows). It locates
-Node or downloads a private copy into `runtime/`, installs dependencies on
-first run, starts the bot and opens the control panel. Nothing is installed
-system-wide.
+- `Start-Windows.cmd` on Windows, or `./start.sh` on macOS and Linux — in any
+  of the archives, and the only option in `ManInTheMirror-no-exe.zip`.
+- `ManInTheMirror` (`.exe` on Windows) — the compiled launcher, in the
+  platform archives.
+
+Both locate Node or download a private copy into `runtime/`, install
+dependencies on first run, start the bot and open the control panel. Nothing is
+installed system-wide.
+
+**Extract before running.** Windows can execute a file from inside a `.zip`,
+which copies that file alone to a temporary folder where the rest of the
+project is absent.
 
 Link the release tag rather than `/releases/latest`. Every release here is
 published as a prerelease, so "latest" still resolves to `v0.1.0` — the
 soundboard this repository started as, not the voice agent.
 
-### If antivirus software blocks the download or the executable
-
-Use `ManInTheMirror-no-exe.zip` and run `Start-Windows.cmd` (or `./start.sh`).
-It performs the same steps, including fetching Node, but contains no compiled
-binary.
+### Why the scripts are recommended over the executable
 
 The `.exe` is an unsigned Go binary that downloads an executable, extracts it
 and runs it. That sequence matches the heuristics both Windows Defender and
-Chrome Safe Browsing use to identify droppers. Code signing would resolve it;
-the script is the interim option.
-
-Extract the archive before running the script. Windows can execute a file
-directly from inside a `.zip`, which copies it alone to a temporary folder
-where the rest of the project is absent.
+Chrome Safe Browsing use to identify droppers, so one blocks running it and the
+other blocks downloading the archive containing it. Neither is malfunctioning.
+Code signing would resolve it; the scripts are the interim option, and they are
+readable text that does the same work.
 
 ## Running from source
 
@@ -72,7 +71,7 @@ Requires Node 20 or later.
 ```bash
 npm install
 npm start          # control panel on http://localhost:3000
-npm test           # 139 tests, node --test
+npm test           # 163 tests, node --test
 ```
 
 Open the control panel. On first run a **Start here** card collects
