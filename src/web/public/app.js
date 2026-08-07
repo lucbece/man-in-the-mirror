@@ -302,6 +302,7 @@ function renderThinking(cfg) {
   for (const radio of f.brainProvider) radio.checked = radio.value === cfg.brainProvider;
   f.brainModel.value = cfg.brainModel ?? '';
   f.webSearch.checked = cfg.webSearch;
+  f.customInstructions.value = cfg.customInstructions ?? '';
   f.mcpServers.value = cfg.mcpServers ?? '';
   f.agentDirectories.value = cfg.agentDirectories ?? '';
   f.agentMaxTurns.value = cfg.agentMaxTurns ?? 8;
@@ -606,6 +607,7 @@ els.thinkingForm.addEventListener('submit', (event) => {
         brainProvider: [...f.brainProvider].find((r) => r.checked)?.value ?? 'anthropic',
         brainModel: f.brainModel.value,
         webSearch: f.webSearch.checked,
+        customInstructions: f.customInstructions.value,
         mcpServers: f.mcpServers.value,
         agentDirectories: f.agentDirectories.value,
         agentMaxTurns: Number(f.agentMaxTurns.value) || 8,

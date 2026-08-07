@@ -4,6 +4,7 @@ import { EventEmitter } from 'node:events';
 import dotenv from 'dotenv';
 
 import { ROOT_DIR } from './paths.js';
+import { parseInstructions, serialiseInstructions } from './agent/instructions.js';
 
 dotenv.config({ path: path.join(ROOT_DIR, '.env'), quiet: true });
 
@@ -69,6 +70,11 @@ const DEFAULTS = {
   // How many tool-using rounds one answer may take before it's cut off. A
   // confused agent left unbounded will happily spend a minute and a dollar.
   agentMaxTurns: 8,
+  // Instructions added by whoever is in the call, one per line. Appended to
+  // the prompt below the fixed rules, which they cannot override — see
+  // customInstructionBlock in agent/instructions.js for what that means and
+  // why the split exists.
+  customInstructions: '',
 
   // Let it look things up. Costs a second or two per answer. Both providers
   // support it: OpenAI through its search-capable models, Anthropic through a
@@ -159,6 +165,10 @@ function clampConfig(cfg) {
   if (!['chat', 'agent'].includes(out.brainKind)) out.brainKind = 'chat';
   out.mcpServers = out.mcpServers.trim();
   out.agentDirectories = out.agentDirectories.trim();
+  // One instruction per line, however they were typed or dictated. The caps
+  // on length and count are enforced where there is somewhere to report them:
+  // the panel's save handler and the voice tool.
+  out.customInstructions = serialiseInstructions(parseInstructions(out.customInstructions));
   out.agentMaxTurns = Math.min(25, Math.max(1, Math.round(out.agentMaxTurns)));
   if (!VOICES.includes(out.ttsVoice)) out.ttsVoice = 'onyx';
   if (!['openai', 'local'].includes(out.ttsProvider)) out.ttsProvider = 'openai';

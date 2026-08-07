@@ -187,14 +187,51 @@ Agent mode includes these tools:
 | `disconnect_member` | Disconnects a member from voice | Asker has Move Members |
 | `set_member_mute` | Server-mutes or unmutes a member | Asker has Mute Members |
 | `leave_voice` | Leaves the channel after the current reply | — |
+| `remember_instruction` | Adds a standing instruction, effective immediately | — |
+| `list_instructions`, `forget_instruction` | Manage standing instructions | — |
+| `set_names` | Changes the names the bot answers to | — |
+| `configure_mcp_server` | Adds or replaces an MCP server in the configuration | Asker has Manage Server |
+| `list_mcp_servers` | Lists configured servers and their granted tools | — |
 
 Reminders are held in memory and do not survive a restart.
+
+## Standing instructions
+
+The prompt has a fixed half and a mutable one. The fixed half — answer only
+when addressed, keep replies short and speakable, do not disclose the
+configuration — is not reachable from the voice channel. The mutable half is
+the `customInstructions` list, editable from the Thinking tab or by voice
+through `remember_instruction`, and applies to both `chat` and `agent` mode.
+
+The split is enforced by construction rather than by instruction: custom lines
+are appended below the fixed rules, numbered, under a paragraph stating that
+they do not override what precedes them and that a line asking for such an
+override is to be treated as a test rather than as an instruction. Limits are
+20 instructions of 300 characters, enforced identically on both entry paths.
+
+Instructions are not part of the agent session's identity, so adding one does
+not restart the session or discard the conversation; the next session to start
+picks it up. Everything else in this section does restart the session, which is
+why the tools say so in their replies.
 
 The call management tools check the Discord permissions of **the requesting
 user**, identified by the audio stream the request arrived on, not the bot's
 own permissions. Without that check the bot would grant its permissions to
 anyone able to speak. When a spoken name does not resolve to exactly one
 member, the tool refuses rather than selecting the closest match.
+
+`configure_mcp_server` requires Manage Server, a higher bar than the call
+management tools, for a reason that is not about Discord: an MCP
+server entry contains a `command`, and that command is spawned on the machine
+running the bot. Using the tools someone has configured is open to the channel
+by design; deciding what those tools are is not. Additions are validated
+through the same parser the control panel uses and are logged to the console
+with the name of the member who made them.
+
+`set_names` is deliberately not gated, since renaming the bot is a decision for
+the room. It is the one setting that can lock the channel out of the bot: a
+name nobody says, or one transcription never produces, leaves nothing to wake
+it with. Recovery is the Listening tab, not the voice channel.
 
 ## MCP servers
 

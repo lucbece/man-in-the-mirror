@@ -9,6 +9,11 @@ import { sessionManager } from '../voice/manager.js';
 import { formatTranscript, transcribeBuffer } from '../agent/stt.js';
 import { ask, AgentBusyError } from '../agent/index.js';
 import { parseMcpServers, parseDirectories } from '../agent/mcp.js';
+import {
+  MAX_INSTRUCTIONS,
+  MAX_INSTRUCTION_CHARS,
+  parseInstructions,
+} from '../agent/instructions.js';
 import { agentSessionStatus } from '../agent/agent-brain.js';
 
 const HOST = process.env.WEB_HOST || '127.0.0.1';
@@ -57,6 +62,25 @@ export function startWebServer() {
         });
       } catch (err) {
         return res.status(400).json({ ok: false, error: `Folders: ${err.message}` });
+      }
+    }
+
+    // Same limits the voice tool enforces, so the two ways in cannot disagree
+    // about what the bot is currently being told.
+    if (typeof body.customInstructions === 'string' && body.customInstructions.trim()) {
+      const list = parseInstructions(body.customInstructions);
+      const long = list.find((line) => line.length > MAX_INSTRUCTION_CHARS);
+      if (long) {
+        return res.status(400).json({
+          ok: false,
+          error: `Instructions: one line is ${long.length} characters; keep each under ${MAX_INSTRUCTION_CHARS}.`,
+        });
+      }
+      if (list.length > MAX_INSTRUCTIONS) {
+        return res.status(400).json({
+          ok: false,
+          error: `Instructions: ${list.length} lines, and ${MAX_INSTRUCTIONS} is the limit.`,
+        });
       }
     }
 

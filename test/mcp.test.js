@@ -6,6 +6,7 @@ import {
   allowedToolsFor,
   parseDirectories,
   McpConfigError,
+  mergeMcpServer,
 } from '../src/agent/mcp.js';
 
 describe('parseMcpServers', () => {
@@ -135,5 +136,59 @@ describe('parseDirectories', () => {
     const exists = (d) => d === '/real';
     assert.deepEqual(parseDirectories('/real', { exists }), ['/real']);
     assert.throws(() => parseDirectories('/real\n/typo', { exists }), /"\/typo" does not exist/);
+  });
+});
+
+describe('mergeMcpServer', () => {
+  test('adds to an existing set and replaces by name', () => {
+    const start = JSON.stringify({ files: { command: 'npx', args: ['-y', 'fs'] } });
+    const added = mergeMcpServer(start, 'weather', '{"type":"http","url":"https://w.example"}');
+    assert.deepEqual(Object.keys(JSON.parse(added)).sort(), ['files', 'weather']);
+
+    const replaced = mergeMcpServer(added, 'weather', '{"type":"http","url":"https://other"}');
+    assert.equal(JSON.parse(replaced).weather.url, 'https://other');
+    assert.equal(Object.keys(JSON.parse(replaced)).length, 2);
+  });
+
+  test('unwraps a pasted config file instead of nesting a key beside it', () => {
+    // The silent-loss case: merging next to the wrapper gives
+    // {mcpServers: {...}, weather: {...}}, and parseMcpServers — which unwraps
+    // whenever it sees the key — would read only the wrapper and drop the
+    // addition. The bot would report success and nothing would have changed.
+    const pasted = JSON.stringify({ mcpServers: { files: { command: 'npx', args: ['fs'] } } });
+    const added = mergeMcpServer(pasted, 'weather', '{"type":"http","url":"https://w.example"}');
+    const parsed = JSON.parse(added);
+    assert.equal(parsed.mcpServers, undefined);
+    assert.deepEqual(Object.keys(parsed).sort(), ['files', 'weather']);
+    assert.deepEqual(Object.keys(parseMcpServers(added).servers).sort(), ['files', 'weather']);
+  });
+
+  test('refuses to write over a config it could not read', () => {
+    // Starting from {} here would let one spoken sentence delete every server
+    // someone had configured.
+    assert.throws(() => mergeMcpServer('{not json', 'x', '{"command":"a"}'), McpConfigError);
+    assert.throws(() => mergeMcpServer('{not json', 'x', '{"command":"a"}'), /can't read it/);
+    assert.throws(() => mergeMcpServer('[1,2]', 'x', '{"command":"a"}'), /can't read it/);
+  });
+
+  test('empty is a valid starting point', () => {
+    assert.deepEqual(JSON.parse(mergeMcpServer('', 'files', '{"command":"npx"}')), {
+      files: { command: 'npx' },
+    });
+    assert.doesNotThrow(() => mergeMcpServer(null, 'files', '{"command":"npx"}'));
+  });
+
+  test('the new entry goes through the same validation as the panel', () => {
+    assert.throws(() => mergeMcpServer('', 'files', 'not json'), /not valid JSON/);
+    assert.throws(() => mergeMcpServer('', 'bad name', '{"command":"npx"}'), /letters, numbers/);
+    assert.throws(() => mergeMcpServer('', 'bot', '{"command":"npx"}'), /reserved/);
+    assert.throws(() => mergeMcpServer('', 'files', '{}'), McpConfigError);
+  });
+
+  test('a bad addition leaves the stored config untouched', () => {
+    // It throws before returning, so there is nothing for the caller to write.
+    const start = JSON.stringify({ files: { command: 'npx' } });
+    assert.throws(() => mergeMcpServer(start, 'weather', '{"type":"http"}'), McpConfigError);
+    assert.deepEqual(JSON.parse(start), { files: { command: 'npx' } });
   });
 });

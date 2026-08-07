@@ -150,6 +150,56 @@ export function parseMcpServers(text) {
 }
 
 /**
+ * Add or replace one server in an existing config, returning the new JSON text.
+ *
+ * Split out of the tool that calls it because two things here are easy to get
+ * wrong in ways nobody would notice until their config was gone:
+ *
+ * A stored config may still carry the `{"mcpServers": {...}}` wrapper people
+ * paste. Merging a new key next to that wrapper produces `{mcpServers: {...},
+ * newOne: {...}}`, and `parseMcpServers` — which unwraps whenever it sees the
+ * key — would then read only the wrapper and drop the addition without a word.
+ * So unwrap first and write back unwrapped.
+ *
+ * And when the existing config can't be parsed at all, this refuses instead of
+ * starting from an empty object. Treating unreadable as empty would mean one
+ * spoken sentence silently replacing every server someone had configured.
+ */
+export function mergeMcpServer(existingText, name, configuration) {
+  let entry;
+  try {
+    entry = typeof configuration === 'string' ? JSON.parse(configuration) : configuration;
+  } catch (err) {
+    throw new McpConfigError(`That configuration is not valid JSON: ${err.message}`);
+  }
+
+  const trimmed = String(existingText ?? '').trim();
+  let existing = {};
+  if (trimmed) {
+    let parsed;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch (err) {
+      throw new McpConfigError(
+        `I won't touch the MCP config while I can't read it — ${err.message}. Fix it in the panel first.`,
+      );
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new McpConfigError("I won't touch the MCP config while I can't read it.");
+    }
+    existing = parsed.mcpServers && typeof parsed.mcpServers === 'object' ? parsed.mcpServers : parsed;
+  }
+
+  const merged = { ...existing, [name]: entry };
+  const next = JSON.stringify(merged, null, 2);
+  // Validate the whole resulting set, not just the new entry, and through the
+  // same parser the panel uses: a server added by voice must not be one the
+  // panel would have rejected.
+  parseMcpServers(next);
+  return next;
+}
+
+/**
  * The allow-list handed to the SDK: every tool of every configured server.
  *
  * The agent runs with permission prompts off — there is nobody at a terminal
