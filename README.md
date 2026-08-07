@@ -190,6 +190,8 @@ Agent mode includes these tools:
 | `remember_instruction` | Adds a standing instruction, effective immediately | — |
 | `list_instructions`, `forget_instruction` | Manage standing instructions | — |
 | `set_names` | Changes the names the bot answers to | — |
+| `describe_settings` | Reports the current configuration, secrets excluded | — |
+| `change_setting` | Changes one setting, effective immediately | Manage Server for `folders` |
 | `configure_mcp_server` | Adds or replaces an MCP server in the configuration | Asker has Manage Server |
 | `list_mcp_servers` | Lists configured servers and their granted tools | — |
 
@@ -227,6 +229,52 @@ running the bot. Using the tools someone has configured is open to the channel
 by design; deciding what those tools are is not. Additions are validated
 through the same parser the control panel uses and are logged to the console
 with the name of the member who made them.
+
+## Settings by voice
+
+`describe_settings` and `change_setting` operate on a registry declared in
+`src/agent/settings.js`, not on the config object. A setting is reachable by
+voice because it appears in that registry; the Discord token, both API keys,
+the guild and the web port are unreachable because they do not. There is no
+filtering step to forget: the snapshot handed to the tools is built from the
+registry's own key list, so it cannot contain a value the registry does not
+declare.
+
+| Setting | Writes | Values |
+| --- | --- | --- |
+| `speaking` | `ttsProvider` | `openai`, `local` |
+| `voice` | `ttsVoice` or `ttsLocalVoice`, whichever the current provider reads | the six OpenAI voices, or the three Piper ones |
+| `hearing` | `sttProvider` | `openai`, `local` |
+| `hearing model` | `sttLocalModel` | `base`, `small`, `large-v3-turbo` |
+| `thinking` | `brainKind` | `agent`, `chat` |
+| `model` | `brainModel` | a model identifier, or blank for the default |
+| `web search` | `webSearch` | on/off |
+| `tool rounds` | `agentMaxTurns` | 1–25 |
+| `memory` | `bufferSeconds` | 10–600 |
+| `wake` | `wakeEnabled` | on/off |
+| `listening` | `agentEnabled` | on/off |
+| `eager transcription` | `eagerTranscription` | on/off |
+| `folders` | `agentDirectories` | full paths, one per line |
+
+Values are parsed rather than validated, because they arrive as speech: `local`
+also answers to "en esta máquina" and "offline", `openai` to "la API", and a
+number survives being said with its unit. A value that does not parse is
+refused with the accepted options named, and the agent reads that refusal back
+to the channel.
+
+`folders` is the only entry requiring Manage Server. It decides what a
+connected filesystem server may read, which is a security boundary rather than
+a preference, so it carries the same bar as configuring the server itself. It
+also rejects anything that is not already a full path — a dictated folder name
+is a guess, and the panel is the right place to type one.
+
+Changing `thinking`, `model`, `web search`, `tool rounds` or `folders` starts a
+new agent session, which discards the conversation so far. The tool says so in
+its reply, since a bot that silently loses the thread immediately after being
+asked to change something reads as broken rather than as reconfigured.
+
+Turning `listening` off self-deafens the bot, which means it cannot hear itself
+being turned back on. `/mj listen` and the control panel both undo it.
 
 `set_names` is deliberately not gated, since renaming the bot is a decision for
 the room. It is the one setting that can lock the channel out of the bot: a
