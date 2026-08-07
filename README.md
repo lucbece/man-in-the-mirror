@@ -198,7 +198,11 @@ Agent mode includes these tools:
 | `configure_mcp_server` | Adds or replaces an MCP server in the configuration | Asker has Manage Server |
 | `list_mcp_servers` | Lists configured servers and their granted tools | — |
 
-Reminders are held in memory and do not survive a restart.
+Reminders survive a restart: they are written to `data/reminders.json` and
+re-armed on boot. One that came due while the process was down is dropped
+rather than said late — announcing it hours afterwards, to whoever happens to
+be in the channel now, is worse than not announcing it — and that case is
+logged.
 
 ## Cascade mode
 
