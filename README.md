@@ -168,6 +168,9 @@ of a session slower while it starts.
 **`chat`** issues one stateless API call per answer through Anthropic or
 OpenAI. It is the fastest option and has no memory between answers.
 
+**`cascade`** puts a small fast model in front of `agent`. It answers what
+needs no tools and hands the rest over. See below.
+
 **`agent`** runs a persistent Claude Agent SDK session per voice channel. The
 conversation accumulates inside it, so follow-up questions do not re-send the
 transcript and are measurably faster than the first (1.9s against 4.0s). It can
@@ -196,6 +199,69 @@ Agent mode includes these tools:
 | `list_mcp_servers` | Lists configured servers and their granted tools | — |
 
 Reminders are held in memory and do not survive a restart.
+
+## Cascade mode
+
+`agent` is slow for a reason that has nothing to do with the answer: a session
+with a dozen tools reasons about whether to use them before it says anything.
+Measured to the first spoken word, that is 4.9s against `claude-haiku-4-5`'s
+2.4s — and most of what is said in a call needs no tool at all.
+
+The routing is not a classifier. A classifier is itself a model call sitting in
+front of every question, so it spends latency on exactly the path it is meant
+to make faster, and it is a second thing that can be wrong. Instead the fast
+model is given one tool, `escalate`, and decides by attempting: it either
+answers, streaming into speech with no routing cost at all, or it defers.
+
+On this project's measurements — 2.4s fast, 4.9s agent, ≈0.6s for a deferral —
+the expected change per turn is `p × (−2.5s) + (1 − p) × (+0.6s)`, where `p` is
+the share of turns needing no tool. It is a net saving above `p ≈ 0.19`. The
+Thinking tab reports the real `p` for your channel.
+
+Measured on this repository, no Discord involved:
+
+| Turn | Route | First words |
+| --- | --- | --- |
+| "why are people afraid of flying" | fast | 1.8s |
+| follow-up: "what would you advise" | fast | 1.3s |
+| "remind me in two minutes" | escalated | 1.2s, reminder set at 12.2s |
+| "what's the weather in Buenos Aires" | escalated | 1.2s, answered at 11.6s |
+
+Three things make it one conversation rather than two:
+
+- **The fast leg is reminded of its own answers.** Nothing transcribes the bot,
+  so an answer exists only where it was produced. Without this, "and why?"
+  asked straight after a reply reaches a model with no idea what it just said.
+- **The agent is told what was answered without it**, once, when it is next
+  reached. It remembers its own turns and only needs the ones it missed.
+- **A handover continues rather than restarts.** Whatever the fast leg already
+  said has been spoken into the channel and cannot be retracted, so the agent
+  is given it and told to carry on. It also serves as the filler, which is
+  better than the stock clip: the bot's own voice, in the right language, about
+  this question. The stock clip is suppressed in that case.
+
+One routing rule costs nothing and is applied before any model call: if the
+previous turn used a tool, the next goes straight to the agent, since a
+follow-up nearly always refers to what that tool returned. Deliberately *not* a
+rule: "no MCP servers configured means the agent has nothing to offer" — it
+always has its own tools, so that reasoning is simply wrong.
+
+The failure mode worth knowing about is a misrouted *action*. The fast leg has
+no tools, so if it took "remind me to take the bins out" it would say "listo"
+and nothing would ever fire. Its prompt is therefore biased hard toward
+deferring, with no judgement call on anything imperative.
+
+## What answers cost
+
+Every answer already records which tools it used and how long each stage took;
+`agent/answers.js` keeps the last 60 in memory and the Thinking tab shows the
+summary. The share that used no tool is the share a fast model could have
+taken, which is the whole case for or against cascade mode — and it is a fact
+about your channel rather than a general claim.
+
+No question text and no answer text is retained, only which brain ran, which
+tools it used and the timings. The audio buffer never reaches disk and neither
+does this.
 
 ## Standing instructions
 
@@ -246,7 +312,8 @@ declare.
 | `voice` | `ttsVoice` or `ttsLocalVoice`, whichever the current provider reads | the six OpenAI voices, or the three Piper ones |
 | `hearing` | `sttProvider` | `openai`, `local` |
 | `hearing model` | `sttLocalModel` | `base`, `small`, `large-v3-turbo` |
-| `thinking` | `brainKind` | `agent`, `chat` |
+| `thinking` | `brainKind` | `agent`, `chat`, `cascade` |
+| `fast model` | `fastModel` | a model identifier, or blank for `claude-haiku-4-5` |
 | `model` | `brainModel` | a model identifier, or blank for the default |
 | `web search` | `webSearch` | on/off |
 | `tool rounds` | `agentMaxTurns` | 1–25 |
@@ -268,8 +335,8 @@ a preference, so it carries the same bar as configuring the server itself. It
 also rejects anything that is not already a full path — a dictated folder name
 is a guess, and the panel is the right place to type one.
 
-Changing `thinking`, `model`, `web search`, `tool rounds` or `folders` starts a
-new agent session, which discards the conversation so far. The tool says so in
+Changing `thinking`, `model`, `fast model`, `web search`, `tool rounds` or
+`folders` starts a new agent session, which discards the conversation so far. The tool says so in
 its reply, since a bot that silently loses the thread immediately after being
 asked to change something reads as broken rather than as reconfigured.
 

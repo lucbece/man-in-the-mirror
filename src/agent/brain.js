@@ -9,6 +9,7 @@ import Anthropic from '@anthropic-ai/sdk';
 
 import { config } from '../config.js';
 import { AgentBrain } from './agent-brain.js';
+import { CascadeBrain } from './cascade.js';
 import { SentenceSplitter } from './sentences.js';
 import { customInstructionBlock } from './instructions.js';
 
@@ -111,7 +112,7 @@ class ClaudeBrain {
     return `Anthropic ${this.model}${this.webSearch ? ' (web)' : ''}`;
   }
 
-  async answer(context, { onSearchStart, onSentence } = {}) {
+  async answer(context, { onSearchStart, onSentence, onToolUse } = {}) {
     const stream = this.client.beta.messages.stream({
       model: this.model,
       max_tokens: MAX_TOKENS,
@@ -145,6 +146,7 @@ class ClaudeBrain {
         event.content_block?.name === 'web_search'
       ) {
         announced = true;
+        onToolUse?.('web_search');
         onSearchStart?.();
       }
     });
@@ -229,7 +231,7 @@ class OpenAiBrain {
    * about 0.3s in, well before the answer exists. That's the only moment where
    * saying "hang on" is honest rather than a delay of its own.
    */
-  async answer(context, { onSearchStart, onSentence } = {}) {
+  async answer(context, { onSearchStart, onSentence, onToolUse } = {}) {
     const res = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
@@ -260,6 +262,7 @@ class OpenAiBrain {
         case 'response.web_search_call.in_progress':
           if (!announced) {
             announced = true;
+            onToolUse?.('web_search');
             onSearchStart?.();
           }
           break;
@@ -316,6 +319,10 @@ export function createBrain({ guildId } = {}) {
 
   // The agent brain is Anthropic-only (it *is* a Claude session), so the
   // kind switch outranks the provider switch rather than combining with it.
+  // The cascade is the agent with a fast model in front, so the same applies.
+  if (config.get('brainKind') === 'cascade') {
+    return new CascadeBrain({ guildId: guildId ?? 'default' });
+  }
   if (config.get('brainKind') === 'agent') {
     return new AgentBrain({ guildId: guildId ?? 'default' });
   }

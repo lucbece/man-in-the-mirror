@@ -31,6 +31,8 @@ const els = {
   brainAdvice: $('#brainAdvice'),
   chatProviderRow: $('#chatProviderRow'),
   agentRow: $('#agentRow'),
+  fastModelRow: $('#fastModelRow'),
+  answerStats: $('#answerStats'),
 
   speakingForm: $('#speakingForm'),
   voiceSelect: $('#voiceSelect'),
@@ -148,6 +150,48 @@ function render(next) {
   if (!isEditing(els.speakingForm)) renderSpeaking(next.config);
   renderSessions(next.sessions);
   renderGuilds(next.guilds);
+  renderAnswerStats(next.answers);
+}
+
+/**
+ * What the last few answers actually cost.
+ *
+ * Here rather than hidden in a log because it answers the one question the
+ * Thinking tab cannot otherwise settle: how many turns needed a tool at all.
+ * The share that did not is the share a fast model in front could have taken,
+ * which is the whole case for or against the cascade — and it is a fact about
+ * this channel, not a general claim.
+ */
+function renderAnswerStats(stats) {
+  if (!stats?.count) {
+    els.answerStats.hidden = true;
+    return;
+  }
+  els.answerStats.hidden = false;
+
+  const seconds = (ms) => (typeof ms === 'number' ? `${(ms / 1000).toFixed(1)}s` : '—');
+  const noTools = Math.round((1 - stats.toolRate) * 100);
+  const rows = [
+    ['answers measured', String(stats.count)],
+    ['needed no tool', `${noTools}%`],
+    ['first words, no tool', seconds(stats.firstAudioWithoutToolsMs)],
+    ['first words, with tools', seconds(stats.firstAudioWithToolsMs)],
+  ];
+  if (stats.escalationRate > 0) {
+    rows.push(['handed over', `${Math.round(stats.escalationRate * 100)}%`]);
+  }
+
+  els.answerStats.replaceChildren(
+    ...rows.map(([label, value]) => {
+      const row = document.createElement('div');
+      const name = document.createElement('span');
+      name.textContent = label;
+      const out = document.createElement('strong');
+      out.textContent = value;
+      row.append(name, out);
+      return row;
+    }),
+  );
 }
 
 function renderBotStatus(bot) {
@@ -169,10 +213,13 @@ function renderBotStatus(bot) {
  */
 function renderPipeline(cfg) {
   const hearing = cfg.sttProvider === 'local' ? `whisper ${cfg.sttLocalModel}` : 'OpenAI whisper';
+  const agentModel = cfg.brainModel || 'claude-sonnet-5';
   const thinking =
-    cfg.brainKind === 'agent'
-      ? `agent · ${cfg.brainModel || 'claude-sonnet-5'}`
-      : `${cfg.brainProvider} · ${cfg.brainModel || (cfg.brainProvider === 'openai' ? 'gpt-4.1' : 'claude-sonnet-5')}`;
+    cfg.brainKind === 'cascade'
+      ? `${cfg.fastModel || 'claude-haiku-4-5'} → agent · ${agentModel}`
+      : cfg.brainKind === 'agent'
+        ? `agent · ${agentModel}`
+        : `${cfg.brainProvider} · ${cfg.brainModel || (cfg.brainProvider === 'openai' ? 'gpt-4.1' : 'claude-sonnet-5')}`;
   const speaking = cfg.ttsProvider === 'local' ? `Piper ${cfg.ttsLocalVoice}` : `OpenAI ${cfg.ttsVoice}`;
 
   els.pipeline.replaceChildren(
@@ -301,29 +348,38 @@ function renderThinking(cfg) {
   for (const radio of f.brainKind) radio.checked = radio.value === cfg.brainKind;
   for (const radio of f.brainProvider) radio.checked = radio.value === cfg.brainProvider;
   f.brainModel.value = cfg.brainModel ?? '';
+  f.fastModel.value = cfg.fastModel ?? '';
   f.webSearch.checked = cfg.webSearch;
   f.customInstructions.value = cfg.customInstructions ?? '';
   f.mcpServers.value = cfg.mcpServers ?? '';
   f.agentDirectories.value = cfg.agentDirectories ?? '';
   f.agentMaxTurns.value = cfg.agentMaxTurns ?? 8;
 
-  applyBrainKind(cfg.brainKind === 'agent');
+  applyBrainKind(cfg.brainKind);
 
-  const agent = cfg.brainKind === 'agent';
+  const cascade = cfg.brainKind === 'cascade';
+  const agent = cfg.brainKind === 'agent' || cascade;
   const usingClaude = agent || cfg.brainProvider === 'anthropic';
   const missing = usingClaude ? !cfg.hasAnthropicApiKey : !cfg.hasOpenaiApiKey;
   els.brainAdvice.textContent = missing
     ? `No ${usingClaude ? 'Anthropic' : 'OpenAI'} key set, so it can't answer yet. Add one under Keys.`
-    : agent
-      ? 'Agent mode: it remembers the conversation and can use the tools below.'
-      : 'Chat mode: one API call per answer, no memory between them.';
+    : cascade
+      ? 'Cascade: the fast model answers what it can and hands the rest to the agent, which keeps the conversation.'
+      : agent
+        ? 'Agent mode: it remembers the conversation and can use the tools below.'
+        : 'Chat mode: one API call per answer, no memory between them.';
   els.brainAdvice.classList.toggle('warn', missing);
 }
 
-/** The provider choice belongs to chat mode; the tools belong to agent mode. */
-function applyBrainKind(agent) {
+/**
+ * The provider choice belongs to chat mode; the tools belong to the agent,
+ * which the cascade also has behind it.
+ */
+function applyBrainKind(kind) {
+  const agent = kind === 'agent' || kind === 'cascade';
   els.chatProviderRow.classList.toggle('dim', agent);
   els.agentRow.classList.toggle('dim', !agent);
+  els.fastModelRow.classList.toggle('dim', kind !== 'cascade');
 }
 
 function renderSpeaking(cfg) {
@@ -513,7 +569,7 @@ els.guildSelect.addEventListener('change', () => renderGuilds(state?.guilds ?? [
 
 // Reflect the choice the moment it's clicked, not only after a save round-trips.
 for (const radio of els.thinkingForm.elements.brainKind) {
-  radio.addEventListener('change', () => applyBrainKind(radio.value === 'agent' && radio.checked));
+  radio.addEventListener('change', () => radio.checked && applyBrainKind(radio.value));
 }
 for (const radio of els.hearingForm.elements.sttProvider) {
   radio.addEventListener('change', () =>
@@ -606,6 +662,7 @@ els.thinkingForm.addEventListener('submit', (event) => {
         brainKind: [...f.brainKind].find((r) => r.checked)?.value ?? 'agent',
         brainProvider: [...f.brainProvider].find((r) => r.checked)?.value ?? 'anthropic',
         brainModel: f.brainModel.value,
+        fastModel: f.fastModel.value,
         webSearch: f.webSearch.checked,
         customInstructions: f.customInstructions.value,
         mcpServers: f.mcpServers.value,
