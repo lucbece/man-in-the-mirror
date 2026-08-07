@@ -133,6 +133,34 @@ export function requirePermission(guild, askerId, flag, what) {
   return asker;
 }
 
+/**
+ * Refuse unless the asker may reconfigure the bot.
+ *
+ * A separate, higher bar than the call-management tools, and for a reason that
+ * isn't about Discord at all: an MCP server entry carries a `command`, and that
+ * command gets spawned on the machine running the bot. Anyone who can write one
+ * can run anything. Using the tools someone else configured is open to the room
+ * by design; deciding what those tools are is not.
+ *
+ * Manage Server is the closest Discord permission to "runs this bot".
+ */
+export function requireOwnerish(guild, askerId, what) {
+  if (!askerId) {
+    throw new DiscordToolError(`I can't tell who's asking, so I won't ${what}.`);
+  }
+  const asker = guild.members.cache.get(askerId);
+  if (!asker) {
+    throw new DiscordToolError(`I can't tell who's asking, so I won't ${what}.`);
+  }
+  if (!asker.permissions.has(PermissionFlagsBits.ManageGuild)) {
+    throw new DiscordToolError(
+      `${asker.displayName} would need Manage Server to ${what} — that changes what runs on the host machine, ` +
+        'so it is deliberately not open to everyone in the call.',
+    );
+  }
+  return asker;
+}
+
 /** A voice channel by spoken name, or the one the asker is in. */
 function resolveChannel(guild, spoken, asker) {
   if (!spoken) {

@@ -7,6 +7,7 @@ import {
   describeVoice,
   disconnectMember,
   moveMember,
+  requireOwnerish,
   requirePermission,
   resolveMember,
   setMemberMute,
@@ -256,5 +257,42 @@ describe('channel names as people actually say them', () => {
 
     await assert.rejects(() => moveMember(g, '1', { name: 'maki', channel: 'sala' }), /could be/);
     assert.equal(target.moved, undefined);
+  });
+});
+
+describe('reconfiguring the bot needs a higher bar', () => {
+  const MANAGE = PermissionFlagsBits.ManageGuild;
+
+  test('someone who can move people still cannot change what runs', () => {
+    // The escalation this exists for: an MCP entry carries a `command`, and
+    // that command is spawned on the host. Using the tools someone configured
+    // is open to the room; deciding what those tools are is not.
+    const mover = member('1', 'Mover', { permissions: [PermissionFlagsBits.MoveMembers] });
+    const g = guild([mover]);
+    assert.throws(
+      () => requireOwnerish(g, '1', 'change which MCP servers the bot runs'),
+      /Manage Server/,
+    );
+  });
+
+  test('Manage Server passes', () => {
+    const owner = member('1', 'Owner', { permissions: [MANAGE] });
+    const g = guild([owner]);
+    assert.equal(requireOwnerish(g, '1', 'do the thing').displayName, 'Owner');
+  });
+
+  test('an unidentified asker never passes', () => {
+    const g = guild([member('1', 'Owner', { permissions: [MANAGE] })]);
+    assert.throws(() => requireOwnerish(g, null, 'x'), /can't tell who's asking/);
+    assert.throws(() => requireOwnerish(g, '999', 'x'), /can't tell who's asking/);
+  });
+
+  test('it does not depend on the bot holding the permission', () => {
+    // Unlike the call-management tools: the bot does not need Manage Server to
+    // write its own config file, so requiring it would refuse for the wrong
+    // reason.
+    const owner = member('1', 'Owner', { permissions: [MANAGE] });
+    const g = guild([owner], { botPermissions: [] });
+    assert.doesNotThrow(() => requireOwnerish(g, '1', 'x'));
   });
 });

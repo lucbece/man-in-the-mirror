@@ -10,6 +10,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { config } from '../config.js';
 import { AgentBrain } from './agent-brain.js';
 import { SentenceSplitter } from './sentences.js';
+import { customInstructionBlock } from './instructions.js';
 
 /**
  * Hard ceiling on what gets spoken, in characters.
@@ -114,7 +115,7 @@ class ClaudeBrain {
     const stream = this.client.beta.messages.stream({
       model: this.model,
       max_tokens: MAX_TOKENS,
-      system: SYSTEM_PROMPT,
+      system: SYSTEM_PROMPT + customInstructionBlock(config.get('customInstructions')),
       // Low effort keeps latency down; a voice reply that lands four seconds
       // late has already lost the moment. Not every model accepts it.
       ...(this.can.effort ? { output_config: { effort: 'low' } } : {}),
@@ -237,7 +238,7 @@ class OpenAiBrain {
       },
       body: JSON.stringify({
         model: this.model,
-        instructions: SYSTEM_PROMPT,
+        instructions: SYSTEM_PROMPT + customInstructionBlock(config.get('customInstructions')),
         input: buildUserMessage(context),
         ...(this.webSearch ? { tools: [{ type: 'web_search' }] } : {}),
         max_output_tokens: 400,
