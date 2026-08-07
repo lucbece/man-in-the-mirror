@@ -54,7 +54,7 @@ const MAX_CHUNK = 240;
  * one more delta.
  */
 function startsSentence(char) {
-  if (/[¿¡"'«(\[\d]/.test(char)) return true;
+  if (/[¿¡"'«([\d]/.test(char)) return true;
   return char === char.toUpperCase() && char !== char.toLowerCase();
 }
 

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { describe } from 'node:test';
 
-import { looksHallucinated, echoesPrompt, namePrompt } from '../src/agent/stt.js';
+import { looksHallucinated, echoesPrompt } from '../src/agent/stt.js';
 
 // The one that started this. Reported from a live channel with nobody
 // speaking, and repeated verbatim — which is the tell.

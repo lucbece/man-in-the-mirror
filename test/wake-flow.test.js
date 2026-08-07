@@ -34,7 +34,9 @@ function stubSession() {
 }
 
 const said = (userId, displayName, text) => ({ userId, displayName, text });
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const wait = (ms) => new Promise((resolve) => {
+  setTimeout(resolve, ms);
+});
 
 describe('hearing out a question', () => {
   test('takes the question when it arrives in one breath', async () => {

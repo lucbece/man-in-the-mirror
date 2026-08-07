@@ -462,6 +462,10 @@ src/
   agent/stt.js            transcription — API or whisper.cpp
   agent/brain.js          chat mode — Anthropic or OpenAI
   agent/agent-brain.js    agent mode — Claude Agent SDK session, MCP, bot tools
+  agent/cascade.js        cascade mode — fast model in front, deferring by tool
+  agent/answers.js        what the last answers cost, in memory
+  agent/settings.js       the settings reachable by voice, and only those
+  agent/instructions.js   the mutable half of the prompt, and the fixed half
   agent/mcp.js            MCP configuration parsing and tool allow-lists
   agent/reminders.js      timer registry for spoken reminders
   agent/discord-tools.js  call management, gated on the requester's permissions
@@ -472,6 +476,38 @@ src/
   agent/piper.js          Piper runtime, downloaded on demand
   web/server.js           control panel API and static files
 ```
+
+## Checks
+
+```
+npm run check     lint and tests, the same two things CI runs
+npm run lint      eslint
+npm test          node --test
+```
+
+Both run automatically in two places.
+
+**Before each commit.** `npm install` points `core.hooksPath` at `.githooks/`,
+so the hook installs itself and there is nothing to remember. It runs only when
+JavaScript or the manifest changed, takes about two seconds, and prints the
+whole failure when the suite fails. `git commit --no-verify` skips it
+deliberately.
+
+**On every push and pull request**, via `.github/workflows/ci.yml`, on Node 20
+and 22 — the floor `package.json` claims and the version people actually run.
+Actions is free here: public repositories are not billed for standard runners.
+A second job runs `npm audit --audit-level=high`, since the tests never make a
+network call and a dependency that suddenly wants one is worth knowing about in
+a bot holding three API keys.
+
+The linter is configured for the class of mistake that reads fine and fails at
+runtime — a variable that no longer exists, a promise nobody awaited, a
+condition that is always true. It is deliberately not a formatter: this
+codebase has a voice, and a style rule set would rewrite it into something
+uniform and bury every real change for a month. `eslint.config.js` says which
+rules are off and why, including the two turned off because they were all noise
+here and the one real finding they surfaced, which is written down in
+[AUDIT.md](AUDIT.md) rather than silenced.
 
 ## Rebuilding the launcher
 
@@ -484,3 +520,4 @@ machine; the machines running the result need nothing.
 
 It is stdlib-only and cross-compiles, so a Linux host can produce the Windows
 binary.
+

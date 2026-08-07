@@ -136,7 +136,7 @@ class SessionManager extends EventEmitter {
     } catch (err) {
       session.destroy();
       this.sessions.delete(channel.guild.id);
-      throw new Error(`Could not connect to ${channel.name}: ${err.message}`);
+      throw new Error(`Could not connect to ${channel.name}: ${err.message}`, { cause: err });
     }
 
     // Nobody is waiting yet, so this is the cheapest moment to absorb the
