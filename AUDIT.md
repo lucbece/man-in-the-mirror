@@ -73,12 +73,3 @@ number was chosen sensibly on its own; the total — call it 2.3s before the
 model is even asked — has never been measured against how much of it is
 actually needed. `answers.js` now records the model half of every answer, so
 the comparison is finally possible.
-
-### `docs/agent-brain-plan.md` has one stale row and stops before the third brain
-
-Better than it sounds — it is an accurate design record with the measurements
-that justified the decisions, and worth keeping. Two things have drifted: its
-phase table still lists `/mj status` showing session age and spend as pending,
-which `commands.js` has done since; and the whole document predates cascade
-mode, so the file that explains "how does this bot think" now covers two brains
-out of three.
