@@ -788,3 +788,25 @@ a:hover {
 .stats strong {
   font-variant-numeric: tabular-nums;
 }
+
+/* A form with unsaved edits stops accepting updates from the server until it
+   is saved, so it has to say so — otherwise the panel just looks like it has
+   stopped refreshing. The dot sits on the button that resolves it. */
+form[data-unsaved] button.primary::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  margin-left: var(--space-2);
+  border-radius: var(--radius-full);
+  background: currentColor;
+  display: inline-block;
+  vertical-align: middle;
+  opacity: 0.75;
+}
+
+form[data-unsaved] .row::after {
+  content: "unsaved";
+  align-self: center;
+  color: var(--text-dim);
+  font-size: 0.82rem;
+}

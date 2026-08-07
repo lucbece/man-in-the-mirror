@@ -74,16 +74,6 @@ model is even asked — has never been measured against how much of it is
 actually needed. `answers.js` now records the model half of every answer, so
 the comparison is finally possible.
 
-### The panel overwrites a filled-in form two seconds after it loses focus
-
-`isEditing()` is `form.contains(document.activeElement)` and the poll is
-`setInterval(refresh, 2000)`. So typing an MCP config, clicking away to check
-something, and coming back inside three seconds finds the box back to whatever
-is on the server. It only costs re-typing, but it is exactly the kind of thing
-that teaches people not to trust the panel.
-
-Tracking a dirty flag per form until save or an explicit discard would fix it.
-
 ### `docs/agent-brain-plan.md` has one stale row and stops before the third brain
 
 Better than it sounds — it is an accurate design record with the measurements
