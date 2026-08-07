@@ -59,30 +59,22 @@ export class EagerTranscriber extends EventEmitter {
     }
 
     try {
-      const ok = await transcribeUtterance(utterance, stt);
-      if (ok && utterance.text) {
+      const { spoken, failed } = await transcribeUtterance(utterance, stt);
+      // Counted, not logged again. A local runtime that won't start, a model
+      // that won't load, a binary that exits non-zero — all of it used to
+      // vanish here and look from the outside like the bot simply not hearing
+      // anything, which is the hardest possible thing to debug. It is reported
+      // now, but by transcribeUtterance, which is where it happens; saying it
+      // twice would just make the log harder to read.
+      if (failed) this.failures += 1;
+      if (spoken) {
         this.completed += 1;
         this.emit('transcribed', utterance);
       }
     } catch (err) {
-      if (err.fatal) {
-        this.fail(err);
-        return;
-      }
-      // Everything else used to vanish here. A local runtime that won't start,
-      // a model that won't load, a binary that exits non-zero — all of it
-      // looked from the outside like the bot simply not hearing anything,
-      // which is the hardest possible thing to debug. The first few are worth
-      // seeing; after that it's the same message over and over.
-      this.failures += 1;
-      if (this.failures <= 3) {
-        console.warn(
-          `[eager${this.label}] could not transcribe utterance ${utterance.id}: ${err.message}`,
-        );
-        if (this.failures === 3) {
-          console.warn(`[eager${this.label}] further failures will be counted, not logged`);
-        }
-      }
+      // Only fatal errors get this far — no key, no credit, a provider that
+      // will fail identically on everything queued behind this.
+      this.fail(err);
     }
   }
 

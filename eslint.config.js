@@ -44,10 +44,12 @@ export default [
       // Off, and worth saying why rather than leaving it looking arbitrary.
       // It flagged three places here. Two are its documented false-positive
       // shape — a plain write to a parameter's property after an await, with
-      // no read-modify-write and no second writer. The third pointed at a real
-      // window (two transcription paths can pick up the same utterance) which
-      // no lint rule can settle; that one is written down in AUDIT.md instead
-      // of being silenced here and forgotten.
+      // no read-modify-write and no second writer. The third was real: two
+      // transcription paths could pick up the same utterance, send it twice
+      // and disagree about the result. That one is fixed (see the in-flight
+      // map in agent/stt.js), which is the outcome this rule is for, and the
+      // reason it is worth turning back on the day the false positives stop
+      // outnumbering the findings.
       'require-atomic-updates': 'off',
 
       // Off because it is all noise in this codebase: the MCP `tool()`
