@@ -509,6 +509,10 @@ rules are off and why, including the two turned off because they were all noise
 here and the one real finding they surfaced, which is written down in
 [AUDIT.md](AUDIT.md) rather than silenced.
 
+[AUDIT.md](AUDIT.md) is where known problems live instead of a board: the
+symptom, where it is, and why it happens. Entries are deleted by the commit
+that fixes them, so the file is always the current list rather than a history.
+
 ## Rebuilding the launcher
 
 Only required after changing `launcher/main.go`. Go is needed on the build
