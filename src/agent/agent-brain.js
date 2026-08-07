@@ -360,7 +360,10 @@ function getSession(guildId) {
  * is waiting, is free; paying it on the first question is not.
  */
 export function warmAgentSession(guildId) {
-  if (config.get('brainKind') !== 'agent') return;
+  // Cascade counts: its fast leg answers most turns, but the ones it hands
+  // over go to this same session, and a cold start there lands on top of a
+  // handover the room is already waiting through.
+  if (!['agent', 'cascade'].includes(config.get('brainKind'))) return;
   try {
     getSession(guildId);
   } catch (err) {
