@@ -61,16 +61,6 @@ client. `voice/manager.js` is the most valuable of the three and probably the
 most tractable: its job is a registry keyed by guild, and the identity guard
 around teardown is exactly the part that has broken before.
 
-### Reminders are lost on restart, and the bot says otherwise
-
-[src/agent/reminders.js](src/agent/reminders.js) holds timers in a `Map`. The
-tool replies "I'll tell you in two minutes", which is true until the process
-exits, and then silently is not. The README documents it; the person in the
-call does not read the README.
-
-Either persist them next to `config.json` and re-arm on boot, or have the tool
-say the limit out loud for anything more than a few minutes away.
-
 ---
 
 ## Low

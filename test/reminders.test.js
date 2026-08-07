@@ -1,7 +1,16 @@
 import assert from 'node:assert/strict';
 import test, { describe } from 'node:test';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
-import { reminders, MIN_DELAY_MS, MAX_DELAY_MS, MAX_PER_GUILD } from '../src/agent/reminders.js';
+import {
+  Reminders,
+  reminders,
+  MIN_DELAY_MS,
+  MAX_DELAY_MS,
+  MAX_PER_GUILD,
+} from '../src/agent/reminders.js';
 
 // Real timers with tiny delays would make MIN_DELAY_MS untestable, so tests
 // that need to *fire* monkey-patch the minimum through the public bounds…
@@ -93,5 +102,87 @@ describe('reminders registry', () => {
       () => reminders.set({ guildId: 'g7', delayMs: 60_000, message: 'one too many' }),
       /Too many/,
     );
+  });
+});
+
+describe('surviving a restart', () => {
+  /** A registry with its own file, so these never touch data/reminders.json. */
+  function isolated() {
+    const file = path.join(os.tmpdir(), `reminders-${process.pid}-${count++}.json`);
+    return { file, registry: new Reminders({ file }) };
+  }
+  let count = 0;
+
+  test('a pending reminder is re-armed by a new process', (t) => {
+    // The promise this closes: "recordame a las seis" survived only until
+    // something restarted the bot, and nothing ever said otherwise.
+    const { file, registry } = isolated();
+    t.after(() => fs.rmSync(file, { force: true }));
+
+    registry.set({ guildId: 'g', delayMs: 60 * 60_000, message: 'la reunión' });
+
+    const next = new Reminders({ file });
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const fired = [];
+    next.on('fire', (e) => fired.push(e));
+
+    assert.deepEqual(next.restore(), { restored: 1, missed: 0 });
+    assert.equal(next.list('g').length, 1);
+    assert.equal(next.list('g')[0].message, 'la reunión');
+
+    t.mock.timers.tick(60 * 60_000);
+    assert.equal(fired.length, 1, 'and it still fires');
+  });
+
+  test('one that came due while the bot was down is dropped, not said late', (t) => {
+    // Saying it hours afterwards, to whoever happens to be in the channel now,
+    // is worse than not saying it.
+    const { file, registry } = isolated();
+    t.after(() => fs.rmSync(file, { force: true }));
+
+    registry.set({ guildId: 'g', delayMs: 10 * 60_000, message: 'sacá la basura' });
+
+    const next = new Reminders({ file });
+    assert.deepEqual(next.restore(Date.now() + 60 * 60_000), { restored: 0, missed: 1 });
+    assert.equal(next.list('g').length, 0);
+  });
+
+  test('cancelling really removes it, restart or not', (t) => {
+    const { file, registry } = isolated();
+    t.after(() => fs.rmSync(file, { force: true }));
+
+    const { id } = registry.set({ guildId: 'g', delayMs: 60 * 60_000, message: 'x' });
+    registry.cancel('g', id);
+
+    assert.deepEqual(new Reminders({ file }).restore(), { restored: 0, missed: 0 });
+  });
+
+  test('no file, or a corrupt one, is not a crash on boot', (t) => {
+    const { file, registry } = isolated();
+    t.after(() => fs.rmSync(file, { force: true }));
+
+    assert.deepEqual(registry.restore(), { restored: 0, missed: 0 }, 'missing file');
+
+    fs.writeFileSync(file, 'not json at all');
+    assert.deepEqual(new Reminders({ file }).restore(), { restored: 0, missed: 0 });
+
+    fs.writeFileSync(file, '{"not":"an array"}');
+    assert.deepEqual(new Reminders({ file }).restore(), { restored: 0, missed: 0 });
+  });
+
+  test('ids do not collide with the ones already restored', (t) => {
+    const { file, registry } = isolated();
+    t.after(() => fs.rmSync(file, { force: true }));
+
+    registry.set({ guildId: 'g', delayMs: 60 * 60_000, message: 'first' });
+    registry.set({ guildId: 'g', delayMs: 60 * 60_000, message: 'second' });
+
+    const next = new Reminders({ file });
+    next.restore();
+    const { id } = next.set({ guildId: 'g', delayMs: 60 * 60_000, message: 'third' });
+
+    const ids = next.list('g').map((r) => r.id);
+    assert.equal(new Set(ids).size, 3, `ids collided: ${ids}`);
+    assert.ok(id > 2, 'a new id must not reuse a restored one');
   });
 });

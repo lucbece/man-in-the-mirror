@@ -3,8 +3,12 @@ import { bot } from './bot/index.js';
 import { sessionManager } from './voice/manager.js';
 import { startWebServer } from './web/server.js';
 import { warmFillers } from './agent/filler.js';
+import { reminders } from './agent/reminders.js';
 
 async function main() {
+  // Before the bot connects, so a reminder that comes due seconds after boot
+  // has somewhere to fire into rather than racing the gateway.
+  reminders.restore();
 
   const server = await startWebServer();
   const port = server.address().port;
