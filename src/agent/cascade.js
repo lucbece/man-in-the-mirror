@@ -29,12 +29,27 @@
  * about 0.19. `answerStats()` reports the real p, which is why the measuring
  * came first.
  *
- * Two failure modes shaped the rest of this file. A misrouted *action* is the
- * bad one: the fast leg has no tools, so if it takes "recordáme sacar la
- * basura" it says "listo" and nothing is ever set — the bot lying about what
- * it did, which is worse than being slow. Hence a prompt biased hard toward
- * deferring, and no judgement call on anything imperative. The other is a
- * forked memory, handled by handing the agent what was answered without it.
+ * Three failure modes shaped the rest of this file, and the third was found in
+ * use rather than in advance.
+ *
+ * A misrouted *action* is the bad one: the fast leg has no tools, so if it
+ * takes "recordáme sacar la basura" it says "listo" and nothing is ever set —
+ * the bot lying about what it did, which is worse than being slow. Hence a
+ * prompt biased hard toward deferring, and no judgement call on anything
+ * imperative. The second is a forked memory, handled by handing the agent what
+ * was answered without it.
+ *
+ * The third: "no puedo" is a lie too, and the original prompt did not catch
+ * it. The rule was "escalate anything asked of you as an action rather than a
+ * question", so "desconectá a Marco" handed over every time — measured 8 out
+ * of 8 — while "¿se puede echar a alguien del canal?" handed over none, and
+ * answered that it could not do it and someone with permissions would have to.
+ * Grammatically a question; in the room, someone asking for something to
+ * happen. So the rule is now about the *answer* rather than the grammar: if
+ * you are about to say you can't, escalate, because the other version of you
+ * probably can. Measured after: 4 of 4 on the phrasings that failed, and still
+ * 0 of 4 on "¿se puede aprender a programar a los 40?", which is the same
+ * grammar and genuinely a question.
  */
 import Anthropic from '@anthropic-ai/sdk';
 
@@ -61,8 +76,10 @@ const FAST_PROMPT_EXTRA = `
 
 You are the quick path. Another, slower version of you is available with tools — reminders, web search, the files and services this server has connected, control of the voice call, and its own memory of everything said this session. You have none of that.
 
+The rule that catches everything else: **if your answer would be that you can't do something, escalate instead.** Not "I can't", not "you'd have to do that yourself in Discord", not "someone with permissions has to". The other version of you probably can, so those answers are almost always false coming from you. This holds however it is put — as an order ("desconectá a Marco"), as a question about you ("¿podés desconectarlo?"), or as a question about nobody in particular ("¿se puede echar a alguien del canal?"). All three are someone trying to get something done.
+
 Call escalate, and say nothing else, whenever the answer would need any of it:
-- Anything asked of you as an action rather than a question — remind me, move him, mute her, change your voice, add that server, leave. You cannot do any of it. Saying "listo" without escalating is a lie, and it is the single worst thing you can do here.
+- Anything asked of you as an action — remind me, move him, disconnect her, kick someone, mute someone, change your voice, add that server, leave. You cannot do any of it. Saying "listo" without escalating is a lie, and saying "no puedo" is a different lie.
 - Anything that could have changed since you were trained: scores, weather, prices, news, what is happening today, who currently holds a job or a title.
 - Anything about how this bot is configured, what it can reach, what it was told to remember, or what it is running on.
 - Anything referring back to something the other version did — "what did you find", "the one you mentioned", "read that again", "how much was it".
