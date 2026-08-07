@@ -483,7 +483,18 @@ src/
 npm run check     lint and tests, the same two things CI runs
 npm run lint      eslint
 npm test          node --test
+npm run lock      regenerate package-lock.json after changing dependencies
 ```
+
+`npm run lock` is not optional after a dependency change, and the reason is
+not obvious. `npm install` resolves for *this* machine, so platform-specific
+optional packages this OS will never use are pruned and their dependencies go
+with them — `@snazzah/davey`'s wasm32 variant peers on three `@emnapi`
+packages that no Linux x64 machine installs. `npm ci` validates the whole
+graph including those branches and refuses a lockfile missing them, so the
+file a normal install leaves behind is exactly the file CI rejects.
+`--package-lock-only` does not help either; npm still reads the existing
+`node_modules`. The script resolves in a temp directory where there is none.
 
 Both run automatically in two places.
 
