@@ -5,3 +5,13 @@
 # Everything else keeps LF, including the shell script that has to run on
 # machines where CRLF would break the shebang.
 *.sh text eol=lf
+
+# Kept out of the release bundles `git archive` produces. All of it is build
+# or maintenance machinery that nobody downloading a zip has any use for:
+# launcher/ is Go source plus 600KB of Windows resource blobs used to stamp
+# the icon onto the .exe, and shipping unexplained binaries inside an archive
+# named "no-exe" is also how you get another argument with Defender.
+launcher/ export-ignore
+.github/ export-ignore
+.githooks/ export-ignore
+scripts/ export-ignore
