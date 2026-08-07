@@ -8,7 +8,10 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "test": "node --test"
+    "test": "node --test",
+    "lint": "eslint .",
+    "check": "npm run lint && npm test",
+    "prepare": "git config core.hooksPath .githooks || true"
   },
   "engines": {
     "node": ">=18"
@@ -24,5 +27,10 @@
     "libsodium-wrappers": "^0.7.15",
     "opusscript": "^0.1.1",
     "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.8.0",
+    "globals": "^17.9.0"
   }
 }

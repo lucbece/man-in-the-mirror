@@ -143,7 +143,7 @@ function render(next) {
   renderBotStatus(next.bot);
   renderPipeline(next.config);
   if (!isEditing(els.setupForm)) renderSetup(next.config);
-  if (!isEditing(els.connectionForm)) renderConnection(next.config, next.bot);
+  if (!isEditing(els.connectionForm)) renderConnection(next.config);
   if (!isEditing(els.keysForm)) renderKeys(next.config);
   if (!isEditing(els.hearingForm)) renderHearing(next.config);
   if (!isEditing(els.thinkingForm)) renderThinking(next.config);
@@ -278,7 +278,7 @@ function listOf(items) {
   return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
 }
 
-function renderConnection(cfg, bot) {
+function renderConnection(cfg) {
   const f = els.connectionForm.elements;
   if (document.activeElement !== f.guildId) f.guildId.value = cfg.guildId ?? '';
 

@@ -139,7 +139,9 @@ async function download(url, target, label) {
       for await (const chunk of res.body) {
         done += chunk.length;
         if (!file.write(chunk)) {
-          await new Promise((resolve) => file.once('drain', resolve));
+          await new Promise((resolve) => {
+            file.once('drain', resolve);
+          });
         }
         // Every 10%, or every 25MB when the server didn't say how big it is.
         const step = total ? Math.floor((done / total) * 10) : Math.floor(done / (25 * 1024 * 1024));
@@ -152,11 +154,13 @@ async function download(url, target, label) {
           );
         }
       }
-      await new Promise((resolve, reject) => file.end((err) => (err ? reject(err) : resolve())));
+      await new Promise((resolve, reject) => {
+        file.end((err) => (err ? reject(err) : resolve()));
+      });
     } catch (err) {
       file.destroy();
       fs.rmSync(partial, { force: true });
-      throw new Error(`${label} download failed after ${mb(done)}MB: ${err.message}`);
+      throw new Error(`${label} download failed after ${mb(done)}MB: ${err.message}`, { cause: err });
     }
 
     fs.renameSync(partial, target);

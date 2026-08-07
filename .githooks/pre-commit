@@ -1,0 +1,43 @@
+#!/bin/sh
+# Runs the same checks CI runs, before the commit exists rather than after it
+# is pushed. Installed by `npm install` — the `prepare` script points
+# core.hooksPath here, so there is nothing to remember and nothing extra to
+# install.
+#
+# The whole thing takes a couple of seconds. If that ever stops being true,
+# make it faster rather than making it optional: a hook people skip is worse
+# than no hook, because it looks like coverage that isn't there.
+#
+# To bypass deliberately: git commit --no-verify
+
+set -e
+
+if [ -z "$(git diff --cached --name-only)" ]; then
+  exit 0
+fi
+
+# Only when JavaScript changed. A README commit should not run the suite.
+if ! git diff --cached --name-only --diff-filter=ACMR | grep -qE '\.js$|package(-lock)?\.json$|eslint\.config\.js$'; then
+  exit 0
+fi
+
+if [ ! -d node_modules ]; then
+  echo "pre-commit: node_modules is missing — run npm install" >&2
+  exit 1
+fi
+
+echo "pre-commit: lint"
+npm run --silent lint
+
+# Quiet when it passes, and everything when it doesn't. Piping the suite
+# straight to /dev/null saves four lines of noise on every commit and costs you
+# the one thing you need on the commit that fails — which name, which
+# assertion, which line.
+echo "pre-commit: tests"
+if ! output=$(npm test --silent 2>&1); then
+  echo "$output" >&2
+  echo "pre-commit: tests failed — commit stopped" >&2
+  exit 1
+fi
+
+echo "pre-commit: ok"
