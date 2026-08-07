@@ -217,6 +217,13 @@ function renderAnswerStats(stats) {
   if (stats.escalationRate > 0) {
     rows.push(['handed over', `${Math.round(stats.escalationRate * 100)}%`]);
   }
+  // The other half of the wait, and the half nobody had ever measured:
+  // silence detection, transcription and the grace pause, before the model is
+  // asked anything at all. Only spoken questions have it — one typed here
+  // never waited for any of it.
+  if (stats.beforeAskMs !== null && stats.beforeAskMs !== undefined) {
+    rows.push(['heard → asked', seconds(stats.beforeAskMs)]);
+  }
 
   els.answerStats.replaceChildren(
     ...rows.map(([label, value]) => {

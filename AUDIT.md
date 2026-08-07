@@ -35,27 +35,20 @@ Nothing open.
 
 ## Medium
 
-### The session and the slash commands still have no tests
-
-Covered now: `web/server.js`, the tool catalogue, and `voice/manager.js`. What
-is left without a test that imports it is `agent-brain.js` — now just the
-session — and `bot/commands.js`.
-
-Both are harder than what came before. The session's whole job is talking to a
-subprocess over a streaming protocol, so a useful test needs a fake of that
-protocol rather than a fake of an object. `commands.js` needs an interaction,
-which is a large Discord shape to imitate for handlers that are mostly one
-call each into things already tested.
+Nothing open.
 
 ---
 
 ## Low
 
-### The wake chain's timings have never been measured together
+### The wake chain is measured now, but not yet tuned
 
-`voice/session.js` waits 500ms of silence to cut an utterance, then up to
-`WAKE_GRACE_MS` (900ms) for more of the question, on top of transcription. Each
-number was chosen sensibly on its own; the total — call it 2.3s before the
-model is even asked — has never been measured against how much of it is
-actually needed. `answers.js` now records the model half of every answer, so
-the comparison is finally possible.
+`answers.js` records `beforeAskMs` — from the moment someone stops talking to
+the moment the model is asked anything — and the Thinking tab shows it as
+"heard → asked". That is the half of the wait that was never measured, only
+chosen: 500ms of silence to cut the utterance, up to 900ms of grace for more
+of the question, transcription in between.
+
+What is left is the part that needs a real call rather than a code change:
+look at the number after using it for a while, and decide whether any of those
+three is longer than it needs to be. Nothing should move until it has.

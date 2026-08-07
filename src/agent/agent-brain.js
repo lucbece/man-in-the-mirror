@@ -85,9 +85,17 @@ function botClient() {
   return bot?.client ?? null;
 }
 
-/** One live SDK session. Input is pushed; output is pumped in the background. */
-class AgentSession {
-  constructor({ signature, options, turn, model, toolNames }) {
+/**
+ * One live SDK session. Input is pushed; output is pumped in the background.
+ *
+ * `run` is the SDK's `query`, injectable because everything interesting here
+ * is how this class *reads* the message stream — when a sentence is complete,
+ * when a flush is owed, which result subtypes are an answer and which are a
+ * failure. Testing that against a real subprocess would be testing the SDK;
+ * testing it against a fake stream is testing this.
+ */
+export class AgentSession {
+  constructor({ signature, options, turn, model, toolNames, run = query }) {
     this.signature = signature;
     this.model = model ?? null;
     this.toolNames = toolNames ?? [];
@@ -101,7 +109,7 @@ class AgentSession {
     this.spentUsd = 0;
     this.answers = 0;
 
-    this.stream = query({ prompt: this.#input(), options });
+    this.stream = run({ prompt: this.#input(), options });
     this.#pump();
   }
 
