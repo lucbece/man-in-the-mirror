@@ -16,15 +16,28 @@ import {
 } from '../agent/instructions.js';
 import { agentSessionStatus } from '../agent/agent-brain.js';
 import { answerStats } from '../agent/answers.js';
+import { sameOriginOnly } from './same-origin.js';
 
 const HOST = process.env.WEB_HOST || '127.0.0.1';
 
-export function startWebServer() {
+/**
+ * The panel, as an express app that is not listening yet.
+ *
+ * Split from `startWebServer` so the routes can be exercised on an ephemeral
+ * port without a Discord connection or the configured port. Nothing tested
+ * this file before, and the CSRF hole below is exactly what a couple of
+ * requests would have caught.
+ */
+export function createApp() {
   const app = express();
   app.use(express.json({ limit: '1mb' }));
 
   const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'public');
   app.use(express.static(publicDir));
+
+  // Before every route, and covering all of them: nothing here should act on
+  // a request that some other page in the browser made.
+  app.use(sameOriginOnly);
 
   // --- state ---------------------------------------------------------------
 
@@ -198,7 +211,11 @@ export function startWebServer() {
     }
   });
 
-  // --- boot ----------------------------------------------------------------
+  return app;
+}
+
+export function startWebServer() {
+  const app = createApp();
 
   return new Promise((resolve, reject) => {
     const server = app.listen(config.get('webPort'), HOST);
