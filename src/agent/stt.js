@@ -349,17 +349,53 @@ function buildProvider() {
 }
 
 /**
- * Transcribe one utterance in place. Returns true if it now has text.
+ * One in-flight transcription per utterance, so two callers share one request.
  *
- * Shared by the on-demand path and the eager background queue so both handle
- * failures — and the fatal-vs-transient distinction — identically.
+ * Both entry points check `text !== null` before their `await`, and there are
+ * two of them running concurrently by design: the eager queue picks an
+ * utterance up moments after it is spoken, and `transcribeBuffer` sweeps the
+ * window the instant a question arrives. An utterance cut in that gap passed
+ * both checks, was sent twice, and was billed twice — and whichever reply
+ * landed last won, which is a coin toss over which filtering ran.
+ *
+ * A `WeakMap` rather than a `Map`: the key is an utterance that the buffer
+ * will drop on its own schedule, and nothing here should be the reason it
+ * stays in memory.
  */
-export async function transcribeUtterance(utterance, stt) {
-  if (utterance.text !== null) return true;
+const inFlight = new WeakMap();
+
+/**
+ * Transcribe one utterance in place.
+ *
+ * Returns `{ spoken, failed }` — three outcomes that a boolean was quietly
+ * conflating: it now has usable text, it came back empty or was discarded as
+ * junk, or the request failed. The callers report the last of those to a
+ * person, so it has to survive the trip.
+ *
+ * This is the only place transcription happens. That was the intent before —
+ * an older version of this comment claimed it — but `transcribeBuffer` kept
+ * its own copy of the logic, and the copy had lost the prompt-echo check. The
+ * result was a bot that discarded Whisper repeating its own name back on one
+ * path and answered it on the other.
+ */
+export function transcribeUtterance(utterance, stt) {
+  if (utterance.text !== null) return Promise.resolve({ spoken: Boolean(utterance.text), failed: false });
+
+  const existing = inFlight.get(utterance);
+  // Whoever asked first is already doing it, with a provider built from the
+  // same config. Waiting for that is strictly better than starting a second.
+  if (existing) return existing;
+
+  const run = runTranscription(utterance, stt).finally(() => inFlight.delete(utterance));
+  inFlight.set(utterance, run);
+  return run;
+}
+
+async function runTranscription(utterance, stt) {
   const prompt = namePrompt();
   if (utterance.durationMs < MIN_UTTERANCE_MS) {
     utterance.text = '';
-    return false;
+    return { spoken: false, failed: false };
   }
 
   try {
@@ -373,12 +409,14 @@ export async function transcribeUtterance(utterance, stt) {
       console.log(`[stt] discarded, nobody said this: "${text.trim().slice(0, 80)}"`);
     }
     utterance.text = junk ? '' : text;
-    return Boolean(utterance.text);
+    return { spoken: Boolean(utterance.text), failed: false };
   } catch (err) {
     if (err.fatal) throw err; // leave text null; the audio is still usable later
+    // Marked consumed rather than left null, so one genuinely bad chunk isn't
+    // retried on every subsequent question.
     utterance.text = '';
     console.warn(`[stt] utterance ${utterance.id} failed: ${err.message}`);
-    return false;
+    return { spoken: false, failed: true };
   }
 }
 
@@ -422,21 +460,14 @@ export async function transcribeBuffer(buffer, { provider = null } = {}) {
     if (fatal) return;
 
     try {
-      const wav = packetsToWav(utterance.packets);
-      const text = await stt.transcribe(wav, { prompt: namePrompt() });
-      utterance.text = looksHallucinated(text, utterance.durationMs) ? '' : text;
+      const result = await transcribeUtterance(utterance, stt);
+      if (result.failed) failed += 1;
     } catch (err) {
-      if (err.fatal) {
-        // Leave text null so the audio is still there once the cause is fixed.
-        fatal = err;
-        console.warn(`[stt] aborting: ${err.message}`);
-        return;
-      }
-      // One genuinely bad chunk shouldn't lose the whole conversation. Mark it
-      // consumed so it isn't retried on every subsequent question.
-      utterance.text = '';
-      failed += 1;
-      console.warn(`[stt] utterance ${utterance.id} failed: ${err.message}`);
+      // Only fatal errors reach here; transcribeUtterance handles the rest and
+      // reports them in its result. Text is left null so the audio is still
+      // there once the cause is fixed.
+      fatal = err;
+      console.warn(`[stt] aborting: ${err.message}`);
     }
   });
 

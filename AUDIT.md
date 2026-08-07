@@ -29,35 +29,7 @@ Severities are about what a user experiences, not about how hard it is to fix:
 
 ## High
 
-### The on-demand transcription path does not filter prompt echo
-
-`transcribeBuffer` in [src/agent/stt.js](src/agent/stt.js) transcribes inline
-rather than calling `transcribeUtterance`, and its copy of the logic checks
-`looksHallucinated` but not `echoesPrompt`. So Whisper handing back the name
-prompt it was given — the bot's own names, which read as somebody calling the
-bot — is discarded on the eager path and kept on this one.
-
-That is one of the two causes of the bot answering things nobody said. It is
-currently masked because eager transcription is on by default and usually gets
-there first; turn it off, or lose the race below, and it is live.
-
-The docstring on `transcribeUtterance` claims the two paths are shared "so both
-handle failures identically". They are not shared, and that comment is how the
-divergence went unnoticed. Fixing this is mostly deleting the duplicate.
-
-### Two paths can transcribe the same utterance at once, and both are billed
-
-`transcribeUtterance` guards with `if (utterance.text !== null) return true`,
-and `transcribeBuffer` filters on `buffer.untranscribed()` — both *before* the
-await. The eager queue runs continuously and `transcribeBuffer` runs the moment
-a question arrives, so an utterance that has just been cut can be picked up by
-both, sent twice, and paid for twice. Whichever finishes last wins, which given
-the entry above can mean the unfiltered result overwriting the filtered one.
-
-Surfaced by `require-atomic-updates`, which is off in `eslint.config.js` with a
-pointer here — no lint rule can settle whether the window is reachable, and it
-is. The fix is a per-utterance in-flight promise: the second caller awaits the
-first rather than starting its own.
+Nothing open.
 
 ---
 
