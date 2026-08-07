@@ -58,7 +58,15 @@ const DEFAULTS = {
   // moving people around the call, web search) plus any MCP servers configured
   // below. The default, because it is what the thing is for; 'chat' is there
   // for when you want the fastest possible answer and nothing else.
-  brainKind: 'agent', // 'chat' | 'agent'
+  //
+  // 'cascade' puts a small fast model in front of the agent: it answers what
+  // needs no tools and hands the rest over. See agent/cascade.js for why it
+  // decides by attempting rather than by classifying first.
+  brainKind: 'agent', // 'chat' | 'agent' | 'cascade'
+  // The model in front, in cascade mode. Small on purpose — its only job is to
+  // recognise when it is out of its depth, and to sound like itself when it
+  // isn't.
+  fastModel: '',
   // MCP servers the agent may use, as a JSON object — same shape Claude
   // Desktop and Claude Code use: { "name": { "command": ..., "args": [...] } }
   // or { "name": { "type": "http", "url": ... } }.
@@ -161,8 +169,9 @@ function clampConfig(cfg) {
   out.openaiApiKey = out.openaiApiKey.trim();
   out.anthropicApiKey = out.anthropicApiKey.trim();
   out.brainModel = out.brainModel.trim();
+  out.fastModel = out.fastModel.trim();
   if (!['anthropic', 'openai'].includes(out.brainProvider)) out.brainProvider = 'anthropic';
-  if (!['chat', 'agent'].includes(out.brainKind)) out.brainKind = 'chat';
+  if (!['chat', 'agent', 'cascade'].includes(out.brainKind)) out.brainKind = 'chat';
   out.mcpServers = out.mcpServers.trim();
   out.agentDirectories = out.agentDirectories.trim();
   // One instruction per line, however they were typed or dictated. The caps

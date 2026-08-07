@@ -369,6 +369,13 @@
               </span>
             </label>
             <label class="choice">
+              <input type="radio" name="brainKind" value="cascade" />
+              <span>
+                <strong>Fast model in front</strong>
+                <small>A small model answers what needs no tools and hands the rest to the agent.</small>
+              </span>
+            </label>
+            <label class="choice">
               <input type="radio" name="brainKind" value="chat" />
               <span>
                 <strong>Answer directly</strong>
@@ -376,6 +383,27 @@
               </span>
             </label>
           </div>
+
+          <label id="fastModelRow">
+            Fast model <span class="optional">optional</span>
+            <input
+              type="text"
+              name="fastModel"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="claude-haiku-4-5"
+            />
+            <small class="hint">
+              The model in front. Its only job is to recognise when it is out
+              of its depth, so small is the point: measured to first spoken
+              word, <code>claude-haiku-4-5</code> 2.4s against the agent's
+              4.9s. It has no tools and no memory of its own — when the answer
+              needs either, it hands over and the agent continues from whatever
+              it had already said.
+            </small>
+          </label>
+
+          <div id="answerStats" class="stats" hidden></div>
 
           <div class="choices" id="chatProviderRow">
             <label class="choice">

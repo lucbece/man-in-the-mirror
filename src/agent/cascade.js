@@ -1,0 +1,314 @@
+/**
+ * A fast model in front of the agent, deciding by trying rather than by
+ * predicting.
+ *
+ * The agent is the reason this bot exists and also the reason it is slow: a
+ * persistent session with a dozen tools reasons about whether to use them
+ * before it says anything, and measured to the first spoken word that is 4.9s
+ * against Haiku's 2.4s. Most of what gets said in a voice call — an opinion, a
+ * joke, a fact somebody half-remembers — never needed a tool at all, and paid
+ * the agent's price anyway.
+ *
+ * The obvious fix is a classifier that reads the question and picks a model.
+ * It is the wrong fix: a classifier is itself a model call, sitting in front
+ * of every question including the fast ones, so it spends latency on exactly
+ * the path it is meant to make faster — and it is a second thing that can be
+ * wrong.
+ *
+ * So the cheap model decides by attempting. It gets one tool, `escalate`, and
+ * a prompt telling it to use it for anything needing a tool, live information,
+ * or memory of an earlier tool result. It either answers — streaming into
+ * speech immediately, with no routing cost whatsoever — or it defers.
+ *
+ * The arithmetic, on this project's own measurements (Haiku 2.4s to first
+ * word, the agent 4.9s, one Haiku round trip ≈ 0.6s when it defers):
+ *
+ *     expected change ≈ p × (−2.5s) + (1 − p) × (+0.6s)
+ *
+ * which is a saving as soon as p, the share of turns needing no tool, passes
+ * about 0.19. `answerStats()` reports the real p, which is why the measuring
+ * came first.
+ *
+ * Two failure modes shaped the rest of this file. A misrouted *action* is the
+ * bad one: the fast leg has no tools, so if it takes "recordáme sacar la
+ * basura" it says "listo" and nothing is ever set — the bot lying about what
+ * it did, which is worse than being slow. Hence a prompt biased hard toward
+ * deferring, and no judgement call on anything imperative. The other is a
+ * forked memory, handled by handing the agent what was answered without it.
+ */
+import Anthropic from '@anthropic-ai/sdk';
+
+import { config } from '../config.js';
+import { AgentBrain, DEFAULT_AGENT_MODEL } from './agent-brain.js';
+import { SYSTEM_PROMPT } from './brain.js';
+import { customInstructionBlock } from './instructions.js';
+import { SentenceSplitter } from './sentences.js';
+
+/**
+ * Small and quick, and the same model already trusted with the search
+ * side-call. The fast leg does no reasoning worth the name: it decides whether
+ * it is out of its depth and, if not, says something conversational.
+ */
+export const DEFAULT_FAST_MODEL = 'claude-haiku-4-5';
+
+/** Enough for the answer, short enough that it cannot ramble past the cap. */
+const MAX_TOKENS = 1024;
+
+/** How many recent question-and-answer pairs either leg is reminded of. */
+const MAX_REMEMBERED = 6;
+
+const FAST_PROMPT_EXTRA = `
+
+You are the quick path. Another, slower version of you is available with tools — reminders, web search, the files and services this server has connected, control of the voice call, and its own memory of everything said this session. You have none of that.
+
+Call escalate, and say nothing else, whenever the answer would need any of it:
+- Anything asked of you as an action rather than a question — remind me, move him, mute her, change your voice, add that server, leave. You cannot do any of it. Saying "listo" without escalating is a lie, and it is the single worst thing you can do here.
+- Anything that could have changed since you were trained: scores, weather, prices, news, what is happening today, who currently holds a job or a title.
+- Anything about how this bot is configured, what it can reach, what it was told to remember, or what it is running on.
+- Anything referring back to something the other version did — "what did you find", "the one you mentioned", "read that again", "how much was it".
+- Anything you are not confident about. Deferring costs a second. Being confidently wrong out loud costs more.
+
+Answer directly only when it is conversation, an opinion, a joke, an explanation, or something stable you plainly know. That is most of what gets said in a call, which is why you are here.
+
+If you escalate you may first say one short holding line in their language — "dame un segundo", "hold on" — and nothing more. Never say what you are about to do, never mention the other version of yourself, and never say the word escalate out loud.`;
+
+const ESCALATE_TOOL = {
+  name: 'escalate',
+  description:
+    'Hand this question to the version of you that has tools and memory. Use it whenever the answer needs a tool, current information, or anything said earlier in the session.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      reason: {
+        type: 'string',
+        description: 'Briefly, what it needs that you do not have. Not spoken aloud.',
+      },
+    },
+    required: ['reason'],
+  },
+};
+
+/**
+ * What the cascade remembers between turns, per voice channel.
+ *
+ * Everything here exists to stop the two legs drifting into separate
+ * conversations. The bot does not hear itself — Discord does not play your own
+ * audio back to you, and nothing transcribes the bot — so an answer exists
+ * only where it was produced. Left alone, the fast leg would forget every
+ * answer it gave the moment it gave it, and the agent would never learn that
+ * anything had been said in its absence.
+ *
+ * So `spoken` is the shared record both legs are reminded of, and `owed` is
+ * the part of it the agent has not been told yet — it remembers its own turns
+ * perfectly well and only needs the ones it missed. `lastUsedTools` is the one
+ * routing signal that costs nothing and is worth having.
+ */
+const state = new Map();
+
+function stateFor(guildId) {
+  if (!state.has(guildId)) state.set(guildId, { lastUsedTools: false, spoken: [], owed: [] });
+  return state.get(guildId);
+}
+
+function remember(memory, question, answer, { byAgent }) {
+  if (!answer) return;
+  memory.spoken.push({ question, answer });
+  if (memory.spoken.length > MAX_REMEMBERED) memory.spoken.shift();
+  if (!byAgent) memory.owed.push({ question, answer });
+}
+
+/** Drop a channel's routing memory when its session goes. */
+export function forgetCascade(guildId) {
+  state.delete(guildId);
+}
+
+/** Only for tests. */
+export function resetCascade() {
+  state.clear();
+}
+
+export class CascadeBrain {
+  /**
+   * `deps` is for tests, and lets them exercise the routing without an API key
+   * or a session process. The agent is built lazily for a plainer reason: in
+   * cascade mode most turns never reach it, and constructing one starts the
+   * session it belongs to.
+   */
+  constructor({ guildId, deps = {} }) {
+    this.guildId = guildId ?? 'default';
+    this.fastModel = config.get('fastModel') || DEFAULT_FAST_MODEL;
+    this.agentModel = config.get('brainModel') || DEFAULT_AGENT_MODEL;
+    this.deps = deps;
+    this.agentBrain = null;
+    this.escalated = false;
+    this.reason = null;
+  }
+
+  get label() {
+    return `${this.fastModel} in front of Claude agent ${this.agentModel}`;
+  }
+
+  get agent() {
+    this.agentBrain ??= this.deps.agent ?? new AgentBrain({ guildId: this.guildId });
+    return this.agentBrain;
+  }
+
+  async answer(context, { onSearchStart, onSentence, onToolUse } = {}) {
+    const memory = stateFor(this.guildId);
+
+    // The one free routing signal worth having. A follow-up to a turn that
+    // used a tool almost always refers to what that tool returned, which only
+    // the agent has — asking the fast leg to try is a guaranteed round trip
+    // wasted. Everything else is left to the model, which knows what it can't
+    // do far better than any rule about the shape of a question.
+    //
+    // Deliberately not a rule: "no MCP servers configured means the agent has
+    // nothing to offer". It always has its own tools — reminders, the call,
+    // its settings — so that reasoning is simply wrong.
+    if (memory.lastUsedTools) {
+      this.escalated = true;
+      this.reason = 'the last answer used a tool, so this may be about what it found';
+      return this.#runAgent(context, memory, { onSearchStart, onSentence, onToolUse });
+    }
+
+    const runFast = this.deps.runFast ?? ((...args) => this.#runFast(...args));
+    const { said, escalate, reason } = await runFast(context, memory, { onSentence });
+    if (!escalate) {
+      memory.lastUsedTools = false;
+      remember(memory, context.question, said, { byAgent: false });
+      return said;
+    }
+
+    this.escalated = true;
+    this.reason = reason;
+    console.log(`[cascade] escalating: ${reason}`);
+    return this.#runAgent(
+      // Whatever the fast leg already said has been spoken into the channel —
+      // it cannot be taken back, so the agent continues from it rather than
+      // starting again. It doubles as the filler, which is better than the
+      // canned clip: it is the bot's own voice, in the right language, saying
+      // something that fits the moment.
+      { ...context, alreadySaid: said || null },
+      memory,
+      { onSearchStart, onSentence, onToolUse },
+    );
+  }
+
+  async #runAgent(context, memory, handlers) {
+    // Handed over once and then forgotten: the session keeps its own memory of
+    // everything it is told, so repeating these next turn would be the same
+    // conversation twice.
+    const asides = memory.owed.slice();
+    memory.owed.length = 0;
+
+    let usedTools = false;
+    const text = await this.agent.answer(
+      { ...context, asides },
+      {
+        ...handlers,
+        // The agent has no idea anything has been said yet, so its first tool
+        // call would ask for the canned "dame un segundo" clip on top of the
+        // line the fast leg just spoke. Two fillers back to back is worse than
+        // none, and the one already said is better — it is the bot's own
+        // voice, in the right language, about this question.
+        onSearchStart: context.alreadySaid ? undefined : handlers.onSearchStart,
+        onToolUse: (name) => {
+          usedTools = true;
+          handlers.onToolUse?.(name);
+        },
+      },
+    );
+    memory.lastUsedTools = usedTools;
+    remember(memory, context.question, text, { byAgent: true });
+    return text;
+  }
+
+  /**
+   * The fast leg: `{ said, escalate, reason }`.
+   *
+   * It reports rather than decides, so that everything about routing — what
+   * happens on a deferral, what the agent is told, what is remembered — lives
+   * in one method above instead of being spread across whoever set a flag.
+   */
+  async #runFast(context, memory, { onSentence }) {
+    const apiKey = config.get('anthropicApiKey');
+    if (!apiKey) {
+      // Not an error: the agent needs the same key, so this fails loudly one
+      // step later with a message about the key rather than about routing.
+      return { said: '', escalate: true, reason: 'no Anthropic key for the fast model' };
+    }
+
+    const client = new Anthropic({ apiKey });
+    const stream = client.messages.stream({
+      model: this.fastModel,
+      max_tokens: MAX_TOKENS,
+      system:
+        SYSTEM_PROMPT +
+        FAST_PROMPT_EXTRA +
+        customInstructionBlock(config.get('customInstructions')),
+      tools: [ESCALATE_TOOL],
+      messages: [{ role: 'user', content: buildFastMessage(context, memory) }],
+    });
+
+    // Sentences go out as they complete, exactly as the chat brain does it, so
+    // an answer the fast leg keeps starts speaking with no routing cost at all.
+    const splitter = new SentenceSplitter();
+    let said = '';
+    if (onSentence) {
+      stream.on('text', (delta) => {
+        for (const chunk of splitter.push(delta)) {
+          said += (said ? ' ' : '') + chunk;
+          onSentence(chunk);
+        }
+      });
+    }
+
+    let response;
+    try {
+      response = await stream.finalMessage();
+    } catch (err) {
+      // A failure here must not lose the question: the agent can still answer
+      // it, and would have been the only option before this file existed.
+      return { said, escalate: true, reason: `the fast model failed (${err?.message ?? err})` };
+    }
+
+    const rest = splitter.flush();
+    if (rest) {
+      said += (said ? ' ' : '') + rest;
+      onSentence?.(rest);
+    }
+
+    const call = response.content.find((b) => b.type === 'tool_use' && b.name === 'escalate');
+    return {
+      said: said.trim(),
+      escalate: Boolean(call),
+      reason: call?.input?.reason ?? null,
+    };
+  }
+}
+
+/**
+ * The fast leg's one message.
+ *
+ * It has no session, so it gets the recent transcript every time. The
+ * transcript is what people said; it does not contain the bot's own replies,
+ * because nothing transcribes the bot. Without the second block below, "and
+ * why?" asked straight after an answer would reach a model with no idea what
+ * it had just said.
+ */
+function buildFastMessage({ transcript, question, askedBy }, memory) {
+  const parts = [];
+  if (transcript) {
+    parts.push('Here is what has been said in the voice channel recently:', '', transcript, '');
+  } else {
+    parts.push("There's no recent conversation to go on.", '');
+  }
+  if (memory?.spoken.length) {
+    parts.push('What you have already answered in this call, oldest first:', '');
+    for (const { question: q, answer } of memory.spoken) {
+      parts.push(`They asked: ${q}`, `You said: ${answer}`, '');
+    }
+  }
+  parts.push(`${askedBy} is now asking you, out loud: ${question}`);
+  return parts.join('\n');
+}

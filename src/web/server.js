@@ -15,6 +15,7 @@ import {
   parseInstructions,
 } from '../agent/instructions.js';
 import { agentSessionStatus } from '../agent/agent-brain.js';
+import { answerStats } from '../agent/answers.js';
 
 const HOST = process.env.WEB_HOST || '127.0.0.1';
 
@@ -35,6 +36,7 @@ export function startWebServer() {
       sessions: sessionManager
         .status()
         .map((session) => ({ ...session, agent: agentSessionStatus(session.guildId) })),
+      answers: answerStats(),
     });
   });
 

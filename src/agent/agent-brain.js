@@ -919,7 +919,7 @@ export class AgentBrain {
     return `Claude agent ${this.model} (MCP: ${['bot', ...this.tools].join(', ')})`;
   }
 
-  async answer(context, { onSearchStart, onSentence } = {}) {
+  async answer(context, { onSearchStart, onSentence, onToolUse } = {}) {
     // The tools check this against Discord's permissions, so it has to be the
     // speaker Discord identified, never a name from the transcript.
     if (this.session.turn_) {
@@ -938,6 +938,7 @@ export class AgentBrain {
       },
       onToolUse: (name) => {
         console.log(`[agent-brain] using tool: ${name}`);
+        onToolUse?.(name);
         if (announced) return;
         announced = true;
         // Any tool call means seconds of silence — same moment the chat
@@ -961,7 +962,7 @@ export class AgentBrain {
  * since the last question was answered.
  */
 function buildTurn(context, session, isFirstTurn) {
-  const { question, askedBy, utterances, transcript } = context;
+  const { question, askedBy, utterances, transcript, asides, alreadySaid } = context;
   const parts = [];
 
   if (isFirstTurn) {
@@ -978,7 +979,29 @@ function buildTurn(context, session, isFirstTurn) {
   }
   session.lastAnsweredAt = Date.now();
 
+  // Turns another model answered on your behalf. Without these the memory
+  // forks the moment anything else answers: the room remembers a conversation
+  // the session was never part of, and the next follow-up refers to an answer
+  // it has never seen.
+  if (asides?.length) {
+    parts.push('You also answered these, quickly, without using any tools:', '');
+    for (const { question: q, answer } of asides) {
+      parts.push(`They asked: ${q}`, `You said: ${answer}`, '');
+    }
+  }
+
   parts.push(`${askedBy} is now asking you, out loud: ${question}`);
+
+  // Handed over mid-answer. This has already been spoken into the channel, so
+  // it is neither repeatable nor retractable — the only useful thing to do
+  // with it is continue from it.
+  if (alreadySaid) {
+    parts.push(
+      '',
+      `You have already said this out loud, just now: "${alreadySaid}"`,
+      'Carry on from there. Do not repeat it, and do not start again.',
+    );
+  }
   return parts.join('\n');
 }
 

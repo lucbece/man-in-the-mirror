@@ -8,6 +8,7 @@
  */
 import { createBrain, clampForSpeech, BrainError, MAX_SPOKEN_CHARS } from './brain.js';
 import { takePendingLeave } from './agent-brain.js';
+import { recordAnswer } from './answers.js';
 import { createTts, toAudioResource } from './tts.js';
 import { guessLanguage, takeFiller } from './filler.js';
 import { formatTranscript, transcribeBuffer } from './stt.js';
@@ -124,6 +125,10 @@ export async function ask(session, { question, askedBy, askedById }, deps = {}) 
 
     let budget = MAX_SPOKEN_CHARS;
     let cutOff = false;
+    // Which tools this answer reached for. The set is what tells the routing
+    // question apart from a guess: a turn that used nothing could have been
+    // answered by anything.
+    const toolsUsed = [];
 
     // If the silence drags on after we've already said something, say
     // something else. Not announced up front: most tool calls come back
@@ -179,6 +184,9 @@ export async function ask(session, { question, askedBy, askedById }, deps = {}) 
         { transcript, utterances, question, askedBy, askedById },
         {
           onSentence: say,
+          onToolUse: (name) => {
+            if (!toolsUsed.includes(name)) toolsUsed.push(name);
+          },
           // Only reached when nothing has been said yet — a canned clip on top
           // of the model's own words would be two fillers in a row.
           onSearchStart: () => {
@@ -207,6 +215,14 @@ export async function ask(session, { question, askedBy, askedById }, deps = {}) 
     timings.cutOffPlayback = await finishSpeaking(speech);
     timings.totalMs = Date.now() - started;
 
+    recordAnswer({
+      brain: brain.label,
+      model: brain.model ?? null,
+      tools: toolsUsed,
+      escalated: Boolean(brain.escalated),
+      timings,
+    });
+
     // Asked to disconnect: now, with the goodbye already said. Doing it inside
     // the tool call would tear down the agent session that was still running
     // that very call.
@@ -224,7 +240,8 @@ export async function ask(session, { question, askedBy, askedById }, deps = {}) 
         (timings.filler
           ? ` · searched at ${(timings.searchedAtMs / 1000).toFixed(1)}s, said "${timings.filler}"`
           : '') +
-        (timings.waited ? ` · filled ${timings.waited} long silence(s)` : ''),
+        (timings.waited ? ` · filled ${timings.waited} long silence(s)` : '') +
+        (toolsUsed.length ? ` · tools: ${toolsUsed.join(', ')}` : ' · no tools'),
     );
     console.log(`[agent]   via ${brain.label} → ${tts.label}`);
 

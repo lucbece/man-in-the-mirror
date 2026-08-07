@@ -211,9 +211,22 @@ export const SETTINGS = [
       {
         value: 'chat',
         label: 'one API call per answer, no memory or tools',
-        aliases: ['chat', 'directo', 'direct', 'simple', 'rapido'],
+        aliases: ['chat', 'directo', 'direct', 'simple'],
+      },
+      {
+        value: 'cascade',
+        label: 'a fast model in front of the agent, handing over what needs tools',
+        aliases: ['cascade', 'cascada', 'mixto', 'hybrid', 'rapido', 'fast path'],
       },
     ]),
+  },
+  {
+    name: 'fast model',
+    aliases: ['front model', 'modelo rapido', 'quick model'],
+    key: 'fastModel',
+    what: 'which model answers first in cascade mode, before anything is handed over',
+    session: true,
+    type: modelName,
   },
   {
     name: 'model',

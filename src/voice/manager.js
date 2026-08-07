@@ -6,6 +6,7 @@ import { AudioPlayerStatus, entersState } from '@discordjs/voice';
 
 import { ask, AgentBusyError } from '../agent/index.js';
 import { endAgentSession, warmAgentSession } from '../agent/agent-brain.js';
+import { forgetCascade } from '../agent/cascade.js';
 import { reminders } from '../agent/reminders.js';
 import { createTts, toAudioResource } from '../agent/tts.js';
 import { clampForSpeech } from '../agent/brain.js';
@@ -111,6 +112,7 @@ class SessionManager extends EventEmitter {
       // The agent session's memory is that conversation; when the bot leaves
       // the channel, the conversation is over.
       endAgentSession(channel.guild.id);
+      forgetCascade(channel.guild.id);
       this.emit('update');
     });
     session.on('update', () => this.emit('update'));

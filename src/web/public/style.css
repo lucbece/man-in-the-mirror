@@ -760,3 +760,31 @@ a:hover {
     transform: translateY(4px);
   }
 }
+
+/* The answer measurements under the Thinking form. Compact rows rather than a
+   table: four numbers do not need a header, and it has to sit inside a form
+   without reading as another field. */
+.stats {
+  display: grid;
+  gap: var(--space-1);
+  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 0.86rem;
+}
+
+.stats div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.stats span {
+  color: var(--text-dim);
+}
+
+.stats strong {
+  font-variant-numeric: tabular-nums;
+}
