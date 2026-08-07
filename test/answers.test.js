@@ -76,3 +76,26 @@ describe('what the last few answers cost', () => {
     assert.equal(answerStats().count, recentAnswers().length);
   });
 });
+
+describe('the half of the wait that is not the model', () => {
+  beforeEach(resetAnswers);
+
+  test('records how long it took to even ask', () => {
+    // Silence detection, transcription, the grace pause. The model's half has
+    // always been measured; without this the total is a guess.
+    recordAnswer({ brain: 'x', tools: [], timings: { beforeAskMs: 2300, firstAudioMs: 2000 } });
+    recordAnswer({ brain: 'x', tools: [], timings: { beforeAskMs: 2100, firstAudioMs: 2000 } });
+
+    assert.equal(answerStats().beforeAskMs, 2200);
+  });
+
+  test('a question typed into the panel has none, and does not skew the rest', () => {
+    // It never waited for any of that, so counting it as zero would make the
+    // wake chain look faster than it is.
+    recordAnswer({ brain: 'x', tools: [], timings: { beforeAskMs: 2300 } });
+    recordAnswer({ brain: 'x', tools: [], timings: {} });
+
+    assert.equal(answerStats().beforeAskMs, 2300);
+    assert.equal(answerStats().count, 2);
+  });
+});

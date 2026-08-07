@@ -36,6 +36,7 @@ export function recordAnswer({ brain, model, tools = [], escalated = false, timi
     usedTools: tools.length > 0,
     escalated,
     firstAudioMs: timings.firstAudioMs ?? null,
+    beforeAskMs: timings.beforeAskMs ?? null,
     thinkMs: timings.thinkMs ?? null,
     totalMs: timings.totalMs ?? null,
   });
@@ -79,6 +80,10 @@ export function answerStats() {
     toolRate: withTools.length / records.length,
     escalationRate: escalated.length / records.length,
     firstAudioMs: median(records.map((r) => r.firstAudioMs)),
+    // The wake chain: silence detection, transcription, the grace wait. Only
+    // present for answers that came from someone speaking — a question typed
+    // into the panel never waited for any of it.
+    beforeAskMs: median(records.map((r) => r.beforeAskMs)),
     firstAudioWithToolsMs: median(withTools.map((r) => r.firstAudioMs)),
     firstAudioWithoutToolsMs: median(withoutTools.map((r) => r.firstAudioMs)),
     totalMs: median(records.map((r) => r.totalMs)),

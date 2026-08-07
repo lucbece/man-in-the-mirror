@@ -263,6 +263,12 @@ summary. The share that used no tool is the share a fast model could have
 taken, which is the whole case for or against cascade mode — and it is a fact
 about your channel rather than a general claim.
 
+It also records `heard → asked`: from the moment someone stops talking to the
+moment the model is asked anything, which covers silence detection,
+transcription and the grace pause. That is the half of the wait that had never
+been measured, and it is only present for spoken questions — one typed into the
+panel never waited for any of it.
+
 No question text and no answer text is retained, only which brain ran, which
 tools it used and the timings. The audio buffer never reaches disk and neither
 does this.

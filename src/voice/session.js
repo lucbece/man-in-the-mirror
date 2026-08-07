@@ -160,6 +160,11 @@ export class VoiceSession extends EventEmitter {
       parts: [utterance.text.trim()],
       heard: utterance.text,
       timer: null,
+      // When they actually stopped talking. Everything between here and the
+      // first spoken word is overhead the room experiences as the bot being
+      // slow — silence detection, transcription, the grace wait — and none of
+      // it was ever measured, only chosen. See AUDIT.md.
+      stoppedAt: utterance.endedAt ?? now,
     };
     // Just its name and nothing else means they're winding up to ask.
     const onlyTheName = normalise(utterance.text).split(' ').length <= 2;
@@ -177,6 +182,7 @@ export class VoiceSession extends EventEmitter {
 
     pending.parts.push(utterance.text.trim());
     pending.heard += ` ${utterance.text.trim()}`;
+    pending.stoppedAt = utterance.endedAt ?? Date.now();
     this.armWake(WAKE_TIMING.graceMs);
   }
 
@@ -210,6 +216,7 @@ export class VoiceSession extends EventEmitter {
           ? 'They said your name but nothing else. Ask what they want, in a few words.'
           : question,
       askedBy: pending.askedBy,
+      stoppedAt: pending.stoppedAt,
       // Discord attributes this to the audio stream it arrived on, so it is
       // the one part of a spoken request that can't be claimed by saying it.
       // Every permission check downstream rests on that.

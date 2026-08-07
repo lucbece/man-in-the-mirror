@@ -72,7 +72,7 @@ const inFlight = new Set();
  * Returns the timings and the text that was spoken, so callers can show the
  * user what happened rather than just "done".
  */
-export async function ask(session, { question, askedBy, askedById }, deps = {}) {
+export async function ask(session, { question, askedBy, askedById, stoppedAt }, deps = {}) {
   // The collaborators are injectable, defaulting to the real ones, purely so
   // this function can be tested. It is where the brain, the synthesiser, the
   // filler clips and the speech queue meet — and it had no coverage at all,
@@ -214,6 +214,10 @@ export async function ask(session, { question, askedBy, askedById }, deps = {}) 
 
     timings.cutOffPlayback = await finishSpeaking(speech);
     timings.totalMs = Date.now() - started;
+    // From the moment they stopped talking to the moment this pipeline began:
+    // silence detection, transcription, the grace wait. The model's half has
+    // always been measured; this is the half that never was.
+    if (stoppedAt) timings.beforeAskMs = started - stoppedAt;
 
     recordAnswer({
       brain: brain.label,
@@ -241,7 +245,10 @@ export async function ask(session, { question, askedBy, askedById }, deps = {}) 
           ? ` · searched at ${(timings.searchedAtMs / 1000).toFixed(1)}s, said "${timings.filler}"`
           : '') +
         (timings.waited ? ` · filled ${timings.waited} long silence(s)` : '') +
-        (toolsUsed.length ? ` · tools: ${toolsUsed.join(', ')}` : ' · no tools'),
+        (toolsUsed.length ? ` · tools: ${toolsUsed.join(', ')}` : ' · no tools') +
+        (timings.beforeAskMs
+          ? ` · ${(timings.beforeAskMs / 1000).toFixed(1)}s of that was before the model was asked`
+          : ''),
     );
     console.log(`[agent]   via ${brain.label} → ${tts.label}`);
 

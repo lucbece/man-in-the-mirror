@@ -148,10 +148,10 @@ export class SessionManager extends EventEmitter {
     session.on('update', () => this.emit('update'));
 
     // Someone said the wake phrase out loud. This is the whole point.
-    session.on('wake', async ({ question, askedBy, askedById, heard }) => {
+    session.on('wake', async ({ question, askedBy, askedById, heard, stoppedAt }) => {
       console.log(`[wake] ${askedBy}: "${heard}"`);
       try {
-        const result = await ask(session, { question, askedBy, askedById });
+        const result = await ask(session, { question, askedBy, askedById, stoppedAt });
         console.log(`[wake] answered: "${result.spoken}"`);
       } catch (err) {
         // Don't speak errors into the channel — that's worse than silence.
