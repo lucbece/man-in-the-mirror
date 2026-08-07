@@ -44,8 +44,36 @@ const els = {
 };
 
 let state = null;
-// Don't clobber a field the user is currently editing.
-const isEditing = (form) => form.contains(document.activeElement);
+
+/**
+ * Forms with changes that have not been saved.
+ *
+ * Focus alone was not enough. The poll runs every two seconds and the guard
+ * was `form.contains(document.activeElement)`, so typing an MCP config,
+ * clicking away to check something and coming back found the box reset to
+ * whatever was on the server. Nothing was lost that could not be retyped,
+ * which is precisely the kind of small betrayal that teaches people not to
+ * trust a control panel.
+ *
+ * A form stays untouched until it is saved. That does mean a setting changed
+ * by voice will not appear while you have unsaved edits in that tab — which is
+ * the right way round: your half-written config outranks a refresh.
+ */
+const unsaved = new Set();
+
+function markUnsaved(form) {
+  unsaved.add(form);
+  form.dataset.unsaved = 'true';
+}
+
+function markSaved(form) {
+  unsaved.delete(form);
+  delete form.dataset.unsaved;
+}
+
+// Don't clobber a field someone is editing, or one they have edited and not
+// yet saved.
+const isEditing = (form) => form.contains(document.activeElement) || unsaved.has(form);
 
 // --- api --------------------------------------------------------------------
 
@@ -73,10 +101,19 @@ function toast(message, kind = 'ok') {
   }, 3200);
 }
 
-async function act(fn, okMessage) {
+/**
+ * Run something, report it, then re-render.
+ *
+ * `form` is cleared of its unsaved mark only when the call succeeds. On a
+ * rejected save — broken MCP JSON, a folder that isn't there — the typed
+ * values stay put and stay protected from the next poll, so the error is
+ * something to fix rather than something to retype.
+ */
+async function act(fn, okMessage, form) {
   try {
     const result = await fn();
     if (okMessage) toast(okMessage);
+    if (form) markSaved(form);
     await refresh();
     return result;
   } catch (err) {
@@ -609,6 +646,7 @@ els.setupForm.addEventListener('submit', (event) => {
         guildId: f.guildId.value,
       }),
     'Saved.',
+    els.setupForm,
   ).then(() => {
     for (const name of ['token', 'openaiApiKey', 'anthropicApiKey']) f[name].value = '';
   });
@@ -616,7 +654,11 @@ els.setupForm.addEventListener('submit', (event) => {
 
 els.connectionForm.addEventListener('submit', (event) => {
   event.preventDefault();
-  act(() => post('/api/config', { guildId: els.connectionForm.elements.guildId.value }), 'Saved.');
+  act(
+    () => post('/api/config', { guildId: els.connectionForm.elements.guildId.value }),
+    'Saved.',
+    els.connectionForm,
+  );
 });
 
 els.keysForm.addEventListener('submit', (event) => {
@@ -630,6 +672,7 @@ els.keysForm.addEventListener('submit', (event) => {
         anthropicApiKey: f.anthropicApiKey.value,
       }),
     'Saved.',
+    els.keysForm,
   ).then(() => {
     for (const name of ['token', 'openaiApiKey', 'anthropicApiKey']) f[name].value = '';
   });
@@ -650,6 +693,7 @@ els.hearingForm.addEventListener('submit', (event) => {
         wakeEnabled: f.wakeEnabled.checked,
       }),
     'Saved.',
+    els.hearingForm,
   );
 });
 
@@ -670,6 +714,7 @@ els.thinkingForm.addEventListener('submit', (event) => {
         agentMaxTurns: Number(f.agentMaxTurns.value) || 8,
       }),
     'Saved.',
+    els.thinkingForm,
   );
 });
 
@@ -684,6 +729,7 @@ els.speakingForm.addEventListener('submit', (event) => {
         ttsLocalVoice: f.ttsLocalVoice.value,
       }),
     'Saved.',
+    els.speakingForm,
   );
 });
 
@@ -691,6 +737,20 @@ for (const btn of document.querySelectorAll('[data-bot]')) {
   btn.addEventListener('click', () =>
     act(() => post(`/api/bot/${btn.dataset.bot}`, {}), `Bot ${btn.dataset.bot}ed.`),
   );
+}
+
+// Any edit to a settings form protects it from the next poll until it saves.
+// `input` covers typing, checkboxes and selects; a value set by render() is
+// assignment rather than input and correctly does not count.
+for (const form of [
+  els.setupForm,
+  els.connectionForm,
+  els.keysForm,
+  els.hearingForm,
+  els.thinkingForm,
+  els.speakingForm,
+]) {
+  form.addEventListener('input', () => markUnsaved(form));
 }
 
 // --- polling ----------------------------------------------------------------
