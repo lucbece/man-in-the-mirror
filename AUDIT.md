@@ -35,31 +35,17 @@ Nothing open.
 
 ## Medium
 
-### `agent-brain.js` is a thousand lines and four separate jobs
+### The session and the command handlers still have no tests
 
-[src/agent/agent-brain.js](src/agent/agent-brain.js) holds the session
-lifecycle, the streaming protocol handling, the entire tool catalogue, and the
-prompt. The tool definitions alone are most of it, and they are the part that
-changes most often — every feature this month added to the same file.
+`web/server.js` and the whole tool catalogue are covered now. What is left
+without a test that imports it: `agent-brain.js` (now just the session),
+`voice/manager.js`, and `bot/commands.js`.
 
-The cost is already visible: the file is the one place where a change has to be
-made carefully because everything else in it is unrelated. Splitting the tools
-out by family (call management, configuration, reminders) would leave a session
-module small enough to read in one go.
-
-### Nothing tests the wiring that Discord runs through
-
-`web/server.js` is covered now. `agent-brain.js`, `voice/manager.js` and
-`bot/commands.js` still have no test that imports them. The logic underneath
-is well covered — permissions, settings, MCP parsing, instructions,
-transcription — but the wiring is not, and the wiring is where the last
-several bugs actually were: a session torn down mid-call, a listener that
-never fired, two gateway connections on one token.
-
-These are harder than `server.js` was, because all three want a Discord
-client. `voice/manager.js` is the most valuable of the three and probably the
-most tractable: its job is a registry keyed by guild, and the identity guard
-around teardown is exactly the part that has broken before.
+All three want a Discord client, which is what makes them harder than
+`server.js` was. `voice/manager.js` is the most valuable and probably the most
+tractable: its job is a registry keyed by guild, and the identity guard around
+teardown is exactly the part that has broken before — a session destroyed
+mid-call, two gateway connections on one token.
 
 ---
 

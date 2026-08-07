@@ -26,6 +26,16 @@ import path from 'node:path';
 
 import { DATA_DIR } from '../paths.js';
 
+/**
+ * A refusal the bot can say out loud.
+ *
+ * Every message thrown below is written to be spoken — "that is too soon for a
+ * reminder, just say it now" — so it needs a type the tool wrapper recognises.
+ * Thrown as a plain Error it escaped into the runtime instead, and the sentence
+ * was never said.
+ */
+export class ReminderError extends Error {}
+
 /** Below this, just answering takes as long as the wait. */
 const MIN_DELAY_MS = 5_000;
 
@@ -135,16 +145,16 @@ export class Reminders extends EventEmitter {
   /** Register one. Throws with a speakable message when the ask is unreasonable. */
   set({ guildId, delayMs, message }) {
     const text = String(message ?? '').trim();
-    if (!text) throw new Error('The reminder needs a message to say.');
+    if (!text) throw new ReminderError('The reminder needs a message to say.');
     if (!Number.isFinite(delayMs) || delayMs < MIN_DELAY_MS) {
-      throw new Error('That is too soon for a reminder — just say it now.');
+      throw new ReminderError('That is too soon for a reminder — just say it now.');
     }
     if (delayMs > MAX_DELAY_MS) {
-      throw new Error('Reminders only go up to twenty-four hours.');
+      throw new ReminderError('Reminders only go up to twenty-four hours.');
     }
     const guild = this.#guild(guildId);
     if (guild.size >= MAX_PER_GUILD) {
-      throw new Error('Too many pending reminders in this channel already.');
+      throw new ReminderError('Too many pending reminders in this channel already.');
     }
 
     const id = this.nextId++;
