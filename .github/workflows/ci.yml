@@ -35,6 +35,17 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
 
+      # npm resolves *optional peer* dependencies differently between majors,
+      # and the lockfile records one of those answers. npm 10 wanted a nested
+      # opusscript and three @emnapi packages that npm 11 leaves out — so `npm
+      # ci` failed here while passing on the machine that wrote the lockfile.
+      # Pinning the major is what makes "the lockfile is authoritative" true;
+      # without it, whose npm wrote it last decides whether CI runs at all.
+      #
+      # End users never hit this: the launcher and both start scripts run `npm
+      # install`, which resolves for whatever npm they have.
+      - run: npm install -g npm@11
+
       # `ci` rather than `install`: it fails on a lockfile that disagrees with
       # package.json instead of quietly resolving something else, which is the
       # difference between testing this commit and testing something near it.
@@ -55,6 +66,7 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - run: npm install -g npm@11
       - run: npm ci
       # Advisory: a high-severity finding in a transitive dependency should
       # interrupt someone's day, a moderate one in a dev tool should not.

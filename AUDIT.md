@@ -55,16 +55,6 @@ The fix is a few lines in [src/web/server.js](src/web/server.js): reject
 state-changing requests whose `Sec-Fetch-Site` is not `same-origin`, and whose
 `Origin`, when present, is not the panel's own.
 
-### `engines` claims Node 18, and nothing has ever run on it
-
-`package.json` says `>=18`; CI runs 20 and 22. Node 18 went end-of-life in
-April 2025, so the claim is both untested and pointing at an unsupported
-runtime — and the launcher downloads a Node for machines that have none, which
-means this number is what someone reads before deciding their machine is fine.
-
-Either add 18 to the CI matrix or raise the floor to 20. Raising it is the
-honest option.
-
 ### `agent-brain.js` is a thousand lines and four separate jobs
 
 [src/agent/agent-brain.js](src/agent/agent-brain.js) holds the session
