@@ -35,26 +35,6 @@ Nothing open.
 
 ## Medium
 
-### Any web page can stop the bot while the panel is running
-
-The panel has no CSRF protection and does not look at `Origin` or
-`Sec-Fetch-Site`. `POST /api/bot/:action` reads only `req.params`, so it needs
-no request body — which makes it a *simple* cross-origin request with no
-preflight for the browser to block.
-
-Verified, not theorised: with the panel running, a form-encoded POST carrying
-`Origin: https://evil.example` returned 200 and stopped the bot.
-
-The blast radius is smaller than it first looks. Everything that changes
-configuration or asks a question needs a JSON body, and `application/json`
-forces a preflight the server never answers, so those are already unreachable.
-What is reachable is bot start, stop and restart — annoying rather than
-dangerous, but it is reachable from any tab the user has open.
-
-The fix is a few lines in [src/web/server.js](src/web/server.js): reject
-state-changing requests whose `Sec-Fetch-Site` is not `same-origin`, and whose
-`Origin`, when present, is not the panel's own.
-
 ### `agent-brain.js` is a thousand lines and four separate jobs
 
 [src/agent/agent-brain.js](src/agent/agent-brain.js) holds the session
@@ -67,16 +47,19 @@ made carefully because everything else in it is unrelated. Splitting the tools
 out by family (call management, configuration, reminders) would leave a session
 module small enough to read in one go.
 
-### Nothing tests the largest and most-changed module
+### Nothing tests the wiring that Discord runs through
 
-No test file imports `agent-brain.js`, `web/server.js`, `voice/manager.js` or
-`bot/commands.js`. The logic underneath them is well covered — permissions,
-settings, MCP parsing, instructions — but the wiring is not, and the wiring is
-where the last several bugs actually were: a session torn down mid-call, a
-listener that never fired, two gateway connections on one token.
+`web/server.js` is covered now. `agent-brain.js`, `voice/manager.js` and
+`bot/commands.js` still have no test that imports them. The logic underneath
+is well covered — permissions, settings, MCP parsing, instructions,
+transcription — but the wiring is not, and the wiring is where the last
+several bugs actually were: a session torn down mid-call, a listener that
+never fired, two gateway connections on one token.
 
-`server.js` is the cheapest to start on: it needs no Discord, and a couple of
-supertest-style checks would have caught the CSRF hole above.
+These are harder than `server.js` was, because all three want a Discord
+client. `voice/manager.js` is the most valuable of the three and probably the
+most tractable: its job is a registry keyed by guild, and the identity guard
+around teardown is exactly the part that has broken before.
 
 ### Reminders are lost on restart, and the bot says otherwise
 
