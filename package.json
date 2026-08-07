@@ -12,7 +12,7 @@
     "lint": "eslint .",
     "check": "npm run lint && npm test",
     "lock": "node scripts/relock.mjs",
-    "prepare": "git config core.hooksPath .githooks || true"
+    "prepare": "node -e \"try{require('child_process').execSync('git config core.hooksPath .githooks',{stdio:'ignore'})}catch{}\""
   },
   "engines": {
     "node": ">=20"
