@@ -35,17 +35,17 @@ Nothing open.
 
 ## Medium
 
-### The session and the command handlers still have no tests
+### The session and the slash commands still have no tests
 
-`web/server.js` and the whole tool catalogue are covered now. What is left
-without a test that imports it: `agent-brain.js` (now just the session),
-`voice/manager.js`, and `bot/commands.js`.
+Covered now: `web/server.js`, the tool catalogue, and `voice/manager.js`. What
+is left without a test that imports it is `agent-brain.js` — now just the
+session — and `bot/commands.js`.
 
-All three want a Discord client, which is what makes them harder than
-`server.js` was. `voice/manager.js` is the most valuable and probably the most
-tractable: its job is a registry keyed by guild, and the identity guard around
-teardown is exactly the part that has broken before — a session destroyed
-mid-call, two gateway connections on one token.
+Both are harder than what came before. The session's whole job is talking to a
+subprocess over a streaming protocol, so a useful test needs a fake of that
+protocol rather than a fake of an object. `commands.js` needs an interaction,
+which is a large Discord shape to imitate for handlers that are mostly one
+call each into things already tested.
 
 ---
 

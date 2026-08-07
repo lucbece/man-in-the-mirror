@@ -12,13 +12,28 @@ import { createTts, toAudioResource } from '../agent/tts.js';
 import { clampForSpeech } from '../agent/brain.js';
 import { warmFillers } from '../agent/filler.js';
 
-/** Tracks one VoiceSession per guild. */
-class SessionManager extends EventEmitter {
-  constructor() {
+/**
+ * Tracks one VoiceSession per guild.
+ *
+ * `createSession` exists so this can be exercised without a Discord gateway:
+ * a real session opens a UDP voice connection in its constructor, which makes
+ * the registry — the part that has actually broken — untestable by accident
+ * rather than by nature. Production passes nothing and gets a real one.
+ */
+export class SessionManager extends EventEmitter {
+  constructor({
+    createSession = (channel) => new VoiceSession(channel),
+    warmAgent = warmAgentSession,
+  } = {}) {
     super();
     this.sessions = new Map();
+    this.createSession = createSession;
+    // Injected for the same reason as createSession, and it matters more:
+    // unstubbed, joining a channel starts a real Agent SDK subprocess holding
+    // about a gigabyte. A test for a Map should not do that.
+    this.warmAgent = warmAgent;
 
-    config.on('change', (values, previous) => {
+    this.onConfigChange = (values, previous) => {
       describeChanges(values, previous);
 
       const voiceChanged =
@@ -50,12 +65,13 @@ class SessionManager extends EventEmitter {
             .catch((err) => console.warn(`[voice] could not change listening: ${err.message}`));
         }
       }
-    });
+    };
+    config.on('change', this.onConfigChange);
 
     // A reminder came due. This is the one place the bot speaks without
     // having just been spoken to — the agent composed the sentence when the
     // reminder was set; all that's left is to say it.
-    reminders.on('fire', async ({ guildId, id, message }) => {
+    this.onReminderFire = async ({ guildId, id, message }) => {
       const session = this.sessions.get(guildId);
       if (!session || session.destroyed) {
         console.warn(`[reminders] #${id} fired but the bot is no longer in a channel — dropped: "${message}"`);
@@ -75,7 +91,21 @@ class SessionManager extends EventEmitter {
       } catch (err) {
         console.warn(`[reminders] #${id} could not be spoken: ${err.message}`);
       }
-    });
+    };
+    reminders.on('fire', this.onReminderFire);
+  }
+
+  /**
+   * Detach from the two process-wide emitters.
+   *
+   * The singleton below never needs this — it lives as long as the process.
+   * A second instance does, or it keeps answering config changes and reminders
+   * for sessions nobody is in.
+   */
+  dispose() {
+    config.off('change', this.onConfigChange);
+    reminders.off('fire', this.onReminderFire);
+    this.leaveAll();
   }
 
   get(guildId) {
@@ -95,7 +125,7 @@ class SessionManager extends EventEmitter {
       this.sessions.delete(channel.guild.id);
     }
 
-    const session = new VoiceSession(channel);
+    const session = this.createSession(channel);
     this.sessions.set(channel.guild.id, session);
 
     session.on('destroyed', () => {
@@ -141,7 +171,7 @@ class SessionManager extends EventEmitter {
 
     // Nobody is waiting yet, so this is the cheapest moment to absorb the
     // agent session's startup.
-    warmAgentSession(channel.guild.id);
+    this.warmAgent(channel.guild.id);
 
     this.emit('update');
     return session;
