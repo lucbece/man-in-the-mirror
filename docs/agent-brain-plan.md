@@ -90,7 +90,7 @@ channel, released on `/mj leave` and after 30 minutes idle.
 | 1 | Sentence-streaming TTS: speak the first sentence while the rest generates. Benefits both brains; measurable win on day one. | **done** — `src/agent/sentences.js`, `src/voice/speech-queue.js` |
 | 2 | `AgentBrain`: SDK session per channel, queue adapter, filler on tool_use, teardown on leave/timeout. | **done** — `src/agent/agent-brain.js` |
 | 3 | Panel: brain kind selector (chat / agent), MCP server list (JSON textarea), maxTurns. | **done** — validated at save time, errors name the field |
-| 4 | Session lifecycle polish: restart on crash, `/mj status` shows session age and spend. | partial — idle reap (30min) and crash-fail exist; status display pending |
+| 4 | Session lifecycle polish: restart on crash, `/mj status` shows session age and spend. | **done** — idle reap (30min), crash-fail, and `agentSessionStatus` behind `/mj status` |
 
 Measured against the live SDK: 4.0s for the first turn, 1.9s for the second.
 The persistent session makes follow-ups faster than the stateless path because
@@ -254,6 +254,21 @@ than having it host one. See [bot-as-mcp-server.md](bot-as-mcp-server.md).
   the grace period that waits for more speech (900ms). Perceived latency from
   the end of a sentence is therefore several seconds higher than the reported
   time to first word. None of those three stages has been tuned.
+
+## What came after this
+
+This record stops where agent mode shipped. Two things happened since, and
+both are documented in the README rather than here:
+
+- **Cascade mode** (`src/agent/cascade.js`) puts a small model in front of the
+  agent, which answers what needs no tools and hands the rest over. It is the
+  direct descendant of the finding below — that capability costs latency — and
+  the way out of that trade for the answers that never needed the capability.
+- **Per-answer measurement** (`src/agent/answers.js`) keeps which tools each
+  answer used and how long each stage took. The numbers in this document were
+  gathered by hand for one afternoon; that is now continuous, which is what
+  makes the untuned stages named at the end of the previous section finally
+  measurable.
 
 ## Rejected alternatives
 
