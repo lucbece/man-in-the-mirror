@@ -7,7 +7,7 @@
  * wondering whether the thing is broken.
  */
 import { createBrain, clampForSpeech, BrainError, MAX_SPOKEN_CHARS } from './brain.js';
-import { takePendingLeave } from './agent-brain.js';
+import { takePendingLeave } from './tools/index.js';
 import { recordAnswer } from './answers.js';
 import { createTts, toAudioResource } from './tts.js';
 import { guessLanguage, takeFiller } from './filler.js';

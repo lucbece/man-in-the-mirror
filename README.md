@@ -465,7 +465,13 @@ src/
   agent/wake.js           name detection
   agent/stt.js            transcription — API or whisper.cpp
   agent/brain.js          chat mode — Anthropic or OpenAI
-  agent/agent-brain.js    agent mode — Claude Agent SDK session, MCP, bot tools
+  agent/agent-brain.js    agent mode — the Claude Agent SDK session itself
+  agent/tools/            the bot's own tools, by what they act on
+    tools/call.js           the voice call — move, mute, disconnect, leave
+    tools/config.js         its own settings, instructions and MCP servers
+    tools/reminders.js      handing a promise to the machine's clock
+    tools/search.js         web search as a fast side-call
+    tools/wrappers.js       how a tool says no without killing the turn
   agent/cascade.js        cascade mode — fast model in front, deferring by tool
   agent/answers.js        what the last answers cost, in memory
   agent/settings.js       the settings reachable by voice, and only those
