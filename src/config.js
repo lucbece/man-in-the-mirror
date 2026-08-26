@@ -94,6 +94,20 @@ const DEFAULTS = {
   ttsVoice: 'onyx', // OpenAI voice
   ttsLocalVoice: 'es_ES-davefx-medium', // Piper voice
 
+  // Driving another bot by posting its commands in a text channel.
+  //
+  // Configurable rather than hardcoded because every music bot has its own
+  // prefix — Jockie is `m!`, others use `-` or `!` — and every server names
+  // the channel differently.
+  //
+  // There is no "off" switch and none is needed: on a server with no such
+  // channel the tools refuse by saying they cannot find it, which is a better
+  // thing for the bot to say than nothing. Blank here restores the default
+  // rather than clearing it, like every other non-secret setting.
+  musicChannel: 'music',
+  musicPlayCommand: 'm!p',
+  musicSkipCommand: 'm!skip',
+
   // Web UI
   webPort: 3000,
 };
@@ -174,6 +188,10 @@ function clampConfig(cfg) {
   if (!['chat', 'agent', 'cascade'].includes(out.brainKind)) out.brainKind = 'chat';
   out.mcpServers = out.mcpServers.trim();
   out.agentDirectories = out.agentDirectories.trim();
+  // A leading # is how people write a channel and not part of its name.
+  out.musicChannel = out.musicChannel.trim().replace(/^#/, '');
+  out.musicPlayCommand = out.musicPlayCommand.trim();
+  out.musicSkipCommand = out.musicSkipCommand.trim();
   // One instruction per line, however they were typed or dictated. The caps
   // on length and count are enforced where there is somewhere to report them:
   // the panel's save handler and the voice tool.
