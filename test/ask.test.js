@@ -11,7 +11,7 @@ import { ask, AgentBusyError } from '../src/agent/index.js';
  * defects found by reading the code were living. These run the whole round
  * trip without a network, a Discord connection or an API key.
  */
-function deps({ sentences = [], failWith = null, search = false } = {}) {
+function deps({ sentences = [], failWith = null, search = false, tools = [] } = {}) {
   const rendered = [];
   return {
     rendered,
@@ -31,7 +31,10 @@ function deps({ sentences = [], failWith = null, search = false } = {}) {
     }),
     createBrain: () => ({
       label: 'fake brain',
-      async answer(_context, { onSentence, onSearchStart }) {
+      async answer(_context, { onSentence, onSearchStart, onToolUse }) {
+        // Order matters, and matches the real brains: the name is recorded
+        // before anything decides whether to cover the wait with a filler.
+        for (const name of tools) onToolUse?.(name);
         if (search) onSearchStart?.();
         for (const s of sentences) onSentence(s);
         if (failWith) throw new Error(failWith);
@@ -150,5 +153,110 @@ describe('ask()', () => {
     const listening = { ...fakeSession('g2'), agentEnabled: true };
     await ask(listening, { question: 'a', askedBy: 'Luc' }, d);
     assert.equal(called, 1);
+  });
+});
+
+describe('doing something without saying anything', () => {
+  test('a turn that only controls music never takes the mouth', async () => {
+    // Taking it pauses the track. Skipping a song and then pausing the next
+    // one to announce the skip is worse than not skipping at all.
+    const session = fakeSession();
+    let tookTheMouth = false;
+    const realStart = session.startSpeech.bind(session);
+    session.startSpeech = () => {
+      tookTheMouth = true;
+      return realStart();
+    };
+
+    const result = await ask(
+      session,
+      { question: 'skip esta' },
+      deps({ tools: ['mcp__bot__skip_song'], search: true }),
+    );
+
+    assert.equal(tookTheMouth, false, 'must not have paused the music');
+    assert.equal(result.spoken, '');
+  });
+
+  test('but silence with nothing done is still the model failing', async () => {
+    // The case the old error existed for, and it has to survive: a model that
+    // says nothing and did nothing is broken, not laconic.
+    await assert.rejects(
+      () => ask(fakeSession(), { question: 'hola' }, deps({ sentences: [] })),
+      /nothing to say/,
+    );
+  });
+
+  test('a music command that also asks something does speak', async () => {
+    const result = await ask(
+      fakeSession(),
+      { question: 'poné algo y decime la hora' },
+      deps({ tools: ['mcp__bot__play_music'], sentences: ['Son las tres de la tarde.'] }),
+    );
+
+    assert.match(result.spoken, /Son las tres/);
+  });
+
+  test('a tool that is not about music still gets its filler', async () => {
+    // The suppression is for commands, not for every tool: a web search is
+    // somebody waiting on an answer, and the silence needs covering.
+    const d = deps({ tools: ['mcp__bot__search_web'], search: true, sentences: ['Listo.'] });
+    await ask(fakeSession(), { question: 'buscá algo' }, d);
+
+    assert.ok(d.rendered.length > 0, 'should have rendered something');
+  });
+});
+
+describe('stage directions are written, never spoken', () => {
+  test('a parenthetical alone is dropped rather than read out', async () => {
+    // Asked to answer a music command with nothing, the model produced
+    // "(reproduciendo)" — a sentence describing silence, which the voice then
+    // reads aloud. Three rounds of asking it not to failed, so it is a rule.
+    const d = deps({ tools: ['mcp__bot__play_music'], sentences: ['(reproduciendo)'] });
+    const result = await ask(fakeSession(), { question: 'poné algo' }, d);
+
+    assert.equal(result.spoken, '');
+    assert.deepEqual(d.rendered, [], 'nothing should have been synthesised');
+  });
+
+  test('asterisked and bracketed actions too', async () => {
+    for (const line of ['*plays the song*', '[silencio]']) {
+      const d = deps({ tools: ['mcp__bot__play_music'], sentences: [line] });
+      const result = await ask(fakeSession(), { question: 'poné algo' }, d);
+      assert.equal(result.spoken, '', line);
+    }
+  });
+
+  test('but a sentence that merely contains brackets is still said', async () => {
+    // "Es de Rada (el uruguayo)" is speech with an aside in it, not an aside.
+    const d = deps({
+      tools: ['mcp__bot__play_music'],
+      sentences: ['Es de Rubén Rada (el uruguayo), del setenta y siete.'],
+    });
+    const result = await ask(fakeSession(), { question: 'de quién es' }, d);
+
+    assert.match(result.spoken, /Rubén Rada/);
+  });
+});
+
+describe('an aside that opens a sentence', () => {
+  test('is stripped, and the sentence survives', async () => {
+    // Heard in a real call: "(silence) No real question here — just a comment
+    // about me." The whole-line check misses it, because there is a sentence
+    // stapled to the aside.
+    const d = deps({ sentences: ['(silence) No hay nada que preguntar acá, che.'] });
+    const result = await ask(fakeSession(), { question: 'está re joven el espejo' }, d);
+
+    assert.ok(!result.spoken.includes('silence'), `still said it: ${result.spoken}`);
+    assert.match(result.spoken, /No hay nada que preguntar/);
+  });
+
+  test('a parenthetical in the middle of a sentence is left alone', async () => {
+    // "Es de Rada (el uruguayo)" is speech with an aside inside it, which is
+    // ordinary writing rather than a stage direction.
+    const d = deps({ sentences: ['Es de Rubén Rada (el uruguayo), del setenta y siete.'] });
+    const result = await ask(fakeSession(), { question: 'de quién es' }, d);
+
+    assert.match(result.spoken, /\(el uruguayo\)/);
   });
 });

@@ -22,9 +22,45 @@
 import { z } from 'zod';
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 
+import { PermissionFlagsBits } from 'discord.js';
+
+import { config } from '../../config.js';
 import { sessionManager } from '../../voice/manager.js';
 import { DiscordToolError } from '../discord-tools.js';
 import { speakableTool } from './wrappers.js';
+
+/**
+ * Write down what is playing, in the channel people already watch for that.
+ *
+ * Best effort on purpose. The music playing is the point; the note is how the
+ * room learns *which* track, which matters because these commands are carried
+ * out without saying anything. If the channel is missing or the bot cannot
+ * post there, the song still plays and nobody is told about a failure that
+ * changed nothing.
+ *
+ * Written rather than spoken because a title is exactly what a listener
+ * mishears, and the whole reason this correction exists is that speech
+ * recognition mangled it on the way in.
+ */
+async function note(turn, text) {
+  try {
+    const guild = turn.guild?.();
+    const wanted = config.get('musicChannel').trim().toLowerCase();
+    if (!guild || !wanted) return;
+
+    const channels = [...guild.channels.cache.values()].filter(
+      (c) => c.isTextBased?.() && !c.isVoiceBased?.(),
+    );
+    const channel =
+      channels.find((c) => c.name.toLowerCase() === wanted) ??
+      channels.find((c) => c.name.toLowerCase().includes(wanted));
+    if (!channel?.permissionsFor(guild.members.me)?.has(PermissionFlagsBits.SendMessages)) return;
+
+    await channel.send(text);
+  } catch (err) {
+    console.warn(`[music] could not write to the channel: ${err.message}`);
+  }
+}
 
 /** The session for this turn's guild, or a refusal that says why not. */
 function musicFor(turn) {
@@ -61,9 +97,17 @@ export function musicTools(turn) {
           turn.askerName ?? 'someone',
         );
 
+        const who = turn.askerName ?? 'someone';
+        await note(
+          turn,
+          startedNow
+            ? `▶️  **${track.title}**  ·  ${mmss(track.seconds)}  ·  pedido por ${who}`
+            : `➕  **${track.title}**  ·  en cola (${position})  ·  pedido por ${who}`,
+        );
+
         return startedNow
-          ? `Playing "${track.title}" (${mmss(track.seconds)}). Say that title out loud — it is what they will hear, and how they find out if you searched for the wrong thing.`
-          : `Queued "${track.title}" at position ${position}. Say the title, and that something is already playing.`;
+          ? `Playing "${track.title}". Written in the music channel too, so say nothing unless they asked something as well.`
+          : `Queued "${track.title}" at position ${position}. Written in the music channel too, so say nothing unless they asked something as well.`;
       }),
     ),
     tool(
@@ -75,9 +119,10 @@ export function musicTools(turn) {
         const skipped = session.music.skip();
         if (!skipped) return 'Nothing is playing.';
         const next = session.music.queue[0];
+        await note(turn, `⏭️  saltado: ${skipped.title}${next ? `  →  **${next.title}**` : ''}`);
         return next
-          ? `Skipped "${skipped.title}". Next is "${next.title}".`
-          : `Skipped "${skipped.title}". Nothing else is queued.`;
+          ? `Skipped "${skipped.title}", now playing "${next.title}". Say nothing — they will hear it.`
+          : `Skipped "${skipped.title}", nothing else queued. Say nothing — they will hear the silence.`;
       }),
     ),
     tool(
@@ -88,7 +133,34 @@ export function musicTools(turn) {
         const session = musicFor(turn);
         if (!session.music.playing) return 'Nothing is playing.';
         session.music.stop();
-        return 'Stopped, and the queue is cleared.';
+        await note(turn, '⏹️  música detenida, cola vacía');
+        return 'Stopped and cleared. Say nothing — they will hear it stop.';
+      }),
+    ),
+    tool(
+      'set_volume',
+      'Turn the music up or down. Use `change` for "bajale un poco" or "subilo" — negative to lower, positive to raise, in percentage points; a nudge is about 15. Use `level` only when they name a number, like "ponelo al treinta".',
+      {
+        change: z
+          .number()
+          .optional()
+          .describe('Relative step in percentage points: -15 to lower a little, 15 to raise.'),
+        level: z.number().optional().describe('Absolute level, 0 to 150. Only when they said a number.'),
+      },
+      speakableTool(async ({ change, level }) => {
+        if (change === undefined && level === undefined) {
+          throw new DiscordToolError('Say whether to turn it up or down.');
+        }
+        const session = musicFor(turn);
+        const { from, to, atLimit } = session.music.setVolume({ change, level });
+
+        if (from === to) {
+          return atLimit
+            ? `Already at ${to} percent, which is as far as it goes. Say so — this one they cannot hear.`
+            : `Volume unchanged at ${to} percent.`;
+        }
+        await note(turn, `🔊  volumen: ${from}% → ${to}%`);
+        return `Volume ${to > from ? 'up' : 'down'} to ${to} percent. Say nothing — they can hear it.`;
       }),
     ),
     tool(
@@ -98,10 +170,11 @@ export function musicTools(turn) {
       speakableTool(async () => {
         const { current, queue } = musicFor(turn).musicStatus();
         if (!current) return 'Nothing is playing.';
+        const level = musicFor(turn).music.volume;
         const rest = queue.length
           ? ` Then: ${queue.slice(0, 3).map((t) => t.title).join(', ')}${queue.length > 3 ? `, and ${queue.length - 3} more` : ''}.`
           : ' Nothing queued after it.';
-        return `"${current.title}", asked for by ${current.requestedBy}.${rest}`;
+        return `"${current.title}", asked for by ${current.requestedBy}, at ${level} percent volume.${rest}`;
       }),
     ),
   ];

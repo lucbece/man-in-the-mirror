@@ -135,7 +135,13 @@ export class VoiceSession extends EventEmitter {
     // Music has its own player: a connection carries one at a time, so the
     // two take turns rather than mixing. See voice/music.js.
     this.music = new MusicPlayer();
-    this.music.on('update', () => this.emit('update'));
+    this.music.on('update', () => {
+      this.emit('update');
+      // Music nobody handed the connection to plays to an empty room. Before
+      // this, the handover only ran when a *speech* ended — so the moment
+      // music commands stopped being announced, they stopped being audible.
+      if (this.music.playing && !this.speech) this.#handMouthTo('music');
+    });
     this.subscription = this.connection.subscribe(this.player);
     this.attachConnectionHandlers();
 
@@ -458,9 +464,11 @@ export class VoiceSession extends EventEmitter {
    * mechanism — but the reference is kept so nothing leaks when the session
    * goes.
    */
-  #handMouthTo(player) {
+  #handMouthTo(owner) {
     if (this.destroyed) return;
-    this.subscription = this.connection.subscribe(player);
+    this.subscription = this.connection.subscribe(
+      owner === 'music' ? this.music.player : this.player,
+    );
   }
 
   startSpeech() {
@@ -470,7 +478,7 @@ export class VoiceSession extends EventEmitter {
     // Answering a question should not cost you the song. The track pauses
     // rather than stopping, so it picks up where it left off.
     const wasPlaying = this.music.pauseForSpeech();
-    this.#handMouthTo(this.player);
+    this.#handMouthTo('speech');
 
     const speech = new SpeechQueue(this.player);
     this.speech = speech;
@@ -481,7 +489,11 @@ export class VoiceSession extends EventEmitter {
         // start one while the first is draining, and handing music the mouth
         // then would cut the new answer off mid-sentence.
         if (this.destroyed || this.speech !== speech) return;
-        this.#handMouthTo(this.music.player);
+        // Cleared before the handover: `this.speech` is what tells the music
+        // player whether anyone is talking, and a stale one would leave a
+        // track that starts later playing to nobody.
+        this.speech = null;
+        this.#handMouthTo('music');
         if (wasPlaying) this.music.resumeAfterSpeech();
       });
     return speech;
