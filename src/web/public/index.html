@@ -531,42 +531,6 @@ We play DayZ on Thursdays; the server is eu-3."
             </label>
 
             <label>
-              Music channel <span class="optional">it types commands there</span>
-              <input
-                type="text"
-                name="musicChannel"
-                autocomplete="off"
-                spellcheck="false"
-                placeholder="music"
-              />
-              <small class="hint">
-                The text channel your music bot listens in. "espejo, poné Beat
-                It" becomes a message there, so the bot has to be able to post
-                in it — and so does whoever asked, or it would be a way into a
-                channel they are kept out of. Matched loosely, so
-                <code>🎵-music</code> works.
-              </small>
-            </label>
-
-            <div class="grid">
-              <label>
-                Play command
-                <input type="text" name="musicPlayCommand" autocomplete="off" spellcheck="false" placeholder="m!p" />
-              </label>
-              <label>
-                Skip command
-                <input type="text" name="musicSkipCommand" autocomplete="off" spellcheck="false" placeholder="m!skip" />
-              </label>
-            </div>
-            <small class="hint">
-              The prefix your music bot answers to — Jockie is <code>m!</code>,
-              others use <code>-</code> or <code>!</code>. The song goes after
-              the play command; the bot corrects what transcription mangled
-              before it types, and says out loud what it queued so you can
-              catch a wrong guess.
-            </small>
-
-            <label>
               Max tool rounds per answer
               <input type="number" name="agentMaxTurns" min="1" max="25" step="1" />
               <small class="hint">

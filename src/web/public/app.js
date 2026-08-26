@@ -400,9 +400,6 @@ function renderThinking(cfg) {
   f.customInstructions.value = cfg.customInstructions ?? '';
   f.mcpServers.value = cfg.mcpServers ?? '';
   f.agentDirectories.value = cfg.agentDirectories ?? '';
-  f.musicChannel.value = cfg.musicChannel ?? '';
-  f.musicPlayCommand.value = cfg.musicPlayCommand ?? '';
-  f.musicSkipCommand.value = cfg.musicSkipCommand ?? '';
   f.agentMaxTurns.value = cfg.agentMaxTurns ?? 8;
 
   applyBrainKind(cfg.brainKind);
@@ -724,9 +721,6 @@ els.thinkingForm.addEventListener('submit', (event) => {
         customInstructions: f.customInstructions.value,
         mcpServers: f.mcpServers.value,
         agentDirectories: f.agentDirectories.value,
-        musicChannel: f.musicChannel.value,
-        musicPlayCommand: f.musicPlayCommand.value,
-        musicSkipCommand: f.musicSkipCommand.value,
         agentMaxTurns: Number(f.agentMaxTurns.value) || 8,
       }),
     'Saved.',

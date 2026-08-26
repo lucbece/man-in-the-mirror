@@ -324,69 +324,54 @@ No question text and no answer text is retained, only which brain ran, which
 tools it used and the timings. The audio buffer never reaches disk and neither
 does this.
 
-## Driving the music bot
+## Music
 
-There is already a bot in most servers that plays music when somebody posts
-`m!p something` in a text channel. This does not replace it — it types for you,
-so "espejo, poné Beat It" works from a voice call without anyone reaching for a
-keyboard. `musicChannel`, `musicPlayCommand` and `musicSkipCommand` configure
-it; the defaults match Jockie.
+The bot plays it itself, through the voice connection it is already on.
 
-The hard part is not Discord, it is transcription. Song and artist names are
-exactly what speech recognition is worst at — proper nouns, usually English
-ones said inside a Spanish sentence. "Beat It de Michael Jackson" comes back as
-"bit it de maikel yakson", and posting that verbatim queues the wrong thing.
+This started as a tool that typed `m!p` into a text channel for the music bot
+that was already in the server. It cannot work, and the reason is Discord
+rather than anything we wrote: a bot's message carries `author.bot = true`, and
+essentially every bot drops those in its first line to avoid loops. Measured
+both ways, with a command confirmed to work when a person typed it — posted as
+the bot, no reply; posted through a webhook, no reply, because a webhook
+message is flagged as a bot too.
 
-So the correction happens before the command is posted, and it happens in the
-model rather than in a matching rule: it knows the catalogue. Measured against
-the live agent:
+Playing it directly turned out to be the better answer anyway. The bot knows
+what is on, which is the thing a separate music bot could never tell it.
 
-| Said | Posted |
+| Tool | Effect |
 | --- | --- |
-| "poné bit it de maikel yakson" | `m!p Beat It Michael Jackson` |
-| "poné el disco rumors de flitgud mac entero" | `m!p Rumours Fleetwood Mac` |
-| "poné esa de los redondos que dice algo de un jugador de fútbol" | nothing — it asks which one |
+| `play_music` | Plays a song, artist, album or URL, or queues it behind what is on |
+| `skip_song` | Skips to the next thing queued |
+| `stop_music` | Stops and clears the queue |
+| `now_playing` | What is on, who asked for it, and what is next |
 
-That last row is the one worth explaining. Asked vaguely, the agent first
-searched the web three times, ran out of tool rounds and said "dame un segundo"
-into silence; told to search anyway, it invented a title from the description
-and queued it. Neither is acceptable, and both sound certain. It now asks
-instead — and because its reply ends in a question, the answer needs no wake
-word.
+`yt-dlp` is fetched into `runtime/` the first time music is played, the same
+way whisper.cpp and Piper are, and piped through the `ffmpeg-static` already in
+the dependency list. Nothing is written to disk: a track is streamed, so a
+five-minute song starts in about a second.
 
-### Playlists, and why links are treated differently
+### One mouth, two things to play
 
-A whole playlist needs its link — a text search queues one track. So
-`play_music` accepts a URL, but only from somewhere the music bot can play
-(YouTube, YouTube Music, Spotify, SoundCloud) **and only if this turn actually
-searched for something first**.
+A voice connection carries one player, and the bot already uses it to talk. So
+music and speech take turns: asking a question pauses the track and resumes it
+afterwards, rather than talking over it or losing it.
 
-That second rule is the interesting one, and it is a check rather than an
-instruction because the failure is silent. A mis-corrected *title* plays the
-wrong song and somebody says "esa no". A fabricated playlist id plays
-*nothing*, in a text channel nobody in a voice call is looking at, while the
-bot says "listo, puse la playlist". And fabricating one is the likely case
-rather than the unlucky one: playlist ids are opaque strings, so a model asked
-for one from memory produces something well-formed and invented. Asked after a
-search, it copies a real one out of the results.
+Mixing the two into one stream would mean resampling and summing PCM here, and
+for a listener the handover sounds like what a person would do anyway.
 
-Verifying the link instead would be better, and is not available. Fetching a
-YouTube playlist from a server returns a bot-check page: a real playlist and an
-invented one come back byte-identical, both HTTP 200, with the same markers.
-Measured before designing around it, not assumed.
+The subtle part is that the player reports Idle on some pause transitions.
+Treating that as "the track finished" would skip a song every time somebody
+asked a question, so the queue only advances when a pause is not the reason.
 
-It says the playlist's *name* out loud, never the link.
+### Names still come from speech
 
-### Two rules the tool enforces rather than hopes for
-
-The query is posted on one line, so a newline cannot smuggle in a second
-command; and it is only posted if **the person who asked** could have posted it
-themselves. Otherwise the bot is a way into a channel someone has been kept out
-of.
-
-Nobody in a voice call can see the text channel, so the agent is told to say
-what it queued, artist included. The room is the only thing that can catch a
-wrong correction, and it can only do that if it hears one.
+The transcription problem outlived the redesign. "Beat It de Michael Jackson"
+arrives as "bit it de maikel yakson", so the correction happens in the model
+before the search, and the tool reports the *real* title it found so the agent
+says that out loud rather than what it searched for. Asked for something it
+cannot identify — half a lyric, a description — it asks which one instead of
+building a title out of the description and playing something nobody wanted.
 
 ## Standing instructions
 
