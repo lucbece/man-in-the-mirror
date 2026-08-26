@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test, { before, describe } from 'node:test';
+import { EventEmitter } from 'node:events';
 
 import { VoiceSession, WAKE_TIMING } from '../src/voice/session.js';
 import { config } from '../src/config.js';
@@ -11,6 +12,7 @@ import { config } from '../src/config.js';
 
 const GRACE = 30;
 const OPEN = 90;
+const SETTLE = 120;
 
 before(() => {
   config.values.wakeEnabled = true;
@@ -18,6 +20,7 @@ before(() => {
   WAKE_TIMING.graceMs = GRACE;
   WAKE_TIMING.openMs = OPEN;
   WAKE_TIMING.cooldownMs = 200;
+  WAKE_TIMING.settleMs = SETTLE;
 });
 
 /** A session with only the wake machinery wired up. */
@@ -30,7 +33,20 @@ function stubSession() {
   s.emit = (event, payload) => {
     if (event === 'wake') s.fired.push(payload);
   };
+  // Nobody else mid-sentence unless a test says so. `active` is the receiver's
+  // map of who is being recorded right now — the one thing that is *not* in
+  // the buffer yet.
+  s.receiver = Object.assign(new EventEmitter(), { active: new Map() });
   return s;
+}
+
+/** Someone starts talking, and stops when the returned function is called. */
+function talking(session, userId) {
+  session.receiver.active.set(userId, { userId });
+  return () => {
+    session.receiver.active.delete(userId);
+    session.receiver.emit('utterance', { userId });
+  };
 }
 
 const said = (userId, displayName, text) => ({ userId, displayName, text });
@@ -101,5 +117,58 @@ describe('hearing out a question', () => {
     s.checkForWake(said('u1', 'Luc', 'the servers were down all weekend'));
     await wait(GRACE * 3);
     assert.equal(s.fired.length, 0);
+  });
+});
+
+describe('the rest of the room finishing the question', () => {
+  test('waits for someone who is still talking, and takes what they said', async () => {
+    // The gap this closes: an utterance only reaches the buffer once its
+    // speaker has been quiet for SILENCE_MS, and the answer is built from the
+    // buffer. Someone still mid-sentence when the grace timer fired was not
+    // late to the answer — they were missing from it.
+    const s = stubSession();
+    const stops = talking(s, 'u2');
+
+    s.checkForWake(said('u1', 'Luc', 'mirror how long would it take'));
+    await wait(GRACE * 3);
+    assert.equal(s.fired.length, 0, 'must not answer while someone is still talking');
+
+    stops();
+    await wait(GRACE);
+    assert.equal(s.fired.length, 1, 'and answers as soon as they stop');
+  });
+
+  test('a quiet room costs nothing', async () => {
+    const s = stubSession();
+    s.checkForWake(said('u1', 'Luc', 'mirror what do you think'));
+
+    await wait(GRACE * 3);
+    assert.equal(s.fired.length, 1, 'no waiting when nobody else is speaking');
+  });
+
+  test('does not wait for the asker to stop talking to themselves', async () => {
+    // The asker's own speech is what the grace timer is already for. Waiting
+    // on it again would double the pause before every single answer.
+    const s = stubSession();
+    talking(s, 'u1');
+
+    s.checkForWake(said('u1', 'Luc', 'mirror what do you think'));
+    await wait(GRACE * 3);
+
+    assert.equal(s.fired.length, 1);
+  });
+
+  test('gives up on someone who will not stop', async () => {
+    // A stuck stream, or a genuinely long monologue. The question still gets
+    // answered; it just answers without them.
+    const s = stubSession();
+    talking(s, 'u2');
+
+    s.checkForWake(said('u1', 'Luc', 'mirror what do you think'));
+    await wait(GRACE * 3);
+    assert.equal(s.fired.length, 0);
+
+    await wait(SETTLE);
+    assert.equal(s.fired.length, 1, 'bounded, not indefinite');
   });
 });
