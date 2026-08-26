@@ -10,6 +10,7 @@ import {
 
 import { config } from '../config.js';
 import { SpeechQueue } from './speech-queue.js';
+import { MusicPlayer } from './music.js';
 import { VoiceReceiver } from './receiver.js';
 import { EagerTranscriber } from '../agent/eager.js';
 import { detectAddress, normalise, splitNames } from '../agent/wake.js';
@@ -131,7 +132,11 @@ export class VoiceSession extends EventEmitter {
       selfMute: false,
     });
 
-    this.connection.subscribe(this.player);
+    // Music has its own player: a connection carries one at a time, so the
+    // two take turns rather than mixing. See voice/music.js.
+    this.music = new MusicPlayer();
+    this.music.on('update', () => this.emit('update'));
+    this.subscription = this.connection.subscribe(this.player);
     this.attachConnectionHandlers();
 
     this.receiver = new VoiceReceiver(this.connection, {
@@ -432,17 +437,54 @@ export class VoiceSession extends EventEmitter {
     return this.player.state.status === AudioPlayerStatus.Playing;
   }
 
+  /** What is on right now, and what is waiting. For the tools and the panel. */
+  musicStatus() {
+    return {
+      current: this.music.current ? { ...this.music.current } : null,
+      queue: this.music.queue.map((t) => ({ title: t.title, requestedBy: t.requestedBy })),
+    };
+  }
+
   /**
    * Begin one continuous spoken answer.
    *
    * Replaces whatever was being said — a second answer starting over the top
    * of the first is worse than a slightly delayed one.
    */
+  /**
+   * Give the connection to one player, taking it from the other.
+   *
+   * `subscribe` replaces the previous subscription, so this is the whole
+   * mechanism — but the reference is kept so nothing leaks when the session
+   * goes.
+   */
+  #handMouthTo(player) {
+    if (this.destroyed) return;
+    this.subscription = this.connection.subscribe(player);
+  }
+
   startSpeech() {
     this.speech?.cancel();
     this.player.stop(true);
-    this.speech = new SpeechQueue(this.player);
-    return this.speech;
+
+    // Answering a question should not cost you the song. The track pauses
+    // rather than stopping, so it picks up where it left off.
+    const wasPlaying = this.music.pauseForSpeech();
+    this.#handMouthTo(this.player);
+
+    const speech = new SpeechQueue(this.player);
+    this.speech = speech;
+    speech.finished
+      .catch(() => {})
+      .then(() => {
+        // Only if this is still the current speech: a second question can
+        // start one while the first is draining, and handing music the mouth
+        // then would cut the new answer off mid-sentence.
+        if (this.destroyed || this.speech !== speech) return;
+        this.#handMouthTo(this.music.player);
+        if (wasPlaying) this.music.resumeAfterSpeech();
+      });
+    return speech;
   }
 
   /** Cut off playback immediately. Backs a "stop talking" control. */
@@ -466,6 +508,13 @@ export class VoiceSession extends EventEmitter {
       this.receiver.stop({ clear: true });
     } catch {
       /* never started */
+    }
+    try {
+      // Leaves two subprocesses per track alive otherwise, for as long as the
+      // bot runs.
+      this.music.destroy();
+    } catch {
+      /* never played anything */
     }
     try {
       this.speech?.cancel();
