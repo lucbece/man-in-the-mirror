@@ -34,7 +34,7 @@ export function botToolsServer(guildId, turn) {
     // which in a voice call is seconds of silence for nothing.
     alwaysLoad: true,
     tools: [
-      ...searchTools(),
+      ...searchTools(turn),
       ...callTools(turn),
       ...configTools(turn),
       ...musicTools(turn),

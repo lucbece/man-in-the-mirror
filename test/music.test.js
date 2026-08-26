@@ -164,3 +164,71 @@ describe('finding the channel', () => {
     assert.equal(config.get('musicChannel'), 'music');
   });
 });
+
+describe('queueing a playlist by link', () => {
+  const YT = 'https://www.youtube.com/playlist?list=PL1kFzkeJ3uKJRA6oJFycrUhuzYYTn7jn6';
+
+  /** A turn that has, or has not, looked something up yet. */
+  const turnThat = (searched, guild) => ({
+    guildId: 'g',
+    askerId: 'asker',
+    askerName: 'Luc',
+    searched,
+    guild: () => guild,
+  });
+
+  function runWith(turn, args) {
+    const found = musicTools(turn).find((t) => t.name === 'play_music');
+    return found.handler(args, {});
+  }
+
+  test('posts a link that came out of a search', async () => {
+    const guild = guildWith();
+    const said = spoken(await runWith(turnThat(true, guild), { query: YT }));
+
+    assert.deepEqual(guild.posted, [`m!p ${YT}`]);
+    assert.match(said, /Queued/);
+  });
+
+  test('refuses one written from memory, because that fails silently', async () => {
+    // The whole point. A mis-corrected title plays the wrong song and the room
+    // says "esa no". An invented playlist id plays nothing, in a channel
+    // nobody in a voice call is looking at, while the bot says it worked.
+    const guild = guildWith();
+    const said = spoken(await runWith(turnThat(false, guild), { query: YT }));
+
+    assert.match(said, /Search for it first/);
+    assert.deepEqual(guild.posted, [], 'and nothing was posted');
+  });
+
+  test('a plain search query never needs a search first', async () => {
+    // Only links carry the provenance problem: a title that is wrong is
+    // audible, so it does not need this.
+    const guild = guildWith();
+    await runWith(turnThat(false, guild), { query: 'Beat It Michael Jackson' });
+
+    assert.deepEqual(guild.posted, ['m!p Beat It Michael Jackson']);
+  });
+
+  test('only from somewhere the music bot can play', async () => {
+    const guild = guildWith();
+    const said = spoken(
+      await runWith(turnThat(true, guild), { query: 'https://evil.example/thing' }),
+    );
+
+    assert.match(said, /isn't somewhere the music bot can play from/);
+    assert.deepEqual(guild.posted, []);
+  });
+
+  test('spotify and the short youtube form count too', async () => {
+    for (const link of [
+      'https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M',
+      'https://youtu.be/oRdxUFDoQe0',
+      'https://music.youtube.com/playlist?list=PLjtl0SgBBa2cs5HfpVYjv_-BEv_Xrbcn0',
+    ]) {
+      const guild = guildWith();
+      await runWith(turnThat(true, guild), { query: link });
+      assert.deepEqual(guild.posted, [`m!p ${link}`], link);
+    }
+  });
+});

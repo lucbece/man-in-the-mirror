@@ -448,6 +448,9 @@ export class AgentBrain {
     if (this.session.turn_) {
       this.session.turn_.askerId = context.askedById ?? null;
       this.session.turn_.askerName = context.askedBy ?? null;
+      // Whether this turn has looked anything up yet. Reset here so a search
+      // from an earlier question cannot vouch for a URL posted in this one.
+      this.session.turn_.searched = false;
     }
     const isFirstTurn = !this.session.askedOnce;
     this.session.askedOnce = true;
