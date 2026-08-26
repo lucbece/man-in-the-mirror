@@ -1,6 +1,6 @@
 {
   "name": "man-in-the-mirror",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "type": "module",
   "description": "Discord voice agent that listens to a channel and answers out loud when addressed.",
