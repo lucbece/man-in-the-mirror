@@ -30,6 +30,15 @@ import { ensureYtDlp, resolveTrack } from '../agent/ytdlp.js';
 /** Nobody queues more than this on purpose, and an agent in a loop might. */
 const MAX_QUEUE = 50;
 
+/**
+ * How loud, as a percentage, and how far it may be pushed.
+ *
+ * Above 100 the samples are amplified rather than attenuated, so the ceiling
+ * is where it starts to clip rather than where the number stops being round.
+ */
+const DEFAULT_VOLUME = 100;
+const MAX_VOLUME = 150;
+
 export class MusicPlayer extends EventEmitter {
   constructor() {
     super();
@@ -38,6 +47,10 @@ export class MusicPlayer extends EventEmitter {
     this.pausedForSpeech = false;
     this.processes = new Set();
     this.ytDlpBin = null;
+    // Kept on the player rather than on the track: turning it down once should
+    // stay down for whatever plays next, which is what a volume knob does.
+    this.volume = DEFAULT_VOLUME;
+    this.resource = null;
 
     this.player = createAudioPlayer();
     this.player.on('error', (err) => console.warn(`[music] ${err.message}`));
@@ -50,6 +63,22 @@ export class MusicPlayer extends EventEmitter {
 
   get playing() {
     return Boolean(this.current);
+  }
+
+  /**
+   * Set the level, absolutely or by a step, and report where it landed.
+   *
+   * Relative is the one people actually use — "bajale un poco" — and doing the
+   * arithmetic here rather than in the model means it cannot drift: the model
+   * would have to be told the current level, remember it, and get the
+   * subtraction right, every time.
+   */
+  setVolume({ level, change } = {}) {
+    const from = this.volume;
+    const wanted = Number.isFinite(level) ? level : from + (Number(change) || 0);
+    this.volume = Math.max(0, Math.min(MAX_VOLUME, Math.round(wanted)));
+    this.resource?.volume?.setVolume(this.volume / 100);
+    return { from, to: this.volume, atLimit: this.volume === 0 || this.volume === MAX_VOLUME };
   }
 
   /** Look the track up and queue it. Returns what it actually found. */
@@ -105,6 +134,7 @@ export class MusicPlayer extends EventEmitter {
     this.#killProcesses();
     const next = this.queue.shift();
     this.current = next ?? null;
+    this.resource = null;
     if (!next) {
       this.emit('update');
       return;
@@ -142,7 +172,15 @@ export class MusicPlayer extends EventEmitter {
     ytdlp.stdout.pipe(ffmpeg.stdin).on('error', () => {});
 
     this.processes.add(ytdlp).add(ffmpeg);
-    return createAudioResource(ffmpeg.stdout, { inputType: StreamType.Raw });
+    // inlineVolume costs a little CPU per packet and is the only way to change
+    // the level of something already playing; without it the knob would only
+    // take effect on the next track.
+    this.resource = createAudioResource(ffmpeg.stdout, {
+      inputType: StreamType.Raw,
+      inlineVolume: true,
+    });
+    this.resource.volume?.setVolume(this.volume / 100);
+    return this.resource;
   }
 
   #killProcesses() {

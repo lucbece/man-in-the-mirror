@@ -226,3 +226,68 @@ describe('not two fillers in a row', () => {
     assert.equal(filled, 1);
   });
 });
+
+describe('music commands never reach the fast leg', () => {
+  beforeEach(resetCascade);
+
+  test('a command goes straight to the agent, saying nothing on the way', async () => {
+    // The fast leg has no music tools, so it always hands these over — but it
+    // says something while doing it, and for a command the whole point is that
+    // nothing is said.
+    const agent = fakeAgent();
+    let fastRan = false;
+    const b = brain({
+      agent,
+      runFast: async () => {
+        fastRan = true;
+        return { said: 'no puedo poner música', escalate: false };
+      },
+    });
+
+    await b.answer(ask('espejo, poné cha cha muchacha de ruben rada'));
+
+    assert.equal(fastRan, false, 'the fast leg must not have been asked');
+    assert.equal(agent.calls.length, 1);
+  });
+
+  test('covers the commands people actually say', async () => {
+    for (const said of [
+      'espejo, skip esta',
+      'espejo, salteá el tema',
+      'espejo, pará la música',
+      'espejo, poné una playlist de rock',
+      'espejo, poné beat it de michael jackson',
+    ]) {
+      resetCascade();
+      let fastRan = false;
+      await brain({
+        agent: fakeAgent(),
+        runFast: async () => {
+          fastRan = true;
+          return { said: '', escalate: false };
+        },
+      }).answer(ask(said));
+      assert.equal(fastRan, false, `should have skipped the fast leg: "${said}"`);
+    }
+  });
+
+  test('an ordinary question still takes the fast path', async () => {
+    // A word list that swallowed everything would undo cascade entirely.
+    for (const said of [
+      'espejo, qué opinás de los aviones?',
+      'espejo, cuánto tarda un vuelo a Madrid?',
+      'espejo, ponete las pilas',
+    ]) {
+      resetCascade();
+      let fastRan = false;
+      await brain({
+        agent: fakeAgent(),
+        runFast: async () => {
+          fastRan = true;
+          return { said: 'una respuesta', escalate: false };
+        },
+      }).answer(ask(said));
+      assert.equal(fastRan, true, `should have used the fast leg: "${said}"`);
+    }
+  });
+});

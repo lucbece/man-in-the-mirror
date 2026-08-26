@@ -130,3 +130,49 @@ describe('sharing one mouth with the talking voice', () => {
     assert.doesNotThrow(() => music.resumeAfterSpeech());
   });
 });
+
+describe('the volume knob', () => {
+  test('a nudge is relative, so the model never has to know where it was', () => {
+    // "bajale un poco" would otherwise mean telling the model the current
+    // level, having it remember, and getting the subtraction right each time.
+    const music = new MusicPlayer();
+    assert.equal(music.volume, 100);
+
+    assert.deepEqual(music.setVolume({ change: -15 }), { from: 100, to: 85, atLimit: false });
+    assert.deepEqual(music.setVolume({ change: -15 }), { from: 85, to: 70, atLimit: false });
+    assert.equal(music.setVolume({ change: 30 }).to, 100);
+  });
+
+  test('an absolute level is for when they said a number', () => {
+    const music = new MusicPlayer();
+    assert.equal(music.setVolume({ level: 30 }).to, 30);
+  });
+
+  test('it cannot be turned below silence or past clipping', () => {
+    const music = new MusicPlayer();
+
+    assert.deepEqual(music.setVolume({ change: -500 }), { from: 100, to: 0, atLimit: true });
+    assert.equal(music.setVolume({ change: 5000 }).to, 150);
+  });
+
+  test('says when it could not move, so the bot can mention it', () => {
+    // The one volume change worth speaking about: the one that did nothing.
+    const music = new MusicPlayer();
+    music.setVolume({ level: 0 });
+
+    const result = music.setVolume({ change: -15 });
+    assert.equal(result.from, result.to);
+    assert.equal(result.atLimit, true);
+  });
+
+  test('the level outlives the track', async () => {
+    // Turning it down once should stay down for whatever plays next, which is
+    // what a volume knob does.
+    const music = new MusicPlayer();
+    music.setVolume({ change: -40 });
+    assert.equal(music.volume, 60);
+
+    music.stop();
+    assert.equal(music.volume, 60, 'stopping is not resetting');
+  });
+});

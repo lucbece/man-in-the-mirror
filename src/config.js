@@ -94,6 +94,19 @@ const DEFAULTS = {
   ttsVoice: 'onyx', // OpenAI voice
   ttsLocalVoice: 'es_ES-davefx-medium', // Piper voice
 
+  // Where it writes down what it is playing.
+  //
+  // The bot plays the music itself, so this is not how the track gets queued —
+  // it is how the room finds out what it queued. That matters more than it
+  // sounds: a music command is carried out without saying anything, because
+  // pausing the song to announce that you skipped the song is worse than
+  // skipping it. This line is what replaces the spoken confirmation, and
+  // written beats spoken for a title you may have misheard.
+  //
+  // Blank restores the default, like every non-secret setting. A server
+  // without such a channel simply gets no message; the music still plays.
+  musicChannel: 'music',
+
   // Web UI
   webPort: 3000,
 };
@@ -174,6 +187,8 @@ function clampConfig(cfg) {
   if (!['chat', 'agent', 'cascade'].includes(out.brainKind)) out.brainKind = 'chat';
   out.mcpServers = out.mcpServers.trim();
   out.agentDirectories = out.agentDirectories.trim();
+  // A leading # is how people write a channel, not part of its name.
+  out.musicChannel = out.musicChannel.trim().replace(/^#/, '');
   // One instruction per line, however they were typed or dictated. The caps
   // on length and count are enforced where there is somewhere to report them:
   // the panel's save handler and the voice tool.

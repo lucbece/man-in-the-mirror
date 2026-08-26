@@ -67,6 +67,47 @@ export class AgentBusyError extends Error {}
 const inFlight = new Set();
 
 /**
+ * Tools whose whole job is doing something, not answering.
+ *
+ * A turn that only uses these should pass without a sound: skipping a track
+ * and then announcing that you skipped it is worse than skipping it, and
+ * saying anything at all means pausing the music to say it.
+ */
+const SILENT_TOOLS = new Set([
+  'mcp__bot__play_music',
+  'mcp__bot__skip_song',
+  'mcp__bot__stop_music',
+  'mcp__bot__set_volume',
+]);
+
+const isSilentTool = (name) => SILENT_TOOLS.has(name);
+
+/** `(reproduciendo)`, `*plays music*`, `[silencio]` — written, never spoken. */
+function isStageDirection(text) {
+  const trimmed = String(text ?? '').trim();
+  if (!trimmed) return false;
+  return (
+    (trimmed.startsWith('(') && trimmed.endsWith(')')) ||
+    (trimmed.startsWith('[') && trimmed.endsWith(']')) ||
+    (trimmed.startsWith('*') && trimmed.endsWith('*'))
+  );
+}
+
+/**
+ * Strip an opening aside, keeping whatever follows it.
+ *
+ * `isStageDirection` only catches a line that is *entirely* an aside, and the
+ * one heard in a real call was "(silence) No real question here — just a
+ * comment about me", which is an aside with a sentence stapled to it. A
+ * parenthetical at the very start of a reply is never something to read out;
+ * one in the middle usually is ("es de Rada (el uruguayo)"), so only the
+ * leading one goes.
+ */
+function withoutOpeningAside(text) {
+  return String(text ?? '').replace(/^\s*[([*][^)\]*]{0,40}[)\]*]\s*/, '');
+}
+
+/**
  * Answer a question out loud in the session's channel.
  *
  * Returns the timings and the text that was spoken, so callers can show the
@@ -121,7 +162,17 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, vi
     const t1 = Date.now();
     const brain = makeBrain({ guildId: session.guildId });
     const tts = makeTts();
-    const speech = session.startSpeech();
+
+    /**
+     * The mouth, taken only when there is something to say with it.
+     *
+     * Taking it up front cost a whole turn's worth of silence for nothing:
+     * `startSpeech` pauses the music, so "skip this one" stopped the track,
+     * did the thing, and started it again. A turn that never speaks now never
+     * touches it.
+     */
+    let speech = null;
+    const mouth = () => (speech ??= session.startSpeech());
 
     let budget = MAX_SPOKEN_CHARS;
     let cutOff = false;
@@ -129,6 +180,8 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, vi
     // question apart from a guess: a turn that used nothing could have been
     // answered by anything.
     const toolsUsed = [];
+    /** Carrying out a command, with nobody waiting on a sentence. */
+    const doingNotAnswering = () => toolsUsed.length > 0 && toolsUsed.every(isSilentTool);
 
     // If the silence drags on after we've already said something, say
     // something else. Not announced up front: most tool calls come back
@@ -140,8 +193,10 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, vi
       clearTimeout(quietTimer);
       if (finishedThinking) return;
       quietTimer = setTimeout(() => {
+        // Same reasoning as the first filler: a long wait only needs covering
+        // when somebody is waiting to hear something.
         const filler = getFiller(guessLanguage(question), 'waiting');
-        if (filler) {
+        if (filler && speech && !doingNotAnswering()) {
           speech.push(toResource(filler.audio), null);
           timings.waited = (timings.waited ?? 0) + 1;
         }
@@ -155,7 +210,17 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, vi
     let rendering = Promise.resolve();
 
     const say = (text) => {
-      const clean = clampForSpeech(text, Math.max(0, budget));
+      // A stage direction is not speech. Told to answer a music command with
+      // nothing, the model reliably produced "(reproduciendo)" — a sentence
+      // describing silence, which then gets read out in its own voice.
+      //
+      // Narrow on purpose: dropping everything once a command tool has run was
+      // the first attempt and it silenced "poné algo, y decime la hora", which
+      // is a question that deserves an answer. This only drops text that is
+      // entirely a parenthetical or an asterisked action, which is never
+      // something anyone meant to be said aloud.
+      if (isStageDirection(text)) return;
+      const clean = clampForSpeech(withoutOpeningAside(text), Math.max(0, budget));
       if (!clean || budget <= 0) {
         cutOff ||= Boolean(text.trim());
         return;
@@ -165,7 +230,7 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, vi
         .then(async () => {
           const audio = await tts.synthesizeStream(clean);
           timings.firstAudioMs ??= Date.now() - t1;
-          speech.push(toResource(audio), clean);
+          mouth().push(toResource(audio), clean);
           nudge();
         })
         .catch((err) => {
@@ -190,10 +255,14 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, vi
           // Only reached when nothing has been said yet — a canned clip on top
           // of the model's own words would be two fillers in a row.
           onSearchStart: () => {
+            // Doing rather than answering: nobody is waiting on a sentence, so
+            // there is no silence to cover and the music should keep playing.
+            //
+            if (doingNotAnswering()) return;
             timings.searchedAtMs = Date.now() - t1;
             const filler = getFiller(guessLanguage(question));
             if (!filler) return;
-            speech.push(toResource(filler.audio), null);
+            mouth().push(toResource(filler.audio), null);
             timings.filler = filler.line;
             nudge();
           },
@@ -205,14 +274,19 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, vi
       // Whatever was already said still has to finish playing, even if the
       // model failed partway — a half answer beats a sentence cut in two.
       await rendering;
-      speech.end();
+      speech?.end();
     }
     timings.thinkMs = Date.now() - t1;
 
-    const spoken = speech.spoken.join(' ').trim();
-    if (!spoken) throw new BrainError('The model returned nothing to say.');
+    const spoken = speech ? speech.spoken.join(' ').trim() : '';
+    // Silence is an answer when it did something — skipping a track and
+    // announcing it is worse than skipping it. Silence with nothing done is
+    // the model failing, and still an error.
+    if (!spoken && !toolsUsed.length) {
+      throw new BrainError('The model returned nothing to say.');
+    }
 
-    timings.cutOffPlayback = await finishSpeaking(speech);
+    timings.cutOffPlayback = speech ? await finishSpeaking(speech) : false;
     timings.totalMs = Date.now() - started;
     // From the moment they stopped talking to the moment this pipeline began:
     // silence detection, transcription, the grace wait. The model's half has
@@ -238,9 +312,11 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, vi
     }
 
     console.log(
-      `[agent] answered in ${(timings.totalMs / 1000).toFixed(1)}s ` +
+      `[agent] ${spoken ? 'answered' : 'acted, without saying anything,'} in ${(timings.totalMs / 1000).toFixed(1)}s ` +
         `(heard ${(timings.transcribeMs / 1000).toFixed(1)}s, ` +
-        `first words at ${(timings.firstAudioMs / 1000).toFixed(1)}s, ` +
+        (timings.firstAudioMs === undefined
+          ? 'never spoke, '
+          : `first words at ${(timings.firstAudioMs / 1000).toFixed(1)}s, `) +
         `thought through ${(timings.thinkMs / 1000).toFixed(1)}s)` +
         (timings.filler
           ? ` · searched at ${(timings.searchedAtMs / 1000).toFixed(1)}s, said "${timings.filler}"`

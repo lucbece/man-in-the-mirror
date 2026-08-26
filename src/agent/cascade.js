@@ -87,7 +87,7 @@ Call escalate, and say nothing else, whenever the answer would need any of it:
 
 Answer directly only when it is conversation, an opinion, a joke, an explanation, or something stable you plainly know. That is most of what gets said in a call, which is why you are here.
 
-If you escalate you may first say one short holding line in their language — "dame un segundo", "hold on" — and nothing more. That line must make no claim about what you can or cannot do: it is spoken into the channel *before* the other version has done the thing, so "no puedo poner música" becomes a lie the moment it does. Never say what you are about to do, never mention the other version of yourself, and never say the word escalate out loud.`;
+If you escalate you may first say one short holding line in their language — "dame un segundo", "hold on" — and nothing more. Not even that for anything about music: putting a song on, skipping, stopping. Those are carried out without a word, and your holding line would be the only sound in an exchange that was meant to be silent. That line must make no claim about what you can or cannot do: it is spoken into the channel *before* the other version has done the thing, so "no puedo poner música" becomes a lie the moment it does. Never say what you are about to do, never mention the other version of yourself, and never say the word escalate out loud.`;
 
 const ESCALATE_TOOL = {
   name: 'escalate',
@@ -120,6 +120,34 @@ const ESCALATE_TOOL = {
  * perfectly well and only needs the ones it missed. `lastUsedTools` is the one
  * routing signal that costs nothing and is worth having.
  */
+/**
+ * Requests that are plainly a music command, routed straight to the agent.
+ *
+ * The fast leg has no music tools, so it always ends up handing these over —
+ * but it says something on the way, and for a command the whole point is that
+ * nothing is said. Three attempts at instructing it not to produced "I can't
+ * put music on", two holding lines, and a spoken "(reproduciendo)".
+ *
+ * A word list is a blunt instrument and this one will miss phrasings. That is
+ * the right way round for it to fail: a miss leaves the old behaviour, and a
+ * false positive sends an ordinary question to the agent, which answers it
+ * correctly and a little slower. Neither outcome is wrong, only slower or
+ * chattier.
+ */
+const MUSIC_COMMAND = [
+  // Trailing boundaries are a lookahead rather than \b: in JavaScript \b is
+  // ASCII, so there is no word boundary after "salteá" or "pará" and the
+  // obvious pattern silently never matches.
+  /(^|\s)(skip|saltea|salteá|salta|saltá|pasá de (tema|canción)|siguiente (tema|canción))(?=\s|$|[,.!?¡¿])/i,
+  /(^|\s)(pará|para|pare|frená|frena|detené|detene|stop|corta|cortá)\s+(la\s+)?(música|musica|canción|cancion|tema)(?=\s|$|[,.!?])/i,
+  /(^|\s)(poné|pone|poner|pon|reproducí|reproduci|reproducir|play)\s.{0,60}(música|musica|canción|cancion|tema|playlist|lista|disco|álbum|album)/i,
+  /(^|\s)(poné|pone|pon|play)\s+\S+.{0,40}\sde\s+\S+/i,
+  /(^|\s)(bajá|baja|bajame|bajale|subí|subi|subime|subile)\b.{0,30}(volumen|música|musica)/i,
+  /\bvolumen\b.{0,20}(más|mas|un poco|abajo|arriba)|\b(más|mas)\s+(fuerte|bajo|alto)\b/i,
+];
+
+const looksLikeMusicCommand = (text) => MUSIC_COMMAND.some((re) => re.test(String(text ?? '')));
+
 const state = new Map();
 
 function stateFor(guildId) {
@@ -185,6 +213,14 @@ export class CascadeBrain {
     if (memory.lastUsedTools) {
       this.escalated = true;
       this.reason = 'the last answer used a tool, so this may be about what it found';
+      return this.#runAgent(context, memory, { onSearchStart, onSentence, onToolUse });
+    }
+
+    // A command, not a question. The fast leg cannot carry it out and cannot
+    // be relied on to stay quiet about that, so it never sees it.
+    if (looksLikeMusicCommand(context.question)) {
+      this.escalated = true;
+      this.reason = 'a music command, which the fast leg has no tools for';
       return this.#runAgent(context, memory, { onSearchStart, onSentence, onToolUse });
     }
 

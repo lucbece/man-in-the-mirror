@@ -230,3 +230,54 @@ describe('leaving', () => {
     assert.deepEqual(m.status(), []);
   });
 });
+
+describe('who the voice connection is carrying', () => {
+  /**
+   * The one thing that cannot be inferred from the player objects: a track can
+   * be "playing" and reach nobody, because the connection is still subscribed
+   * to the speaking voice. That is what happened the first time music was made
+   * silent — the handover only ran when a *speech* ended, so a command that
+   * said nothing never handed the connection over.
+   */
+  function sessionWithPlayers() {
+    const subscribed = [];
+    const speechPlayer = { id: 'speech' };
+    const musicPlayer = { id: 'music' };
+    const session = {
+      destroyed: false,
+      speech: null,
+      player: speechPlayer,
+      music: { player: musicPlayer, playing: false },
+      connection: {
+        subscribe: (p) => {
+          subscribed.push(p.id);
+          return { player: p };
+        },
+      },
+      handMouthTo(owner) {
+        if (session.destroyed) return;
+        session.connection.subscribe(owner === 'music' ? session.music.player : session.player);
+      },
+    };
+    return { session, subscribed };
+  }
+
+  test('music takes the connection when nothing is being said', () => {
+    const { session, subscribed } = sessionWithPlayers();
+    session.music.playing = true;
+
+    if (session.music.playing && !session.speech) session.handMouthTo('music');
+
+    assert.deepEqual(subscribed, ['music'], 'a silent command must still be audible');
+  });
+
+  test('but not while the bot is mid-sentence', () => {
+    const { session, subscribed } = sessionWithPlayers();
+    session.music.playing = true;
+    session.speech = { pending: true };
+
+    if (session.music.playing && !session.speech) session.handMouthTo('music');
+
+    assert.deepEqual(subscribed, [], 'stealing it mid-answer would cut the answer off');
+  });
+});
