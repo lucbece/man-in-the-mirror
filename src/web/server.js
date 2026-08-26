@@ -204,7 +204,15 @@ export function createApp() {
     if (!question?.trim()) return res.status(400).json({ error: 'question is required' });
 
     try {
-      res.json(await ask(session, { question: question.trim(), askedBy: 'the control panel' }));
+      // Named as a person, not as a surface. Called "the control panel" the
+      // model read the question as a test of itself and refused things it
+      // does for anyone in the call — measured: the same request escalated 4
+      // times out of 4 when the asker had a name, and was refused when it did
+      // not. Still no askedById, so anything permission-checked correctly
+      // declines to guess who this is.
+      res.json(
+        await ask(session, { question: question.trim(), askedBy: 'the person running the bot' }),
+      );
     } catch (err) {
       const code = err instanceof AgentBusyError ? 409 : 502;
       res.status(code).json({ error: err.message });
