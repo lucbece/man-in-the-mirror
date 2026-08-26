@@ -40,6 +40,24 @@ const WAKE_GRACE_MS = 900;
 const WAKE_OPEN_MS = 6_000;
 
 /**
+ * How long to wait for someone *else* who is still mid-sentence.
+ *
+ * A call is not two people taking turns. Somebody asks "cuánto tardamos
+ * manejando" and, over the top of them, another says "a Bariloche" and a third
+ * "saliendo de noche" — the question finished by the room rather than by the
+ * asker.
+ *
+ * An utterance only reaches the buffer once its speaker has been quiet for
+ * SILENCE_MS, and the answer is assembled from the buffer. So anyone still
+ * talking when the grace timer fires was not late to the answer — they were
+ * absent from it, and nothing downstream could tell.
+ *
+ * Only paid when somebody else is genuinely speaking at that moment, and it
+ * ends the instant they stop rather than running the clock out.
+ */
+const WAKE_SETTLE_MS = 1_500;
+
+/**
  * Exported as a mutable object so tests can shrink the waits. Everything below
  * reads through it rather than closing over the constants.
  */
@@ -47,6 +65,7 @@ export const WAKE_TIMING = {
   cooldownMs: WAKE_COOLDOWN_MS,
   graceMs: WAKE_GRACE_MS,
   openMs: WAKE_OPEN_MS,
+  settleMs: WAKE_SETTLE_MS,
 };
 
 /**
@@ -194,10 +213,47 @@ export class VoiceSession extends EventEmitter {
     pending.timer.unref?.();
   }
 
-  fireWake() {
+  /**
+   * Wait for anyone else who is still talking, so their words are in the
+   * buffer by the time the answer is assembled from it.
+   *
+   * Resolves as soon as nobody else is mid-utterance, so the common case —
+   * one person asking into a quiet moment — costs nothing at all.
+   */
+  settleOtherSpeakers(askerId) {
+    const stillTalking = () =>
+      [...(this.receiver?.active?.keys() ?? [])].filter((id) => id !== askerId);
+
+    const waitingFor = stillTalking();
+    if (!waitingFor.length) return Promise.resolve(0);
+
+    const startedAt = Date.now();
+    return new Promise((resolve) => {
+      const finish = () => {
+        clearTimeout(timer);
+        this.receiver.off('utterance', check);
+        resolve(Date.now() - startedAt);
+      };
+      const check = () => {
+        if (!stillTalking().length) finish();
+      };
+      const timer = setTimeout(finish, WAKE_TIMING.settleMs);
+      timer.unref?.();
+      this.receiver.on('utterance', check);
+    });
+  }
+
+  async fireWake() {
     const pending = this.pendingWake;
     this.pendingWake = null;
     if (!pending || this.destroyed) return;
+
+    // Before reading the buffer, let the rest of the room finish landing in it.
+    const waited = await this.settleOtherSpeakers(pending.userId);
+    if (this.destroyed) return;
+    if (waited) {
+      console.log(`[wake] waited ${waited}ms for someone else to finish talking`);
+    }
 
     const question = pending.parts.join(' ').trim();
 

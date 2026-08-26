@@ -204,6 +204,29 @@ rather than said late — announcing it hours afterwards, to whoever happens to
 be in the channel now, is worse than not announcing it — and that case is
 logged.
 
+## The rest of the room
+
+A call is not two people taking turns. Someone asks "cuánto tardaríamos
+manejando" and, over the top of them, one person says "a Bariloche" and another
+"saliendo de noche" — the question finished by the room rather than by whoever
+said the bot's name.
+
+An utterance only reaches the buffer once its speaker has been quiet for 500ms,
+and the answer is assembled from the buffer. So anyone still mid-sentence when
+the wake timer fired was not late to the answer, they were missing from it, and
+nothing downstream could tell the difference.
+
+The wake now waits for anyone else who is still talking before it reads the
+buffer, bounded at 1.5s and ended the instant they stop. A question asked into a
+quiet room pays nothing, because the wait only happens when somebody else is
+genuinely speaking at that moment.
+
+Passing the lines to the model needed no change, which was worth measuring
+before assuming: the transcript already reached all three brains, and the model
+already used it. A version of this that also re-labelled those lines as "part of
+the question" in the prompt made no measurable difference over four trials, so
+it was thrown away.
+
 ## Cascade mode
 
 `agent` is slow for a reason that has nothing to do with the answer: a session
