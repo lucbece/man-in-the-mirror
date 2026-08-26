@@ -354,10 +354,35 @@ and queued it. Neither is acceptable, and both sound certain. It now asks
 instead — and because its reply ends in a question, the answer needs no wake
 word.
 
-Two rules the tool enforces rather than hopes for: the query is posted on one
-line, so a newline cannot smuggle in a second command, and it is only posted if
-**the person who asked** could have posted it themselves. Otherwise the bot is
-a way into a channel someone has been kept out of.
+### Playlists, and why links are treated differently
+
+A whole playlist needs its link — a text search queues one track. So
+`play_music` accepts a URL, but only from somewhere the music bot can play
+(YouTube, YouTube Music, Spotify, SoundCloud) **and only if this turn actually
+searched for something first**.
+
+That second rule is the interesting one, and it is a check rather than an
+instruction because the failure is silent. A mis-corrected *title* plays the
+wrong song and somebody says "esa no". A fabricated playlist id plays
+*nothing*, in a text channel nobody in a voice call is looking at, while the
+bot says "listo, puse la playlist". And fabricating one is the likely case
+rather than the unlucky one: playlist ids are opaque strings, so a model asked
+for one from memory produces something well-formed and invented. Asked after a
+search, it copies a real one out of the results.
+
+Verifying the link instead would be better, and is not available. Fetching a
+YouTube playlist from a server returns a bot-check page: a real playlist and an
+invented one come back byte-identical, both HTTP 200, with the same markers.
+Measured before designing around it, not assumed.
+
+It says the playlist's *name* out loud, never the link.
+
+### Two rules the tool enforces rather than hopes for
+
+The query is posted on one line, so a newline cannot smuggle in a second
+command; and it is only posted if **the person who asked** could have posted it
+themselves. Otherwise the bot is a way into a channel someone has been kept out
+of.
 
 Nobody in a voice call can see the text channel, so the agent is told to say
 what it queued, artist included. The room is the only thing that can catch a
