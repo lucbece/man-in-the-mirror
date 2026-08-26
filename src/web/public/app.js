@@ -224,6 +224,9 @@ function renderAnswerStats(stats) {
   if (stats.beforeAskMs !== null && stats.beforeAskMs !== undefined) {
     rows.push(['heard → asked', seconds(stats.beforeAskMs)]);
   }
+  if (stats.followUpRate > 0) {
+    rows.push(['answered without its name', `${Math.round(stats.followUpRate * 100)}%`]);
+  }
 
   els.answerStats.replaceChildren(
     ...rows.map(([label, value]) => {

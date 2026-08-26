@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test, { before, describe } from 'node:test';
 import { EventEmitter } from 'node:events';
 
-import { VoiceSession, WAKE_TIMING } from '../src/voice/session.js';
+import { VoiceSession, WAKE_TIMING, endsWithQuestion } from '../src/voice/session.js';
 import { config } from '../src/config.js';
 
 /**
@@ -13,6 +13,7 @@ import { config } from '../src/config.js';
 const GRACE = 30;
 const OPEN = 90;
 const SETTLE = 120;
+const REPLY = 300;
 
 before(() => {
   config.values.wakeEnabled = true;
@@ -21,6 +22,7 @@ before(() => {
   WAKE_TIMING.openMs = OPEN;
   WAKE_TIMING.cooldownMs = 200;
   WAKE_TIMING.settleMs = SETTLE;
+  WAKE_TIMING.replyMs = REPLY;
 });
 
 /** A session with only the wake machinery wired up. */
@@ -37,6 +39,7 @@ function stubSession() {
   // map of who is being recorded right now — the one thing that is *not* in
   // the buffer yet.
   s.receiver = Object.assign(new EventEmitter(), { active: new Map() });
+  s.awaitingReply = null;
   return s;
 }
 
@@ -170,5 +173,92 @@ describe('the rest of the room finishing the question', () => {
 
     await wait(SETTLE);
     assert.equal(s.fired.length, 1, 'bounded, not indefinite');
+  });
+});
+
+describe('answering the question the bot asked', () => {
+  test('a reply needs no name when the bot ended by asking something', async () => {
+    // "¿desde qué ciudad?" — making them say "espejo" again to answer that is
+    // a bug in the conversation, not a policy.
+    const s = stubSession();
+    s.expectReply('u1', '¿Desde qué ciudad lo calculo?');
+
+    s.checkForWake(said('u1', 'Luc', 'desde Córdoba'));
+    await wait(GRACE * 3);
+
+    assert.equal(s.fired.length, 1);
+    assert.equal(s.fired[0].question, 'desde Córdoba');
+    assert.equal(s.fired[0].viaFollowUp, true, 'and it is marked, so the rate is measurable');
+  });
+
+  test('no window at all when the reply was not a question', async () => {
+    // This is the guard that keeps it from becoming "answer everything after
+    // you speak", which is the failure that gets a bot removed from a server.
+    const s = stubSession();
+    assert.equal(s.expectReply('u1', 'Son unas dieciocho horas de ruta.'), false);
+
+    s.checkForWake(said('u1', 'Luc', 'qué largo che'));
+    await wait(GRACE * 3);
+
+    assert.equal(s.fired.length, 0);
+  });
+
+  test('it belongs to the person who was asked, not to the room', async () => {
+    // Two other people resuming their own conversation is not an answer.
+    const s = stubSession();
+    s.expectReply('u1', '¿Desde qué ciudad?');
+
+    s.checkForWake(said('u2', 'Marco', 'che viste el partido'));
+    await wait(GRACE * 3);
+    assert.equal(s.fired.length, 0, 'somebody else is not the answer');
+
+    s.checkForWake(said('u1', 'Luc', 'desde Córdoba'));
+    await wait(GRACE * 3);
+    assert.equal(s.fired.length, 1, 'and the window survived for the person it was for');
+  });
+
+  test('it is spent once, so it cannot catch a later sentence', async () => {
+    const s = stubSession();
+    s.expectReply('u1', '¿Desde qué ciudad?');
+
+    s.checkForWake(said('u1', 'Luc', 'desde Córdoba'));
+    await wait(GRACE * 3);
+
+    s.checkForWake(said('u1', 'Luc', 'bueno me voy a comer'));
+    await wait(GRACE * 3);
+
+    assert.equal(s.fired.length, 1, 'the second sentence was not for the bot');
+  });
+
+  test('it expires rather than waiting all call', async () => {
+    const s = stubSession();
+    s.expectReply('u1', '¿Desde qué ciudad?');
+
+    await wait(REPLY + 50);
+    s.checkForWake(said('u1', 'Luc', 'y bueno, mañana vemos'));
+    await wait(GRACE * 3);
+
+    assert.equal(s.fired.length, 0);
+  });
+
+  test('saying its name still works while a window is open', async () => {
+    const s = stubSession();
+    s.expectReply('u1', '¿Desde qué ciudad?');
+
+    s.checkForWake(said('u1', 'Luc', 'mirror olvidalo, otra cosa'));
+    await wait(GRACE * 3);
+
+    assert.equal(s.fired.length, 1);
+  });
+});
+
+describe('endsWithQuestion', () => {
+  test('is what decides whether a window opens at all', () => {
+    assert.equal(endsWithQuestion('¿Desde qué ciudad?'), true);
+    assert.equal(endsWithQuestion('Which city?"'), true, 'a closing quote does not hide it');
+    assert.equal(endsWithQuestion('Son dieciocho horas.'), false);
+    assert.equal(endsWithQuestion('¿Sabés? Son dieciocho horas.'), false, 'only the end counts');
+    assert.equal(endsWithQuestion(''), false);
+    assert.equal(endsWithQuestion(null), false);
   });
 });

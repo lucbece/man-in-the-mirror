@@ -27,7 +27,7 @@ const records = [];
  * fact rather than an inference — a turn that used nothing could have been
  * answered by anything.
  */
-export function recordAnswer({ brain, model, tools = [], escalated = false, timings = {} }) {
+export function recordAnswer({ brain, model, tools = [], escalated = false, followUp = false, timings = {} }) {
   records.push({
     at: Date.now(),
     brain,
@@ -35,6 +35,7 @@ export function recordAnswer({ brain, model, tools = [], escalated = false, timi
     tools: [...tools],
     usedTools: tools.length > 0,
     escalated,
+    followUp,
     firstAudioMs: timings.firstAudioMs ?? null,
     beforeAskMs: timings.beforeAskMs ?? null,
     thinkMs: timings.thinkMs ?? null,
@@ -74,11 +75,16 @@ export function answerStats() {
   const withTools = records.filter((r) => r.usedTools);
   const withoutTools = records.filter((r) => !r.usedTools);
   const escalated = records.filter((r) => r.escalated);
+  // Answers that came from the bot's own question rather than from its name.
+  // Worth a number rather than a feeling: this is the path that can make it
+  // speak when nobody addressed it.
+  const followUps = records.filter((r) => r.followUp);
 
   return {
     count: records.length,
     toolRate: withTools.length / records.length,
     escalationRate: escalated.length / records.length,
+    followUpRate: followUps.length / records.length,
     firstAudioMs: median(records.map((r) => r.firstAudioMs)),
     // The wake chain: silence detection, transcription, the grace wait. Only
     // present for answers that came from someone speaking — a question typed

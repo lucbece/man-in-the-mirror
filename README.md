@@ -227,6 +227,32 @@ already used it. A version of this that also re-labelled those lines as "part of
 the question" in the prompt made no measurable difference over four trials, so
 it was thrown away.
 
+## Answering back without saying its name
+
+When the bot ends a reply by asking something — "¿desde qué ciudad lo calculo?"
+— it is waiting for an answer, and making the person say its name again to hand
+it over is a bug in the conversation rather than a policy.
+
+So for 12 seconds afterwards, the next thing *that person* says counts as
+addressing it. No wake word, no model call, no guessing.
+
+It is deliberately narrow, because the cost of being wrong is the one failure
+that gets a bot removed from a server: speaking when nobody asked.
+
+- It only opens when the bot's own reply actually ended in a question mark.
+- It belongs to the person who was asked. Two other people resuming their own
+  conversation is not an answer.
+- It is spent on the first thing they say, so it cannot catch a sentence a
+  minute later.
+- It expires.
+
+The Thinking tab reports how often this path fires as "answered without its
+name", so it is a rate rather than a feeling.
+
+A looser version — judging every utterance in a window with a cheap model — is
+deliberately not built. It costs a model call per sentence and adds a way to be
+wrong, and this covers the case that actually stings.
+
 ## Cascade mode
 
 `agent` is slow for a reason that has nothing to do with the answer: a session
