@@ -58,6 +58,21 @@ const WAKE_OPEN_MS = 6_000;
 const WAKE_SETTLE_MS = 1_500;
 
 /**
+ * How long a question the bot asked stays open for its answer.
+ *
+ * When the bot ends its reply with a question — "¿desde qué ciudad?" — it is
+ * waiting for something, and making the person say its name again to hand it
+ * over is a bug in the conversation rather than a policy. So for a short while
+ * afterwards, the next thing *that person* says counts as addressing it.
+ *
+ * Deliberately narrow, because the cost of being wrong here is the one failure
+ * that gets a bot removed from a server: speaking when nobody asked. It only
+ * opens when the bot actually asked something, only for the person it asked,
+ * and it is spent on the first thing they say.
+ */
+const REPLY_WINDOW_MS = 12_000;
+
+/**
  * Exported as a mutable object so tests can shrink the waits. Everything below
  * reads through it rather than closing over the constants.
  */
@@ -66,7 +81,14 @@ export const WAKE_TIMING = {
   graceMs: WAKE_GRACE_MS,
   openMs: WAKE_OPEN_MS,
   settleMs: WAKE_SETTLE_MS,
+  replyMs: REPLY_WINDOW_MS,
 };
+
+/** Did the bot's own reply end by asking something? */
+export function endsWithQuestion(text) {
+  const trimmed = String(text ?? '').trim().replace(/["'»)\]]+$/, '');
+  return trimmed.endsWith('?');
+}
 
 /**
  * One guild's voice presence: the connection, the player it speaks through, and
@@ -120,6 +142,9 @@ export class VoiceSession extends EventEmitter {
 
     this.eager = null;
     this.lastWakeAt = 0;
+    // Set when the bot ends a reply with a question: whose answer it is
+    // waiting for, and until when.
+    this.awaitingReply = null;
     /** Set while we're still hearing out someone's question. */
     this.pendingWake = null;
     this.receiver.on('utterance', (utterance) => this.onUtterance(utterance));
@@ -144,31 +169,72 @@ export class VoiceSession extends EventEmitter {
    * A freshly transcribed utterance is the only place a wake phrase can appear,
    * so this is where the bot decides it's being spoken to.
    */
+  /**
+   * Is this the answer to a question the bot just asked?
+   *
+   * Spent on the first thing that person says, so a window cannot linger and
+   * catch an unrelated sentence a minute later. Somebody *else* speaking does
+   * not spend it — they are not who was asked.
+   */
+  takeExpectedReply(utterance) {
+    const expected = this.awaitingReply;
+    if (!expected) return false;
+    if (Date.now() > expected.until) {
+      this.awaitingReply = null;
+      return false;
+    }
+    if (utterance.userId !== expected.userId || !utterance.text?.trim()) return false;
+    this.awaitingReply = null;
+    return true;
+  }
+
+  /**
+   * The bot has finished speaking. If it ended by asking something, the person
+   * it asked may answer without saying its name again.
+   */
+  expectReply(userId, spoken) {
+    this.awaitingReply =
+      userId && endsWithQuestion(spoken)
+        ? { userId, until: Date.now() + WAKE_TIMING.replyMs }
+        : null;
+    return Boolean(this.awaitingReply);
+  }
+
   checkForWake(utterance) {
     if (!config.get('wakeEnabled') || this.destroyed) return;
 
     // Already listening to someone's question — this is more of it, not a new one.
     if (this.pendingWake) return this.extendWake(utterance);
 
-    const { matched, name, closest } = detectAddress(utterance.text, config.get('agentNames'));
-    if (!matched) {
-      // A near miss is almost always transcription mangling the name, which is
-      // invisible otherwise — the bot just sits there saying nothing.
-      if (closest && closest.score >= 0.55) {
-        console.log(
-          `[wake] near miss: heard "${closest.heard}" vs "${closest.name}" ` +
-            `(${closest.score.toFixed(2)}) in: "${utterance.text}"`,
-        );
-      }
-      return;
-    }
-    console.log(`[wake] addressed as "${name}" in: "${utterance.text}"`);
+    // Answering the bot's own question counts as addressing it. No cooldown
+    // check on this path: it is a continuation the bot asked for, not somebody
+    // triggering it twice.
+    const answeringUs = this.takeExpectedReply(utterance);
 
-    // Someone saying the phrase twice in quick succession means one answer,
-    // not two talking over each other.
-    const now = Date.now();
-    if (now - this.lastWakeAt < WAKE_TIMING.cooldownMs) return;
-    this.lastWakeAt = now;
+    if (!answeringUs) {
+      const { matched, name, closest } = detectAddress(utterance.text, config.get('agentNames'));
+      if (!matched) {
+        // A near miss is almost always transcription mangling the name, which is
+        // invisible otherwise — the bot just sits there saying nothing.
+        if (closest && closest.score >= 0.55) {
+          console.log(
+            `[wake] near miss: heard "${closest.heard}" vs "${closest.name}" ` +
+              `(${closest.score.toFixed(2)}) in: "${utterance.text}"`,
+          );
+        }
+        return;
+      }
+      console.log(`[wake] addressed as "${name}" in: "${utterance.text}"`);
+
+      // Someone saying the phrase twice in quick succession means one answer,
+      // not two talking over each other.
+      const now = Date.now();
+      if (now - this.lastWakeAt < WAKE_TIMING.cooldownMs) return;
+      this.lastWakeAt = now;
+    } else {
+      console.log(`[wake] ${utterance.displayName} answered the question it asked: "${utterance.text}"`);
+      this.lastWakeAt = Date.now();
+    }
 
     // The whole sentence is the request. The name can sit anywhere in it —
     // "mirror, what do you think" and "what do you think, mirror" are the same
@@ -183,7 +249,10 @@ export class VoiceSession extends EventEmitter {
       // first spoken word is overhead the room experiences as the bot being
       // slow — silence detection, transcription, the grace wait — and none of
       // it was ever measured, only chosen. See AUDIT.md.
-      stoppedAt: utterance.endedAt ?? now,
+      stoppedAt: utterance.endedAt ?? Date.now(),
+      // Came from the bot's own question rather than from its name, so the
+      // panel can show how often that path fires — and whether it fires wrongly.
+      viaFollowUp: answeringUs,
     };
     // Just its name and nothing else means they're winding up to ask.
     const onlyTheName = normalise(utterance.text).split(' ').length <= 2;
@@ -273,6 +342,7 @@ export class VoiceSession extends EventEmitter {
           : question,
       askedBy: pending.askedBy,
       stoppedAt: pending.stoppedAt,
+      viaFollowUp: pending.viaFollowUp,
       // Discord attributes this to the audio stream it arrived on, so it is
       // the one part of a spoken request that can't be claimed by saying it.
       // Every permission check downstream rests on that.

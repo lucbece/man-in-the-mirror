@@ -72,7 +72,7 @@ const inFlight = new Set();
  * Returns the timings and the text that was spoken, so callers can show the
  * user what happened rather than just "done".
  */
-export async function ask(session, { question, askedBy, askedById, stoppedAt }, deps = {}) {
+export async function ask(session, { question, askedBy, askedById, stoppedAt, viaFollowUp }, deps = {}) {
   // The collaborators are injectable, defaulting to the real ones, purely so
   // this function can be tested. It is where the brain, the synthesiser, the
   // filler clips and the speech queue meet — and it had no coverage at all,
@@ -224,6 +224,7 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt }, 
       model: brain.model ?? null,
       tools: toolsUsed,
       escalated: Boolean(brain.escalated),
+      followUp: Boolean(viaFollowUp),
       timings,
     });
 
