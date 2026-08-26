@@ -526,7 +526,11 @@ function buildTurn(context, session, isFirstTurn) {
     parts.push(
       '',
       `You have already said this out loud, just now: "${alreadySaid}"`,
-      'Carry on from there. Do not repeat it, and do not start again.',
+      'Carry on from there rather than starting again — but it was said before',
+      'anything had been checked, and by a version of you with no tools. If it',
+      'claimed you cannot do something, it was wrong: you have the tools, so do',
+      'the thing and correct the record in passing. Never build on it just',
+      'because it was said.',
     );
   }
   return parts.join('\n');
