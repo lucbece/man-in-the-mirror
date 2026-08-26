@@ -197,6 +197,8 @@ Agent mode includes these tools:
 | `change_setting` | Changes one setting, effective immediately | Manage Server for `folders` |
 | `configure_mcp_server` | Adds or replaces an MCP server in the configuration | Asker has Manage Server |
 | `list_mcp_servers` | Lists configured servers and their granted tools | — |
+| `play_music` | Queues a song, artist or album by posting your music bot's command | Asker can post in that channel |
+| `skip_song` | Skips whatever is playing | Asker can post in that channel |
 
 Reminders survive a restart: they are written to `data/reminders.json` and
 re-armed on boot. One that came due while the process was down is dropped
@@ -321,6 +323,45 @@ panel never waited for any of it.
 No question text and no answer text is retained, only which brain ran, which
 tools it used and the timings. The audio buffer never reaches disk and neither
 does this.
+
+## Driving the music bot
+
+There is already a bot in most servers that plays music when somebody posts
+`m!p something` in a text channel. This does not replace it — it types for you,
+so "espejo, poné Beat It" works from a voice call without anyone reaching for a
+keyboard. `musicChannel`, `musicPlayCommand` and `musicSkipCommand` configure
+it; the defaults match Jockie.
+
+The hard part is not Discord, it is transcription. Song and artist names are
+exactly what speech recognition is worst at — proper nouns, usually English
+ones said inside a Spanish sentence. "Beat It de Michael Jackson" comes back as
+"bit it de maikel yakson", and posting that verbatim queues the wrong thing.
+
+So the correction happens before the command is posted, and it happens in the
+model rather than in a matching rule: it knows the catalogue. Measured against
+the live agent:
+
+| Said | Posted |
+| --- | --- |
+| "poné bit it de maikel yakson" | `m!p Beat It Michael Jackson` |
+| "poné el disco rumors de flitgud mac entero" | `m!p Rumours Fleetwood Mac` |
+| "poné esa de los redondos que dice algo de un jugador de fútbol" | nothing — it asks which one |
+
+That last row is the one worth explaining. Asked vaguely, the agent first
+searched the web three times, ran out of tool rounds and said "dame un segundo"
+into silence; told to search anyway, it invented a title from the description
+and queued it. Neither is acceptable, and both sound certain. It now asks
+instead — and because its reply ends in a question, the answer needs no wake
+word.
+
+Two rules the tool enforces rather than hopes for: the query is posted on one
+line, so a newline cannot smuggle in a second command, and it is only posted if
+**the person who asked** could have posted it themselves. Otherwise the bot is
+a way into a channel someone has been kept out of.
+
+Nobody in a voice call can see the text channel, so the agent is told to say
+what it queued, artist included. The room is the only thing that can catch a
+wrong correction, and it can only do that if it hears one.
 
 ## Standing instructions
 

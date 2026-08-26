@@ -16,6 +16,7 @@ import { createSdkMcpServer } from '@anthropic-ai/claude-agent-sdk';
 
 import { callTools } from './call.js';
 import { configTools } from './config.js';
+import { musicTools } from './music.js';
 import { reminderTools } from './reminders.js';
 import { searchTools } from './search.js';
 
@@ -36,6 +37,7 @@ export function botToolsServer(guildId, turn) {
       ...searchTools(),
       ...callTools(turn),
       ...configTools(turn),
+      ...musicTools(turn),
       ...reminderTools(guildId),
     ],
   });
