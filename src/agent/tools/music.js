@@ -232,8 +232,11 @@ export function musicTools(turn) {
           throw new DiscordToolError('Say whether to turn it up or down.');
         }
         const session = musicFor(turn);
-        const { from, to, atLimit } = session.music.setVolume({ change, level });
+        const { from, to, atLimit, applied } = session.music.setVolume({ change, level });
 
+        if (!applied) {
+          return `Volume set to ${to} percent, but nothing is playing yet — it will apply to the next track. Say that, since there is nothing for them to hear.`;
+        }
         if (from === to) {
           return atLimit
             ? `Already at ${to} percent, which is as far as it goes. Say so — this one they cannot hear.`

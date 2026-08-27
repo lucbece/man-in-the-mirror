@@ -138,8 +138,10 @@ describe('the volume knob', () => {
     const music = new MusicPlayer();
     assert.equal(music.volume, 100);
 
-    assert.deepEqual(music.setVolume({ change: -15 }), { from: 100, to: 85, atLimit: false });
-    assert.deepEqual(music.setVolume({ change: -15 }), { from: 85, to: 70, atLimit: false });
+    // `applied` is false with nothing playing: there is no live resource to
+    // put the level on, and the tool says so rather than claiming success.
+    assert.deepEqual(music.setVolume({ change: -15 }), { from: 100, to: 85, applied: false, atLimit: false });
+    assert.deepEqual(music.setVolume({ change: -15 }), { from: 85, to: 70, applied: false, atLimit: false });
     assert.equal(music.setVolume({ change: 30 }).to, 100);
   });
 
@@ -151,7 +153,7 @@ describe('the volume knob', () => {
   test('it cannot be turned below silence or past clipping', () => {
     const music = new MusicPlayer();
 
-    assert.deepEqual(music.setVolume({ change: -500 }), { from: 100, to: 0, atLimit: true });
+    assert.deepEqual(music.setVolume({ change: -500 }), { from: 100, to: 0, applied: false, atLimit: true });
     assert.equal(music.setVolume({ change: 5000 }).to, 150);
   });
 
@@ -330,5 +332,19 @@ describe('an album is its songs', () => {
 
     assert.ok(queued <= 50, `queued ${queued}`);
     assert.ok(dropped > 0, 'and says how many did not fit');
+  });
+});
+
+describe('a volume change that lands on nothing', () => {
+  test('says so, instead of reporting success into silence', () => {
+    // This is what made "el bot no responde al comando de bajar el volumen"
+    // impossible to diagnose: with nothing playing, the level was stored, the
+    // tool reported a number, and not one thing changed that anyone could
+    // hear. Identical from the outside to it being broken.
+    const music = new MusicPlayer();
+    const result = music.setVolume({ change: -15 });
+
+    assert.equal(result.to, 85, 'the level is still remembered for the next track');
+    assert.equal(result.applied, false, 'but nothing heard it');
   });
 });

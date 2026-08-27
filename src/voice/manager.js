@@ -197,7 +197,7 @@ export class SessionManager extends EventEmitter {
   }
 
   status() {
-    return this.list().map((s) => s.status());
+    return this.list().map((s) => ({ ...s.status(), music: s.musicStatus() }));
   }
 }
 

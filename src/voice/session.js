@@ -448,6 +448,11 @@ export class VoiceSession extends EventEmitter {
     return {
       current: this.music.current ? { ...this.music.current } : null,
       queue: this.music.queue.map((t) => ({ title: t.title, requestedBy: t.requestedBy })),
+      volume: this.music.volume,
+      paused: this.music.pausedByUser,
+      // Whether the level can actually be applied right now. Without this, a
+      // volume change that lands on nothing looks identical to one that works.
+      live: Boolean(this.music.resource?.volume),
     };
   }
 
