@@ -176,3 +176,159 @@ describe('the volume knob', () => {
     assert.equal(music.volume, 60, 'stopping is not resetting');
   });
 });
+
+describe('editing the queue', () => {
+  /** A player with a queue already in it, and nothing spawning processes. */
+  function queued(titles) {
+    const music = new MusicPlayer();
+    music.player.play = () => {};
+    music.player.stop = () => true;
+    music.player.pause = () => true;
+    music.player.unpause = () => true;
+    music.queue = titles.map((title) => ({ title, requestedBy: 'Luc' }));
+    return music;
+  }
+
+  test('takes one out by part of its title', () => {
+    const music = queued(['Californication', 'Otherside', 'Scar Tissue']);
+
+    assert.equal(music.remove('otherside').title, 'Otherside');
+    assert.deepEqual(music.queue.map((t) => t.title), ['Californication', 'Scar Tissue']);
+  });
+
+  test('or by its number, counting from one', () => {
+    const music = queued(['A', 'B', 'C']);
+    assert.equal(music.remove('2').title, 'B');
+  });
+
+  test('refuses an ambiguous name rather than picking one', () => {
+    // The queue is shared. Removing somebody else's song because it sounded
+    // close is worse than asking which.
+    const music = queued(['Love Song', 'Love Buzz']);
+
+    assert.throws(() => music.remove('love'), /matches 2/);
+    assert.equal(music.queue.length, 2, 'and removed nothing');
+  });
+
+  test('says so when nothing matches', () => {
+    assert.throws(() => queued(['A']).remove('Zeppelin'), /Nothing in the queue matches/);
+  });
+
+  test('moves one to a position', () => {
+    const music = queued(['A', 'B', 'C']);
+
+    assert.equal(music.move('C', 1).position, 1);
+    assert.deepEqual(music.queue.map((t) => t.title), ['C', 'A', 'B']);
+  });
+
+  test('a position past the end lands at the end, not out of bounds', () => {
+    const music = queued(['A', 'B', 'C']);
+    music.move('A', 99);
+    assert.deepEqual(music.queue.map((t) => t.title), ['B', 'C', 'A']);
+  });
+});
+
+describe('two kinds of pause', () => {
+  function playing() {
+    const music = new MusicPlayer();
+    music.player.play = () => {};
+    music.player.stop = () => true;
+    music.player.pause = () => true;
+    music.player.unpause = () => true;
+    music.current = { title: 'Californication' };
+    return music;
+  }
+
+  test('a track paused on purpose is not resumed by finishing an answer', () => {
+    // The bug this prevents: they pause the music, ask something, and the
+    // answer ending starts the music again on its own.
+    const music = playing();
+    music.pause();
+
+    music.pauseForSpeech();
+    music.resumeAfterSpeech();
+
+    assert.equal(music.pausedByUser, true, 'still paused, as they left it');
+  });
+
+  test('resuming while the bot is talking waits for it to finish', () => {
+    // Unpausing here would play over the sentence being spoken.
+    const music = playing();
+    music.pause();
+    music.pauseForSpeech();
+
+    let unpaused = false;
+    music.player.unpause = () => { unpaused = true; };
+    music.resume();
+
+    assert.equal(unpaused, false);
+    assert.equal(music.pausedByUser, false, 'but it is no longer theirs to hold');
+  });
+
+  test('reports honestly when there was nothing to do', () => {
+    const music = playing();
+    assert.equal(music.pause(), true);
+    assert.equal(music.pause(), false, 'already paused');
+    assert.equal(music.resume(), true);
+    assert.equal(music.resume(), false, 'was not paused');
+  });
+
+  test('a paused track does not let the queue run on without it', () => {
+    const music = playing();
+    music.queue = [{ title: 'next' }];
+    music.pause();
+
+    music.player.emit('idle');
+
+    assert.equal(music.current.title, 'Californication');
+  });
+});
+
+describe('an album is its songs', () => {
+  /** Something already playing, so queueing does not start a real lookup. */
+  function busy() {
+    const music = new MusicPlayer();
+    music.ytDlpBin = '/bin/true';
+    music.current = { title: 'algo que ya suena' };
+    return music;
+  }
+
+  test('queues the whole track list without looking any of it up first', async () => {
+    // Resolving a dozen searches before the first note is twenty seconds of
+    // nothing. They are queued unresolved and looked up when their turn comes,
+    // under whatever is already playing.
+    const music = busy();
+
+    const { queued, startedNow } = await music.addMany(['a', 'b', 'c', 'd'], 'Luc');
+
+    assert.equal(queued, 4);
+    assert.equal(startedNow, false);
+    assert.deepEqual(music.queue.map((t) => t.unresolved), [true, true, true, true]);
+    assert.deepEqual(music.queue.map((t) => t.requestedBy), ['Luc', 'Luc', 'Luc', 'Luc']);
+  });
+
+  test('a title stands in until the real one is known', async () => {
+    // The queue is readable straight away — now_playing has something to say
+    // about what is coming, rather than four blanks.
+    const music = busy();
+    await music.addMany(['Otherside Red Hot Chili Peppers'], 'Luc');
+
+    assert.match(music.queue[0].title, /Otherside/);
+  });
+
+  test('an empty track list is refused rather than queueing nothing', async () => {
+    await assert.rejects(() => busy().addMany([], 'Luc'), /Nothing to queue/);
+    await assert.rejects(() => busy().addMany(['  ', ''], 'Luc'), /Nothing to queue/);
+  });
+
+  test('a long album cannot overrun the queue limit', async () => {
+    const music = busy();
+    const { queued, dropped } = await music.addMany(
+      Array.from({ length: 80 }, (_, i) => `track ${i}`),
+      'Luc',
+    );
+
+    assert.ok(queued <= 50, `queued ${queued}`);
+    assert.ok(dropped > 0, 'and says how many did not fit');
+  });
+});

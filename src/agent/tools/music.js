@@ -138,6 +138,86 @@ export function musicTools(turn) {
       }),
     ),
     tool(
+      'play_album',
+      'Queue a whole album, track by track. Use this whenever someone asks for a record rather than a song — "poné Californication entero", "el disco Rumours".\n\n' +
+        'List the tracks yourself, in order. You know most albums; if you are not sure of the running order, search for it first. Never refuse because you cannot find a single video of the album — an album on YouTube is its songs, and queueing them individually is how it gets played.\n\n' +
+        'Each track is looked up when its turn comes, so this returns immediately and the first song starts while the rest wait.',
+      {
+        artist: z.string().describe('The artist, as it is written.'),
+        album: z.string().describe('The album, as it is written.'),
+        tracks: z
+          .array(z.string())
+          .describe('The track titles in order. Titles only — the artist is added for you.'),
+      },
+      speakableTool(async ({ artist, album, tracks }) => {
+        const session = musicFor(turn);
+        const list = (tracks ?? []).map((t) => String(t).trim()).filter(Boolean);
+        if (!list.length) throw new DiscordToolError('I need the track list to queue an album.');
+
+        const { queued, startedNow, dropped } = await session.music.addMany(
+          list.map((title) => `${title} ${artist}`),
+          turn.askerName ?? 'someone',
+        );
+        await note(
+          turn,
+          `💿  **${album}** — ${artist}  ·  ${queued} temas  ·  pedido por ${turn.askerName ?? 'alguien'}`,
+        );
+        return (
+          `Queued ${queued} tracks from ${album}${dropped ? `, ${dropped} did not fit` : ''}` +
+          `${startedNow ? ' and the first is playing' : ''}. Say nothing — they can hear it.`
+        );
+      }),
+    ),
+    tool(
+      'remove_from_queue',
+      'Take something out of the queue that has not played yet. Say which by its title, or by its number in the queue.',
+      {
+        which: z.string().describe('Part of the title, or its position in the queue as a number.'),
+      },
+      speakableTool(async ({ which }) => {
+        const session = musicFor(turn);
+        const removed = session.music.remove(which);
+        await note(turn, `➖  fuera de la cola: ${removed.title}`);
+        return `Removed "${removed.title}" from the queue. Say nothing — nothing changed in what they can hear.`;
+      }),
+    ),
+    tool(
+      'move_in_queue',
+      'Move something already queued to a different place — "poné esa primera", "esa dejala para el final".',
+      {
+        which: z.string().describe('Part of the title, or its current position as a number.'),
+        to: z.number().describe('Where it should go, counting from 1.'),
+      },
+      speakableTool(async ({ which, to }) => {
+        const session = musicFor(turn);
+        const { track, position } = session.music.move(which, to);
+        await note(turn, `↕️  ${track.title} → posición ${position}`);
+        return `Moved "${track.title}" to position ${position}. Say nothing.`;
+      }),
+    ),
+    tool(
+      'pause_music',
+      'Pause what is playing, keeping it where it is. Use for "pará un segundo", not for "pará la música" — that is stop_music, which clears the queue.',
+      {},
+      speakableTool(async () => {
+        const session = musicFor(turn);
+        return session.music.pause()
+          ? 'Paused. Say nothing — they can hear it stop.'
+          : 'Nothing is playing, or it was already paused.';
+      }),
+    ),
+    tool(
+      'resume_music',
+      'Carry on from where it was paused.',
+      {},
+      speakableTool(async () => {
+        const session = musicFor(turn);
+        return session.music.resume()
+          ? 'Playing again. Say nothing.'
+          : 'It was not paused.';
+      }),
+    ),
+    tool(
       'set_volume',
       'Turn the music up or down. Use `change` for "bajale un poco" or "subilo" — negative to lower, positive to raise, in percentage points; a nudge is about 15. Use `level` only when they name a number, like "ponelo al treinta".',
       {

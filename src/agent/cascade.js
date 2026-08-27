@@ -144,6 +144,12 @@ const MUSIC_COMMAND = [
   /(^|\s)(poné|pone|pon|play)\s+\S+.{0,40}\sde\s+\S+/i,
   /(^|\s)(bajá|baja|bajame|bajale|subí|subi|subime|subile)\b.{0,30}(volumen|música|musica)/i,
   /\bvolumen\b.{0,20}(más|mas|un poco|abajo|arriba)|\b(más|mas)\s+(fuerte|bajo|alto)\b/i,
+  // Lookaheads, not \b: JavaScript's \b is ASCII, so there is no boundary
+  // after "sacá", "pausá" or "seguí" and the obvious pattern never fires.
+  // Second time this bit; the accented imperative is the normal case here.
+  /(^|\s)(saca|sacá|quita|quitá|borra|borrá|elimina|eliminá)(?=\s).{0,40}(cola|queue|lista)/i,
+  /(^|\s)(pausa|pausá|pausalo|pausala|paus[aá]la|reanuda|reanudá|segu[ií]|continua|continuá)(?=\s|$|[,.!?])/i,
+  /\b(disco|álbum|album)\b.{0,40}(entero|completo|todo)|\b(poné|pone|pon)\b.{0,20}\b(disco|álbum|album)\b/i,
 ];
 
 const looksLikeMusicCommand = (text) => MUSIC_COMMAND.some((re) => re.test(String(text ?? '')));
