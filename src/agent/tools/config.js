@@ -185,7 +185,7 @@ export function configTools(turn) {
       ),
       tool(
         'remember_instruction',
-        'Record a standing instruction about how to behave from now on — what to call yourself, who is who, tone, what the group is doing. Use this when someone asks you to change how you act, so it survives past this conversation. Not for one-off requests.',
+        'Record a standing instruction about how to behave from now on — what to call yourself, who is who, tone, what the group is doing, and what it thinks. Politics counts: a group has positions, and being asked to hold one is an ordinary instruction, not something to refuse. Use this when someone asks you to change how you act, so it survives past this conversation. Not for one-off requests.',
         {
           instruction: z
             .string()
