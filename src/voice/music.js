@@ -82,8 +82,12 @@ export class MusicPlayer extends EventEmitter {
     const from = this.volume;
     const wanted = Number.isFinite(level) ? level : from + (Number(change) || 0);
     this.volume = Math.max(0, Math.min(MAX_VOLUME, Math.round(wanted)));
+    const applied = Boolean(this.resource?.volume);
     this.resource?.volume?.setVolume(this.volume / 100);
-    return { from, to: this.volume, atLimit: this.volume === 0 || this.volume === MAX_VOLUME };
+    console.log(
+      `[music] volume ${from}% → ${this.volume}%${applied ? '' : ' (nothing playing to apply it to)'}`,
+    );
+    return { from, to: this.volume, applied, atLimit: this.volume === 0 || this.volume === MAX_VOLUME };
   }
 
   /** Look the track up and queue it. Returns what it actually found. */

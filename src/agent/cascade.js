@@ -154,6 +154,20 @@ const MUSIC_COMMAND = [
 
 const looksLikeMusicCommand = (text) => MUSIC_COMMAND.some((re) => re.test(String(text ?? '')));
 
+/**
+ * The tool's own name, said out loud.
+ *
+ * Heard in a real call: the fast leg spoke the word "Escalate." before handing
+ * over, and the agent — handed that sentence as something already said —
+ * spent its answer explaining what "escalate" had meant. The prompt forbids
+ * saying it. Prompts have not been enough for this class of thing, and a tool
+ * name reaching the room is never right, so it is dropped rather than asked
+ * about.
+ */
+const LEAKED_TOOL_NAME = /^\s*escalate\b[\s.:,!¡—-]*/i;
+
+export const withoutToolName = (text) => String(text ?? '').replace(LEAKED_TOOL_NAME, '').trim();
+
 const state = new Map();
 
 function stateFor(guildId) {
@@ -316,8 +330,10 @@ export class CascadeBrain {
     if (onSentence) {
       stream.on('text', (delta) => {
         for (const chunk of splitter.push(delta)) {
-          said += (said ? ' ' : '') + chunk;
-          onSentence(chunk);
+          const clean = withoutToolName(chunk);
+          if (!clean) continue; // the tool name and nothing else
+          said += (said ? ' ' : '') + clean;
+          onSentence(clean);
         }
       });
     }
@@ -331,7 +347,7 @@ export class CascadeBrain {
       return { said, escalate: true, reason: `the fast model failed (${err?.message ?? err})` };
     }
 
-    const rest = splitter.flush();
+    const rest = withoutToolName(splitter.flush());
     if (rest) {
       said += (said ? ' ' : '') + rest;
       onSentence?.(rest);

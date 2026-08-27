@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { describe, beforeEach } from 'node:test';
 
-import { CascadeBrain, resetCascade } from '../src/agent/cascade.js';
+import { CascadeBrain, resetCascade, withoutToolName } from '../src/agent/cascade.js';
 
 /** A fast leg that answers, or defers, without an API call. */
 function fast(result) {
@@ -289,5 +289,27 @@ describe('music commands never reach the fast leg', () => {
       }).answer(ask(said));
       assert.equal(fastRan, true, `should have used the fast leg: "${said}"`);
     }
+  });
+});
+
+describe('the tool name never reaches the room', () => {
+  test('a line that is only the tool name becomes nothing', () => {
+    // Heard in a real call: the fast leg spoke "Escalate." before handing
+    // over. Worse than the leak was what followed — the handover passes what
+    // was already said to the agent, so it spent its answer explaining what
+    // "escalate" had meant.
+    assert.equal(withoutToolName('Escalate.'), '');
+    assert.equal(withoutToolName('escalate'), '');
+    assert.equal(withoutToolName('  Escalate:  '), '');
+  });
+
+  test('a holding line behind it survives', () => {
+    assert.equal(withoutToolName('Escalate. Dame un segundo.'), 'Dame un segundo.');
+  });
+
+  test('an ordinary word that merely starts the same is left alone', () => {
+    // "Escalada" is a word people say, and this runs on every sentence.
+    assert.equal(withoutToolName('Escalada de precios en Madrid.'), 'Escalada de precios en Madrid.');
+    assert.equal(withoutToolName('Dame un segundo.'), 'Dame un segundo.');
   });
 });
