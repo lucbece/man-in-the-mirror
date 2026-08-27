@@ -26,6 +26,7 @@ import ffmpegPath from 'ffmpeg-static';
 import { AudioPlayerStatus, StreamType, createAudioPlayer, createAudioResource } from '@discordjs/voice';
 
 import { ensureYtDlp, resolveTrack } from '../agent/ytdlp.js';
+import { normalise } from '../agent/wake.js';
 
 /** Nobody queues more than this on purpose, and an agent in a loop might. */
 const MAX_QUEUE = 50;
@@ -51,13 +52,17 @@ export class MusicPlayer extends EventEmitter {
     // stay down for whatever plays next, which is what a volume knob does.
     this.volume = DEFAULT_VOLUME;
     this.resource = null;
+    // Two different pauses that must not undo each other: one is the bot
+    // making room to talk, the other is somebody asking for silence. Resuming
+    // after an answer must not restart a track they paused on purpose.
+    this.pausedByUser = false;
 
     this.player = createAudioPlayer();
     this.player.on('error', (err) => console.warn(`[music] ${err.message}`));
     this.player.on(AudioPlayerStatus.Idle, () => {
       // Pausing reports Idle on some transitions; only a real finish advances.
-      if (this.pausedForSpeech) return;
-      this.#playNext();
+      if (this.pausedForSpeech || this.pausedByUser) return;
+      this.#playNext().catch((err) => console.warn(`[music] ${err.message}`));
     });
   }
 
@@ -93,8 +98,85 @@ export class MusicPlayer extends EventEmitter {
     // Nothing playing means this one starts now rather than waiting for an
     // Idle that is never coming.
     const startedNow = !this.current;
-    if (startedNow) this.#playNext();
+    if (startedNow) await this.#playNext();
     return { track, startedNow, position: this.queue.length };
+  }
+
+  /**
+   * Queue several at once, looking none of them up yet.
+   *
+   * An album is a dozen tracks, and resolving a dozen searches against YouTube
+   * before the first note plays is twenty seconds of nothing. Each one is
+   * looked up when its turn comes instead, which costs about a second at a
+   * moment when a song is already playing over it.
+   */
+  async addMany(queries, requestedBy) {
+    const room = MAX_QUEUE - this.queue.length - (this.current ? 1 : 0);
+    if (room <= 0) throw new Error('The queue is full.');
+
+    const wanted = queries.map((q) => String(q).trim()).filter(Boolean).slice(0, room);
+    if (!wanted.length) throw new Error('Nothing to queue.');
+
+    this.ytDlpBin = await ensureYtDlp();
+    for (const query of wanted) {
+      // No title yet: it is whatever the search turns up when it plays.
+      this.queue.push({ query, title: query, requestedBy, unresolved: true });
+    }
+
+    const startedNow = !this.current;
+    if (startedNow) await this.#playNext();
+    return { queued: wanted.length, startedNow, dropped: queries.length - wanted.length };
+  }
+
+  /**
+   * Take one out of the queue by name or by position.
+   *
+   * Refuses on an ambiguous name rather than picking: the queue is shared, and
+   * removing somebody else's song because it sounded close is worse than
+   * asking which one.
+   */
+  remove(which) {
+    const said = String(which ?? '').trim();
+    if (!said) throw new Error('Say which one.');
+
+    const asNumber = Number(said);
+    if (Number.isInteger(asNumber) && asNumber >= 1 && asNumber <= this.queue.length) {
+      return this.queue.splice(asNumber - 1, 1)[0];
+    }
+
+    const needle = normalise(said);
+    const hits = this.queue.filter((t) => normalise(t.title).includes(needle));
+    if (!hits.length) throw new Error(`Nothing in the queue matches "${said}".`);
+    if (hits.length > 1) {
+      throw new Error(`"${said}" matches ${hits.length} of them — say which, or its number.`);
+    }
+    this.queue.splice(this.queue.indexOf(hits[0]), 1);
+    return hits[0];
+  }
+
+  /** Move one to a position, counting from 1. Same matching as remove. */
+  move(which, to) {
+    const track = this.remove(which);
+    const at = Math.max(0, Math.min(this.queue.length, Math.round(to) - 1));
+    this.queue.splice(at, 0, track);
+    return { track, position: at + 1 };
+  }
+
+  /** Somebody asked for silence, which is not the same as the bot talking. */
+  pause() {
+    if (!this.current || this.pausedByUser) return false;
+    this.pausedByUser = true;
+    this.player.pause(true);
+    return true;
+  }
+
+  resume() {
+    if (!this.pausedByUser) return false;
+    this.pausedByUser = false;
+    // Still mid-answer: let the speech handover bring it back, or it would
+    // start playing over the sentence being spoken.
+    if (!this.pausedForSpeech) this.player.unpause();
+    return true;
   }
 
   skip() {
@@ -107,6 +189,7 @@ export class MusicPlayer extends EventEmitter {
   stop() {
     this.queue.length = 0;
     this.current = null;
+    this.pausedByUser = false;
     this.player.stop(true);
     this.#killProcesses();
   }
@@ -127,10 +210,12 @@ export class MusicPlayer extends EventEmitter {
   resumeAfterSpeech() {
     if (!this.pausedForSpeech) return;
     this.pausedForSpeech = false;
-    this.player.unpause();
+    // Paused on purpose before the question was asked: finishing the answer is
+    // not a reason to start it again.
+    if (!this.pausedByUser) this.player.unpause();
   }
 
-  #playNext() {
+  async #playNext() {
     this.#killProcesses();
     const next = this.queue.shift();
     this.current = next ?? null;
@@ -141,11 +226,18 @@ export class MusicPlayer extends EventEmitter {
     }
 
     try {
+      // Queued as a bare query — an album track nobody looked up yet. This is
+      // where that second is spent, under whatever is already playing.
+      if (next.unresolved) {
+        Object.assign(next, await resolveTrack(next.query), { unresolved: false });
+      }
       this.player.play(this.#resourceFor(next));
       console.log(`[music] playing: ${next.title}`);
     } catch (err) {
-      console.warn(`[music] could not play ${next.title}: ${err.message}`);
-      this.#playNext();
+      // One track nobody can find should cost that track, not the rest of the
+      // album behind it.
+      console.warn(`[music] skipping ${next.title}: ${err.message}`);
+      await this.#playNext();
       return;
     }
     this.emit('update');

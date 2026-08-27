@@ -78,6 +78,11 @@ const SILENT_TOOLS = new Set([
   'mcp__bot__skip_song',
   'mcp__bot__stop_music',
   'mcp__bot__set_volume',
+  'mcp__bot__play_album',
+  'mcp__bot__remove_from_queue',
+  'mcp__bot__move_in_queue',
+  'mcp__bot__pause_music',
+  'mcp__bot__resume_music',
 ]);
 
 const isSilentTool = (name) => SILENT_TOOLS.has(name);

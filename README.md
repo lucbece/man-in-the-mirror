@@ -341,10 +341,38 @@ what is on, which is the thing a separate music bot could never tell it.
 
 | Tool | Effect |
 | --- | --- |
-| `play_music` | Plays a song, artist, album or URL, or queues it behind what is on |
+| `play_music` | Plays a song, artist or URL, or queues it behind what is on |
+| `play_album` | Queues a record track by track |
 | `skip_song` | Skips to the next thing queued |
+| `pause_music` / `resume_music` | Holds a track where it is |
 | `stop_music` | Stops and clears the queue |
-| `now_playing` | What is on, who asked for it, and what is next |
+| `remove_from_queue` / `move_in_queue` | Edits what is waiting, by title or position |
+| `set_volume` | Up or down, by a step or to a number |
+| `now_playing` | What is on, who asked for it, the volume, and what is next |
+
+Every one of those except `now_playing` is carried out **without saying
+anything**. Speaking pauses the track to make room for the voice, so confirming
+that you skipped a song costs the song you just moved to. What happened is
+written into the music channel instead.
+
+### An album is its songs
+
+There is rarely one video of a whole record, and the first version refused on
+that basis. `play_album` takes the track list — the model knows most of them,
+and searches for a running order it is unsure of — and queues them
+individually.
+
+They are queued *unresolved*: a dozen YouTube searches before the first note is
+twenty seconds of nothing, so each track is looked up when its turn comes,
+under whatever is already playing. A track nobody can find costs that track
+rather than the rest of the album behind it.
+
+### Two kinds of pause
+
+The bot pauses the music to talk, and people pause it to hear themselves think.
+These must not undo each other: a track paused on purpose stays paused when an
+answer finishes, and resuming during an answer waits for the sentence to end
+rather than playing over it.
 
 `yt-dlp` is fetched into `runtime/` the first time music is played, the same
 way whisper.cpp and Piper are, and piped through the `ffmpeg-static` already in
