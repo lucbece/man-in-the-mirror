@@ -9,6 +9,11 @@
 import { createBrain, clampForSpeech, BrainError, MAX_SPOKEN_CHARS } from './brain.js';
 import { takePendingLeave } from './tools/index.js';
 import { recordAnswer } from './answers.js';
+import {
+  isStageDirection,
+  looksLikeLeakedReasoning,
+  withoutOpeningAside,
+} from './spoken-guards.js';
 import { createTts, toAudioResource } from './tts.js';
 import { guessLanguage, takeFiller } from './filler.js';
 import { formatTranscript, transcribeBuffer } from './stt.js';
@@ -86,31 +91,6 @@ const SILENT_TOOLS = new Set([
 ]);
 
 const isSilentTool = (name) => SILENT_TOOLS.has(name);
-
-/** `(reproduciendo)`, `*plays music*`, `[silencio]` — written, never spoken. */
-function isStageDirection(text) {
-  const trimmed = String(text ?? '').trim();
-  if (!trimmed) return false;
-  return (
-    (trimmed.startsWith('(') && trimmed.endsWith(')')) ||
-    (trimmed.startsWith('[') && trimmed.endsWith(']')) ||
-    (trimmed.startsWith('*') && trimmed.endsWith('*'))
-  );
-}
-
-/**
- * Strip an opening aside, keeping whatever follows it.
- *
- * `isStageDirection` only catches a line that is *entirely* an aside, and the
- * one heard in a real call was "(silence) No real question here — just a
- * comment about me", which is an aside with a sentence stapled to it. A
- * parenthetical at the very start of a reply is never something to read out;
- * one in the middle usually is ("es de Rada (el uruguayo)"), so only the
- * leading one goes.
- */
-function withoutOpeningAside(text) {
-  return String(text ?? '').replace(/^\s*[([*][^)\]*]{0,40}[)\]*]\s*/, '');
-}
 
 /**
  * Answer a question out loud in the session's channel.
@@ -225,6 +205,13 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, vi
       // entirely a parenthetical or an asterisked action, which is never
       // something anyone meant to be said aloud.
       if (isStageDirection(text)) return;
+      // Reasoning read aloud, four prompts deep. Dropped rather than asked
+      // about — see spoken-guards.js for why the language mismatch is the
+      // signal.
+      if (looksLikeLeakedReasoning(text, question)) {
+        console.warn(`[agent] dropped what looks like reasoning: "${String(text).slice(0, 70)}"`);
+        return;
+      }
       const clean = clampForSpeech(withoutOpeningAside(text), Math.max(0, budget));
       if (!clean || budget <= 0) {
         cutOff ||= Boolean(text.trim());
