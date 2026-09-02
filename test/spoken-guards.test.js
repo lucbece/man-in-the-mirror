@@ -49,6 +49,14 @@ describe('reasoning read out loud', () => {
     }
   });
 
+  test('the fourth, on a question made only of small words', () => {
+    // The guard was in place and did not fire, because "Al fin y al cabo."
+    // was classified as English — see filler.test.js. This pins the pair.
+    const said = 'I need to work out what fede is actually asking here.';
+    assert.equal(looksLikeLeakedReasoning(said, 'Al fin y al cabo.'), true);
+    assert.equal(looksLikeLeakedReasoning(said, 'Espejo, la concha de tu madre.'), true);
+  });
+
   test('an answer in the language it was asked in survives', () => {
     for (const fine of [
       'Jaja, dale. Que entren nomás.',
