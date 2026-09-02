@@ -17,6 +17,7 @@
  * Sessions die with the voice session and after IDLE_MS of disuse.
  */
 import { query } from '@anthropic-ai/claude-agent-sdk';
+import { trace, BlockCollector } from './trace.js';
 
 import { bot } from '../bot/index.js';
 import { config } from '../config.js';
@@ -150,6 +151,7 @@ export class AgentSession {
           // speaking too: it covers the silence the tool is about to create,
           // and in the agent's own words rather than a canned clip.
           const event = message.event;
+          this.#traceEvent(event);
           if (
             event?.type === 'content_block_delta' &&
             event.delta?.type === 'text_delta' &&
@@ -157,6 +159,14 @@ export class AgentSession {
           ) {
             for (const chunk of this.turn.splitter.push(event.delta.text)) {
               this.turn.onSentence?.(chunk);
+            }
+          }
+        } else if (message.type === 'user') {
+          // Tool results come back as user messages. Only worth anything in
+          // trace mode; the agent's own handling of them is the SDK's business.
+          for (const block of message.message?.content ?? []) {
+            if (block?.type === 'tool_result') {
+              trace('TOOL ←', block.is_error ? 'error' : 'result', block.content);
             }
           }
         } else if (message.type === 'assistant') {
@@ -170,7 +180,10 @@ export class AgentSession {
             if (tail) this.turn.onSentence?.(tail);
           }
           for (const block of message.message?.content ?? []) {
-            if (block.type === 'tool_use') this.turn?.onToolUse?.(block.name);
+            if (block.type === 'tool_use') {
+              trace('TOOL', block.name, block.input);
+              this.turn?.onToolUse?.(block.name);
+            }
             // Kept as the fallback answer: on error_max_turns the result
             // message carries no text, but the last thing it said usually
             // stands on its own.
@@ -179,6 +192,12 @@ export class AgentSession {
             }
           }
         } else if (message.type === 'result') {
+          trace(
+            'TURN',
+            message.subtype,
+            `${message.num_turns} round(s) · ${((message.duration_ms ?? 0) / 1000).toFixed(1)}s · ` +
+              `$${(message.total_cost_usd ?? 0).toFixed(4)} so far this session`,
+          );
           this.spentUsd = message.total_cost_usd ?? this.spentUsd;
           const turn = this.turn;
           this.turn = null;
@@ -203,6 +222,30 @@ export class AgentSession {
     }
   }
 
+  /**
+   * Trace-mode view of the stream: thinking and text are collected per block
+   * and printed when the block closes, so they read as paragraphs. Tool calls
+   * are printed from the finished assistant message instead, where the input
+   * is already parsed.
+   */
+  #traceEvent(event) {
+    if (!event) return;
+    if (event.type === 'content_block_start') {
+      const kind = event.content_block?.type;
+      this.traceBlock =
+        kind === 'thinking' ? new BlockCollector('THINKING', 'agent') :
+        kind === 'text' ? new BlockCollector('OUTPUT', 'agent says') :
+        null;
+    } else if (event.type === 'content_block_delta' && this.traceBlock) {
+      const d = event.delta;
+      if (d?.type === 'thinking_delta') this.traceBlock.push(d.thinking ?? '');
+      else if (d?.type === 'text_delta') this.traceBlock.push(d.text ?? '');
+    } else if (event.type === 'content_block_stop' && this.traceBlock) {
+      this.traceBlock.flush();
+      this.traceBlock = null;
+    }
+  }
+
   #fail(err) {
     this.closed = true;
     const turn = this.turn;
@@ -213,6 +256,7 @@ export class AgentSession {
   ask(text, { onToolUse, onSentence } = {}) {
     if (this.closed) return Promise.reject(new AgentError('Agent session is closed.'));
     if (this.turn) return Promise.reject(new AgentError('Agent is mid-answer.'));
+    trace('INPUT', 'agent turn', text);
     this.lastUsedAt = Date.now();
 
     return new Promise((resolve, reject) => {
