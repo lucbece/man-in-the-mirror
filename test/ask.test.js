@@ -207,6 +207,35 @@ describe('doing something without saying anything', () => {
   });
 });
 
+describe('reasoning read aloud is dropped for the rest of the turn', () => {
+  test('the eight sentences actually heard, of which only the first is plainly English', async () => {
+    // Verbatim from a call, split as the sentence splitter split them. Judged
+    // one by one, "Looking at the context:" is too short to call and the
+    // bullets are half Spanish, so seven of the eight were spoken.
+    const sentences = [
+      'I need to work out what fede is actually asking here.',
+      'Looking at the context:',
+      '- fede said "Espejo, buenas noches" at 13:23:34',
+      '- According to instruction 1, when someone says "buenas noches", I should respond "buenas noches, che"',
+      '- fede is now saying "Al fin y al cabo" (at the end of the day / after all)',
+      '"Al fin y al cabo" appears to be fede continuing to talk, not a new question directed at me.',
+    ];
+    const d = deps({ sentences });
+    const result = await ask(fakeSession(), { question: 'Al fin y al cabo.', askedBy: 'fede' }, d);
+
+    assert.deepEqual(d.rendered, [], 'none of it should have been synthesised');
+    assert.equal(result.spoken, '');
+    assert.equal(result.timings.droppedReasoning, sentences.length);
+  });
+
+  test('a real answer after the guard has not fired is untouched', async () => {
+    const d = deps({ sentences: ['Buenas noches, che.', 'Al fin y al cabo, sí.'] });
+    const result = await ask(fakeSession(), { question: 'Espejo, la concha de tu madre.' }, d);
+    assert.deepEqual(d.rendered, ['Buenas noches, che.', 'Al fin y al cabo, sí.']);
+    assert.equal(result.timings.droppedReasoning, undefined);
+  });
+});
+
 describe('stage directions are written, never spoken', () => {
   test('a parenthetical alone is dropped rather than read out', async () => {
     // Asked to answer a music command with nothing, the model produced

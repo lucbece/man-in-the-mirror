@@ -153,6 +153,15 @@ const SPANISH_WORDS = new Set([
   'esta', 'estas', 'esto', 'eso', 'hola', 'gracias', 'vos', 'ustedes', 'aca',
   'del', 'los', 'las', 'una', 'con', 'muy', 'mas', 'todo', 'nada', 'algo',
   'hoy', 'manana', 'ahora', 'opinas', 'decime', 'sabes', 'puede', 'hacer',
+  // The words a sentence is actually made of. Without these, "espejo, la
+  // concha de tu madre" and "al fin y al cabo" were English — none of their
+  // words was on the list — and everything keyed on the language (the filler
+  // clip, the leaked-reasoning guard) quietly ran in the wrong mode. Words
+  // English also uses ('no', 'a', 'me') are left out on purpose.
+  'el', 'la', 'de', 'y', 'al', 'tu', 'te', 'mi', 'un', 'lo', 'le', 'se',
+  'es', 'en', 'si', 'ya', 'sos', 'soy', 'che', 'dale', 'bien', 'bueno',
+  'cuando', 'tambien', 'siempre', 'ahi', 'alla', 'mucho', 'quiero', 'podes',
+  'pone', 'poneme', 'cancion', 'tema', 'fin', 'cabo', 'madre', 'hermana',
 ]);
 
 /** Rough guess at which language the person is speaking. */

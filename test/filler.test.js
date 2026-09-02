@@ -18,6 +18,20 @@ describe('guessLanguage', () => {
     }
   });
 
+  test('recognises Spanish made only of small words', () => {
+    // These were classified as English: not one of their words was on the
+    // list, so the guard against reasoning read aloud never ran on the turn
+    // that leaked eight sentences of it into the channel.
+    for (const text of [
+      'Espejo, la concha de tu madre.',
+      'Al fin y al cabo.',
+      'Ya te dije espejo, te dije.',
+      'sombrero, poneme un tema',
+    ]) {
+      assert.equal(guessLanguage(text), 'es', `should be Spanish: ${text}`);
+    }
+  });
+
   test('recognises English', () => {
     for (const text of ['mirror what do you think', 'hey mirror who won the game']) {
       assert.equal(guessLanguage(text), 'en', `should be English: ${text}`);
