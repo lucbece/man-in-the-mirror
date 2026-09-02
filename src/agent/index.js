@@ -161,6 +161,8 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, vi
 
     let budget = MAX_SPOKEN_CHARS;
     let cutOff = false;
+    /** Set the moment a sentence is judged to be reasoning; holds for the turn. */
+    let leaking = false;
     // Which tools this answer reached for. The set is what tells the routing
     // question apart from a guess: a turn that used nothing could have been
     // answered by anything.
@@ -208,8 +210,20 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, vi
       // Reasoning read aloud, four prompts deep. Dropped rather than asked
       // about — see spoken-guards.js for why the language mismatch is the
       // signal.
-      if (looksLikeLeakedReasoning(text, question)) {
-        console.warn(`[agent] dropped what looks like reasoning: "${String(text).slice(0, 70)}"`);
+      //
+      // And once it starts, the rest of the turn goes with it. The one heard
+      // in a real call opened with "I need to work out what ran is actually
+      // asking here" and went on for eight sentences: "Looking at the
+      // context:", then bullet points quoting the Spanish it was analysing.
+      // Judged one at a time, only the first is clearly English; the rest are
+      // too short, or half Spanish, and were spoken. A model that has begun
+      // deliberating does not switch back into an answer mid-turn.
+      if (leaking || looksLikeLeakedReasoning(text, question)) {
+        if (!leaking) {
+          console.warn(`[agent] dropped what looks like reasoning: "${String(text).slice(0, 70)}"`);
+        }
+        leaking = true;
+        timings.droppedReasoning = (timings.droppedReasoning ?? 0) + 1;
         return;
       }
       const clean = clampForSpeech(withoutOpeningAside(text), Math.max(0, budget));
@@ -273,8 +287,10 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, vi
     const spoken = speech ? speech.spoken.join(' ').trim() : '';
     // Silence is an answer when it did something — skipping a track and
     // announcing it is worse than skipping it. Silence with nothing done is
-    // the model failing, and still an error.
-    if (!spoken && !toolsUsed.length) {
+    // the model failing, and still an error — unless what it produced was
+    // reasoning and every sentence of it was dropped: it concluded, at length,
+    // that nobody had asked it anything, and saying nothing is that answer.
+    if (!spoken && !toolsUsed.length && !leaking) {
       throw new BrainError('The model returned nothing to say.');
     }
 
