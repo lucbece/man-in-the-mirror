@@ -58,6 +58,7 @@ import { AgentBrain, DEFAULT_AGENT_MODEL } from './agent-brain.js';
 import { SYSTEM_PROMPT } from './brain.js';
 import { customInstructionBlock } from './instructions.js';
 import { SentenceSplitter } from './sentences.js';
+import { trace } from './trace.js';
 
 /**
  * Small and quick, and the same model already trusted with the search
@@ -248,6 +249,8 @@ export class CascadeBrain {
 
     const runFast = this.deps.runFast ?? ((...args) => this.#runFast(...args));
     const { said, escalate, reason } = await runFast(context, memory, { onSentence });
+    if (escalate) trace('ROUTE', 'escalated to agent', reason + (said ? `\n(after saying: "${said}")` : ''));
+    else trace('OUTPUT', 'fast leg says', said);
     if (!escalate) {
       memory.lastUsedTools = false;
       remember(memory, context.question, said, { byAgent: false });
@@ -324,6 +327,7 @@ export class CascadeBrain {
       tools: [ESCALATE_TOOL],
       messages: [{ role: 'user', content: buildFastMessage(context, memory) }],
     });
+    trace('INPUT', `fast leg (${this.fastModel})`, buildFastMessage(context, memory));
 
     // Sentences go out as they complete, exactly as the chat brain does it, so
     // an answer the fast leg keeps starts speaking with no routing cost at all.
