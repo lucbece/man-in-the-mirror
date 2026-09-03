@@ -8,6 +8,7 @@ import { ask, AgentBusyError } from '../agent/index.js';
 import { endAgentSession, warmAgentSession } from '../agent/agent-brain.js';
 import { forgetCascade } from '../agent/cascade.js';
 import { reminders } from '../agent/reminders.js';
+import { noteInMusicChannel } from '../agent/tools/music.js';
 import { createTts, toAudioResource } from '../agent/tts.js';
 import { clampForSpeech } from '../agent/brain.js';
 import { warmFillers } from '../agent/filler.js';
@@ -75,6 +76,23 @@ export class SessionManager extends EventEmitter {
       const session = this.sessions.get(guildId);
       if (!session || session.destroyed) {
         console.warn(`[reminders] #${id} fired but the bot is no longer in a channel — dropped: "${message}"`);
+        return;
+      }
+      // Music mode: still a promise the bot made, so it is kept — written
+      // where the room is already reading about the music rather than spoken
+      // over the song. Never held back to be said once the mode ends: a
+      // reminder said half an hour late is worse than one not said at all,
+      // which is the same rule as one that came due while the process was down.
+      if (session.quiet) {
+        const wrote = await noteInMusicChannel(
+          { guild: () => session.client?.guilds?.cache?.get(guildId) ?? null },
+          `⏰  ${message}`,
+        );
+        console.log(
+          wrote
+            ? `[reminders] #${id} written in the music channel, not spoken: "${message}"`
+            : `[reminders] #${id} came due in music mode with no music channel to write it in — dropped: "${message}"`,
+        );
         return;
       }
       try {

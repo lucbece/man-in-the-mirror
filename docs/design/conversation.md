@@ -79,3 +79,7 @@ costs a model call per sentence and adds a second thing that can be wrong,
 while the narrow window covers the case that actually stings. The same argument
 against putting a classifier in front of every question is made at greater
 length in [cascade.md](cascade.md).
+
+Music mode does not touch any of this. Waking, the wait for others and the
+reply window work as before; the bot simply produces no speech, so no reply
+ends in a question and no window opens. See [music.md](music.md).

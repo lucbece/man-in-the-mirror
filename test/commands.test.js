@@ -168,9 +168,70 @@ describe('leaving', () => {
   });
 });
 
+describe('music mode from the keyboard', () => {
+  function quietable(t, { quiet = false } = {}) {
+    const session = {
+      destroyed: false,
+      quiet,
+      setQuiet(value) {
+        session.quiet = value;
+        return session.quiet;
+      },
+    };
+    sessionManager.sessions.set('mute-guild', session);
+    t.after(() => sessionManager.sessions.delete('mute-guild'));
+    return session;
+  }
+
+  test('/mj mute turns it on and says what changes', async (t) => {
+    const session = quietable(t);
+    const i = fakeInteraction({ sub: 'mute', guildId: 'mute-guild' });
+    await handleInteraction(i);
+
+    assert.equal(session.quiet, true);
+    assert.match(said(i), /Music mode on/);
+    assert.match(said(i), /Still listening/);
+  });
+
+  test('/mj unmute turns it off', async (t) => {
+    const session = quietable(t, { quiet: true });
+    const i = fakeInteraction({ sub: 'unmute', guildId: 'mute-guild' });
+    await handleInteraction(i);
+
+    assert.equal(session.quiet, false);
+    assert.match(said(i), /Music mode off/);
+  });
+
+  test('either one, asked for what is already true, says so', async (t) => {
+    quietable(t);
+    const off = fakeInteraction({ sub: 'unmute', guildId: 'mute-guild' });
+    await handleInteraction(off);
+    assert.match(said(off), /not in music mode/i);
+
+    quietable(t, { quiet: true });
+    const on = fakeInteraction({ sub: 'mute', guildId: 'mute-guild' });
+    await handleInteraction(on);
+    assert.match(said(on), /Already in music mode/);
+  });
+
+  test('both replies are ephemeral — nobody else needs them in the channel', async (t) => {
+    quietable(t);
+    const i = fakeInteraction({ sub: 'mute', guildId: 'mute-guild' });
+    await handleInteraction(i);
+    assert.ok(i.calls[0][1].flags, 'a public reply would be noise in a busy channel');
+  });
+
+  test('both are offered as subcommands, so they can be typed at all', async () => {
+    const { commandData } = await import('../src/bot/commands.js');
+    const names = commandData[0].options.map((o) => o.name);
+    assert.ok(names.includes('mute'), 'mute is missing from the registered command');
+    assert.ok(names.includes('unmute'), 'unmute is missing from the registered command');
+  });
+});
+
 describe('commands that need the bot to be in a channel', () => {
   test('say so rather than doing nothing', async () => {
-    for (const sub of ['listen', 'deaf', 'transcript', 'ask', 'shush', 'play', 'skip', 'pause', 'resume', 'stop', 'queue']) {
+    for (const sub of ['transcript', 'ask', 'shush', 'mute', 'unmute', 'skip', 'pause', 'resume', 'stop', 'queue']) {
       const i = fakeInteraction({ sub, guildId: 'not-joined' });
       await handleInteraction(i);
       assert.notEqual(said(i), '', `/mj ${sub} answered nothing`);
@@ -217,6 +278,20 @@ describe('/mj play and friends', () => {
     assert.match(said(i), /Beat It/);
     assert.match(said(i), /4:18/);
     assert.match(said(i), /Vero/);
+  });
+
+  test('play joins the channel the caller is in when the bot is in none', async () => {
+    // Reaching the permission check proves it resolved the caller's channel
+    // instead of asking for /mj join first.
+    const i = fakeInteraction({ sub: 'play', guildId: 'not-joined', query: 'beat it', memberChannel: voiceChannel({ permissions: [] }) });
+    await handleInteraction(i);
+    assert.match(said(i), /Connect.*Speak/s);
+  });
+
+  test('play with nobody in a channel says where to go', async () => {
+    const i = fakeInteraction({ sub: 'play', guildId: 'not-joined', query: 'beat it' });
+    await handleInteraction(i);
+    assert.match(said(i), /Join a voice channel/);
   });
 
   test('play without a query does not reach the player', async (t) => {

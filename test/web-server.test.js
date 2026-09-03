@@ -167,3 +167,35 @@ describe('the state the panel renders itself from', () => {
     }
   });
 });
+
+describe('the music mode switch on a session card', () => {
+  // The panel's route, exercised over HTTP against a session in the registry:
+  // what is being checked is that the flag reaches a session already in a
+  // channel and comes back in the status the card is drawn from.
+  const panel = (path, body) =>
+    post(path, { headers: { 'sec-fetch-site': 'same-origin' }, body });
+
+  test('flips the flag and answers with the session status', async (t) => {
+    const { sessionManager } = await import('../src/voice/manager.js');
+    const session = {
+      quiet: false,
+      setQuiet(value) {
+        session.quiet = value;
+      },
+      status: () => ({ guildId: 'panel-guild', quiet: session.quiet }),
+    };
+    sessionManager.sessions.set('panel-guild', session);
+    t.after(() => sessionManager.sessions.delete('panel-guild'));
+
+    const on = await panel('/api/voice/quiet', { guildId: 'panel-guild', quiet: true });
+    assert.deepEqual(await on.json(), { guildId: 'panel-guild', quiet: true });
+
+    const off = await panel('/api/voice/quiet', { guildId: 'panel-guild', quiet: false });
+    assert.equal((await off.json()).quiet, false);
+  });
+
+  test('a guild the bot is not in is a 404, not a silent no-op', async () => {
+    const res = await panel('/api/voice/quiet', { guildId: 'nowhere', quiet: true });
+    assert.equal(res.status, 404);
+  });
+});

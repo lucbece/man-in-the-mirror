@@ -41,7 +41,7 @@ ssh tunnel (see [running.md](running.md)), never a public port.
 | `ttsProvider` | — | `openai` | `openai` or `local` (Piper) |
 | `ttsVoice` | — | `onyx` | OpenAI voice: `alloy`, `echo`, `fable`, `onyx`, `nova`, `shimmer` |
 | `ttsLocalVoice` | — | `es_ES-davefx-medium` | Piper voice: `es_ES-davefx-medium`, `en_US-lessac-medium`, `es_AR-daniela-high` |
-| `musicChannel` | — | `music` | Text channel where music actions are written, since they are carried out without speaking. A server without one gets no message; the music still plays |
+| `musicChannel` | — | `music` | Text channel where music actions are written, since they are carried out without speaking. In music mode it also receives what the bot would have said (`🤫`) and any reminder that came due (`⏰`). A server without one gets no message; the music still plays |
 | `webPort` | `WEB_PORT` | `3000` | Control panel port. Read at startup, so a change needs a restart |
 | — | `WEB_HOST` | `127.0.0.1` | Panel bind address. Leave it |
 | — | `MIRROR_TRACE` | *(unset)* | `1` writes a trace of what the models are given, think and say to `data/trace.log`; a path writes it there; `stdout` writes it to the process's stdout with a `[trace]` prefix. Off unless set, because it records the conversation |
@@ -102,11 +102,12 @@ bar.
 | --- | --- | --- |
 | `search_web` | Web search through a fast side model | `webSearch` on |
 | `set_reminder`, `list_reminders`, `cancel_reminder` | Speaks a message in the channel after a delay, 5 s to 24 h, 25 pending per server. Reminders are written to `data/reminders.json` and re-armed on boot; one that came due while the process was down is dropped and logged | — |
-| `who_is_in_voice` | Who is in which voice channel | — |
+| `who_is_in_voice` | Who is in which voice channel, as `DisplayName (@username)`; display names change, usernames do not | — |
 | `move_member`, `disconnect_member` | Moves or disconnects a member | Move Members |
 | `set_member_mute` | Server-mutes or unmutes a member | Mute Members |
 | `leave_voice` | Leaves after the current reply | — |
 | `play_music`, `play_album`, `skip_song`, `pause_music`, `resume_music`, `stop_music`, `remove_from_queue`, `move_in_queue`, `set_volume`, `now_playing` | Plays music through the bot's own voice connection. Everything but `now_playing` is done without speaking; what happened is written to `musicChannel` | Can post in `musicChannel` |
+| `enter_music_mode`, `leave_music_mode` | Music mode: stop speaking until told otherwise. Nothing is spoken and the track is never paused for a voice; hearing, tools and answers keep working, and what would have been said is written to `musicChannel`. Leaving is confirmed out loud. Not persisted: it ends when the bot leaves the channel | — |
 | `remember_instruction`, `list_instructions`, `forget_instruction` | Standing instructions, effective immediately | — |
 | `set_names` | The names the bot answers to | — |
 | `describe_settings`, `change_setting` | Read or change one of the settings reachable by voice, below | Manage Server for `folders` |
@@ -146,8 +147,7 @@ and a value that does not parse is refused with the accepted options named.
 Changing `thinking`, `model`, `fast model`, `web search`, `tool rounds` or
 `folders` starts a new agent session and discards the conversation so far;
 the tool says so in its reply. Turning `listening` off self-deafens the bot,
-which then cannot hear itself being turned back on: `/mj listen` and the panel
-both undo it.
+which then cannot hear itself being turned back on: the panel undoes it.
 
 ## Standing instructions
 
@@ -160,6 +160,18 @@ panel's Thinking tab or by voice, and applied in every mode.
 Custom lines are appended below the fixed rules, numbered, under a paragraph
 stating that they do not override what precedes them. Adding one does not
 restart the agent session; the next session picks it up.
+
+An instruction may name someone by their Discord id, as
+`a <@481920374856102938|Fede> decile tío Fede`. The id is the stable half:
+display names change, ids do not. The name beside it is used only when the id
+belongs to nobody the bot can see. When an instruction is saved by voice the
+bot links the first mention of anyone currently in a voice channel itself, and
+the model can say who it meant when two people answer to the same name. The
+prompt, `list_instructions` and `forget_instruction` all use the name the
+server shows today, so the model reads the same name that labels that person's
+lines in the transcript. The limits above are measured on that rendered text.
+The panel's Thinking tab shows the stored form, tokens included; a line
+without a token behaves as it always did.
 
 ## MCP servers
 
@@ -210,13 +222,11 @@ web search. The SDK's file and shell tools are denied.
 | --- | --- |
 | `/mj join [channel]` | Join your channel, or a named one |
 | `/mj leave` | Disconnect |
-| `/mj listen` | Start listening: un-deafens and begins buffering |
-| `/mj deaf` | Stop listening and clear the buffer |
 | `/mj ask <question>` | Ask without saying the name |
 | `/mj transcript` | Print recent transcribed speech |
 | `/mj shush` | Stop the current reply |
-| `/mj status` | Connection, listening state, buffer contents |
-| `/mj play <query>` | Play a song, artist, album or URL, or queue it behind what is on. Same player as the voice tools, no model in between |
+| `/mj mute`, `/mj unmute` | Music mode on and off; the same switch as the voice tools and the panel's button |
+| `/mj play <query>` | Play a song, artist, album or URL, or queue it behind what is on. Joins the channel you are in if the bot is in none. Same player as the voice tools, no model in between |
 | `/mj skip`, `/mj pause`, `/mj resume`, `/mj stop` | Control the music |
 | `/mj queue` | What is playing and what is next |
 
@@ -234,5 +244,6 @@ Opus and played without re-encoding, so the bot cannot adjust its own level.
 - `data/trace.log`: only when `MIRROR_TRACE` points there.
 
 Audio never reaches the disk. It is held in memory for `bufferSeconds` and
-expires; `/mj deaf` clears it. The per-answer statistics the panel shows keep
+expires; turning listening off in the panel clears it. To stop the bot
+hearing from inside Discord, server-deafen it in the voice channel. The per-answer statistics the panel shows keep
 which mode ran, which tools it used and the timings, never the text.

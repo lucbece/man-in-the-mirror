@@ -164,6 +164,15 @@ server entry contains a `command` spawned on the machine running the bot, so
 using someone's configured tools is open to the channel by design and deciding
 what they are is not.
 
+## Instructions that follow a person
+
+People inside a standing instruction are stored as `<@id|Name>` and resolved
+to the current display name every time the prompt is built, so an instruction
+about somebody survives them renaming themselves. The id is captured at save
+time, when the person is demonstrably in the call and the name demonstrably
+refers to them, rather than guessed later from a sentence nobody is around to
+explain. The mechanics are in [../configuration.md](../configuration.md).
+
 ## Known limits
 
 Audio from a shared screen reaches the transcript as speech, so a video playing
