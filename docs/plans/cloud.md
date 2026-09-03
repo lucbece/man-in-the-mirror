@@ -160,6 +160,9 @@ That turns the region choice into a fork:
 | Ashburn CPX11, 2 GB | €20.49 + IPv4 | 145 ms | ≈0.12 s audio + ≈0.06 s API ≈ **0.18 s** |
 | Desktop today | — | — | ≈0.03 s audio + ≈0.6 s API ≈ **0.63 s** |
 
+Observed on 2026-09-03: from Falkenstein the call is carried by
+`c-gru21.discord.media`, Discord's São Paulo voice server, as assumed above.
+
 Falkenstein is still a little faster than the desktop and a third of the
 price of Ashburn; Ashburn buys about 0.3 s per answer for €14 a month more.
 The server was created in Falkenstein as the reversible default: moving is
@@ -243,7 +246,7 @@ Each one is a PR into `mirror`, cherry-picked to `main` where the file is
 profile-agnostic (Dockerfile, compose, workflow, docs); `going-public.md`'s
 rule about not touching an in-flight package's files applies.
 
-### CD0 — Container · Status: built 2026-09-03 — Dockerfile, compose, `MIRROR_TRACE=stdout`, `[voice] endpoint` line, `deploy/latency.sh`, docs; 363 tests green. The image build is verified by the new `container` job in CI, not on the desktop (its user is not in the `docker` group). Still open: the live test (join, answer, song, volume survives `down`/`up`) and the RSS measurement
+### CD0 — Container · Status: done 2026-09-03 — image builds in CI and on the server (910 MB, 85 s on the CX23); container healthy, logged in, 60 MiB idle; joined a voice channel from Falkenstein and reached ready through `c-gru21.discord.media`, so UDP works there. Still for a human: an answer by voice and a song (the RSS under load comes with them)
 
 **Goal.** `docker compose up` on any Linux host runs the bot exactly as
 `npm start` does, with `data/` and `runtime/` surviving a rebuild.
@@ -280,7 +283,7 @@ yt-dlp binary. `npm run check` green.
 
 **Don't.** Change defaults for laptop users; everything here is additive.
 
-### CD1 — Host provisioning · Status: server up 2026-09-03 — CX23 `mirror` in Falkenstein (fsn1), 128.140.81.3, from `deploy/cloud-init.yaml`; Ashburn rejected the CX line, see the fork above. Waiting on the first deploy, which needs PR #1 merged so the workflow builds an image
+### CD1 — Host provisioning · Status: done 2026-09-03 — CX23 `mirror` in Falkenstein, 128.140.81.3, from `deploy/cloud-init.yaml` (second attempt: the first boot failed on a file owned by a user that did not exist yet, fixed with `defer`). `config.json`, reminders and the filler cache copied into `mirror_data` over ssh. `DEPLOY_HOST` and the pinned host key on the `production` environment
 
 **Goal.** A server that a fresh `cloud-init` brings to "ready for compose" with
 no hand steps, documented so it can be rebuilt in ten minutes.
@@ -304,7 +307,7 @@ answers on port 3000 from outside.
 
 **Don't.** Expose the panel behind basic auth "for now". Tunnel or nothing.
 
-### CD2 — Deploy on push · Status: written 2026-09-03 — `deploy.yml` (check → image → roll, gated until `DEPLOY_HOST` exists), `deploy/deploy.sh` with rollback as the forced command of the Actions key, `ci.yml` builds the image on every change. Unproven end to end until CD1
+### CD2 — Deploy on push · Status: first start by hand 2026-09-03 — image built on the server from the branch tarball and started with `docker compose up -d`; `deploy.sh status` and the forced command verified with the Actions key (`status` answers, anything else gets the usage line). The push path itself runs the first time PR #1 merges into `mirror`
 
 **Goal.** A green CI run on the deploy branch becomes the running instance
 within a few minutes, and a bad one rolls back by itself.

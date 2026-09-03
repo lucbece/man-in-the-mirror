@@ -127,6 +127,32 @@ ssh deploy@<ip> deploy $(git rev-parse mirror)
 `deploy.sh` pulls the image built by CI for that commit, starts it, and waits
 for the healthcheck. From here on, pushes do this for you.
 
+If no image exists yet on GHCR (the workflow has not run on `mirror` once),
+build it on the server from a branch tarball; 85 seconds on a CX23:
+
+```bash
+ssh deploy@<ip> 'cd /opt/mirror && mkdir -p src && \
+  curl -fsSL https://github.com/lucbece/man-in-the-mirror/archive/refs/heads/mirror.tar.gz | tar xz -C src --strip-components=1 && \
+  docker build -t ghcr.io/lucbece/man-in-the-mirror:mirror src && docker compose up -d && rm -rf src'
+```
+
+The next push replaces it with a CI-built image; nothing else changes.
+
+### Smoke test without a human
+
+The panel's API is on the server's loopback, so a join can be asked from a
+shell there. Pick an empty voice channel from `/api/state`, then:
+
+```bash
+curl -s -X POST -H 'Content-Type: application/json' \
+  -d '{"guildId":"<guild>","channelId":"<channel>"}' http://127.0.0.1:3000/api/voice/join
+docker compose logs --since 30s | grep '\[voice\] endpoint'
+curl -s -X POST -H 'Content-Type: application/json' -d '{"guildId":"<guild>"}' http://127.0.0.1:3000/api/voice/leave
+```
+
+A join that returns the session's status has reached ready: UDP works. The
+endpoint line says which Discord voice server carries the call.
+
 ### Reaching the panel
 
 The control panel has no login, so it never listens on the public address.
