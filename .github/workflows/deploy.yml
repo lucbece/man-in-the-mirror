@@ -1,0 +1,114 @@
+# Deploy on push. A push to the deploy branch becomes the running instance:
+# lint and tests first, then an image on GHCR tagged by commit, then one ssh
+# call that pulls it on the server and rolls back by itself if the new version
+# is not healthy within a minute (see deploy/deploy.sh).
+#
+# The branch is one variable so it can move from `mirror` to `main` the day an
+# example profile on `main` reproduces our bot. Pushing to `main` runs CI only.
+#
+# Secrets live on the `production` environment, whose deployment-branch policy
+# allows only the deploy branch: DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY. The
+# app's own keys are not here; they sit in data/config.json on the server.
+name: Deploy
+
+on:
+  push:
+    branches: [mirror]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Commit to deploy (a rollback is deploying an older one)
+        required: false
+
+env:
+  DEPLOY_BRANCH: mirror
+  IMAGE: ghcr.io/${{ github.repository }}
+
+# Two pushes deploy in order, never at the same time. No cancel: a deploy that
+# has started must finish or roll back.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha || github.sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+
+  image:
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha || github.sha }}
+      - id: sha
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - id: short
+        run: echo "short=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Two tags: the commit, which is what the server is told to run and what
+      # a rollback names; and the branch, a moving pointer for humans.
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:sha-${{ steps.short.outputs.short }}
+            ${{ env.IMAGE }}:${{ env.DEPLOY_BRANCH }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  roll:
+    needs: image
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      # Until a server exists the image is built and nothing is rolled: a
+      # green run that did not deploy, rather than a red one every push.
+      - id: gate
+        run: |
+          if [ -z "${{ secrets.DEPLOY_HOST }}" ]; then
+            echo "no DEPLOY_HOST secret on the production environment; image only"
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: ssh key and host
+        if: steps.gate.outputs.go == 'true'
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
+          printf '%s\n' "${{ vars.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+      # The job token goes over stdin so the server can pull from GHCR without
+      # keeping any credential of its own; it expires when this job ends.
+      - name: deploy
+        if: steps.gate.outputs.go == 'true'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | ssh -i ~/.ssh/deploy \
+            -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=20 \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            deploy "${{ needs.image.outputs.sha }}"

@@ -1,17 +1,9 @@
 node_modules/
 .env
 data/
-sounds/*
-!sounds/README.md
 
-# Raw clips staged for `npm run prep`
-incoming/*
-!incoming/README.md
-
-# Audio, anywhere in the tree. The clips are copyrighted recordings — fine on
-# your own disk, not something to publish. Belt and braces alongside the
-# sounds/ and incoming/ rules above, so a stray download in the project root
-# can't get swept into a commit.
+# Audio, anywhere in the tree: nothing recorded or downloaded belongs in a
+# commit.
 *.mp3
 *.wav
 *.ogg

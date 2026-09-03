@@ -2,681 +2,153 @@
 
 <img src="src/web/public/icon.svg" width="88" align="right" alt="">
 
-A Discord bot that stays in a voice channel, transcribes the conversation, and
-answers out loud when it is addressed by name. No command or button is
-required: the name is matched anywhere in a sentence, in any language.
+A Discord bot that sits in a voice channel, transcribes the conversation, and
+answers out loud when it is addressed by name. No command or button: the name
+is matched anywhere in a sentence, in any language.
 
-Hearing, thinking and speaking are configured independently. Each runs either
-through an API or on the host machine.
+Hearing, thinking and speaking are configured independently, each through an
+API or on the host machine. Thinking can be a single model call, a persistent
+agent with tools, or a fast model in front of that agent.
 
-Development happens on `development` and lands on `main`.
+## Quick start
 
-This repository began as a soundboard that played clips at random intervals.
-That version is preserved on the `legacy/soundboard` branch; nothing of it
-remains here.
+**Download.** Get the [latest release](https://github.com/lucbece/man-in-the-mirror/releases/latest),
+extract it, and run `Start-Windows.cmd` or `./start.sh`. The script finds Node
+or downloads a private copy into `runtime/`, installs dependencies, starts the
+bot and opens the control panel. Nothing is installed system-wide.
 
-## Contents
-
-- [Download](#download) · [Running from source](#running-from-source)
-- [How it hears you](#how-it-hears-you) · [Hearing, thinking, speaking](#hearing-thinking-speaking)
-- [Agent mode](#agent-mode) · [MCP servers](#mcp-servers)
-- [Slash commands](#slash-commands) · [Configuration](#configuration)
-- [Source layout](#source-layout) · [Rebuilding the launcher](#rebuilding-the-launcher)
-
-## Download
-
-**[Latest release](https://github.com/lucbece/man-in-the-mirror/releases/latest)**
-
-| Platform | File |
+| Archive | Contents |
 | --- | --- |
-| **Any — recommended** | `ManInTheMirror-no-exe.zip` |
-| Windows x64 | `ManInTheMirror-windows-x64.zip` |
-| Windows ARM64 | `ManInTheMirror-windows-arm64.zip` |
-| macOS (Apple silicon) | `ManInTheMirror-macos-arm64.zip` |
-| Linux x64 | `ManInTheMirror-linux-x64.zip` |
+| `ManInTheMirror-no-exe.zip` | Source and the start scripts. Recommended |
+| `ManInTheMirror-<platform>.zip` | The same, plus a compiled launcher |
 
-Extract the archive, then run one of:
+Extract before running: Windows can execute a file from inside a `.zip`,
+which copies that file alone to a temporary folder. The compiled launcher is
+an unsigned binary that downloads and runs an executable, which is the shape
+security software flags; the scripts do the same work as readable text.
 
-- `Start-Windows.cmd` on Windows, or `./start.sh` on macOS and Linux — in any
-  of the archives, and the only option in `ManInTheMirror-no-exe.zip`.
-- `ManInTheMirror` (`.exe` on Windows) — the compiled launcher, in the
-  platform archives.
-
-Both locate Node or download a private copy into `runtime/`, install
-dependencies on first run, start the bot and open the control panel. Nothing is
-installed system-wide.
-
-**Extract before running.** Windows can execute a file from inside a `.zip`,
-which copies that file alone to a temporary folder where the rest of the
-project is absent.
-
-### Why the scripts are recommended over the executable
-
-The `.exe` is an unsigned Go binary that downloads an executable, extracts it
-and runs it. That sequence matches the heuristics both Windows Defender and
-Chrome Safe Browsing use to identify droppers, so one blocks running it and the
-other blocks downloading the archive containing it. Neither is malfunctioning.
-Code signing would resolve it; the scripts are the interim option, and they are
-readable text that does the same work.
-
-## Running from source
-
-Requires Node 20 or later.
+**Or from source**, with Node 20 or later:
 
 ```bash
 npm install
 npm start          # control panel on http://localhost:3000
-npm test           # 163 tests, node --test
 ```
 
-Open the control panel. On first run a **Start here** card collects
-everything required:
+**First run.** The panel's **Start here** card asks for what it needs:
 
-| Value | Purpose | Source |
+| Value | Purpose | Where to get it |
 | --- | --- | --- |
 | Discord bot token | Required | [Developer Portal](https://discord.com/developers/applications) → Bot → Reset Token |
 | OpenAI API key | Transcription and speech | [platform.openai.com](https://platform.openai.com/api-keys) |
-| Anthropic API key | Agent and Claude chat mode | [console.anthropic.com](https://console.anthropic.com/settings/keys) |
-| Server ID | Optional; registers slash commands immediately | Right-click server → Copy Server ID |
+| Anthropic API key | Agent and cascade modes; Claude in chat mode | [Console](https://platform.claude.com/settings/keys), scoped to a workspace |
+| Server ID | Optional; registers the slash commands immediately | Right-click the server → Copy Server ID |
 
-The same values can be set in `.env` — copy `.env.example`. Values saved
-through the panel take precedence.
+The same values can go in `.env`; copy `.env.example`. Values saved through
+the panel take precedence.
 
-To invite the bot, use the Developer Portal → **Installation** with the `bot`
-and `applications.commands` scopes and the **Connect** and **Speak**
-permissions. Add **Move Members** and **Mute Members** to enable the call
-management tools. No privileged intents are required.
+**Invite the bot** from the Developer Portal → Installation, with the `bot`
+and `applications.commands` scopes and the Connect and Speak permissions. Add
+Move Members and Mute Members to enable the call management tools. No
+privileged intents are required.
 
-## How it hears you
+Then `/mj join` in your server and say its name.
+
+## How it works
+
+Discord delivers one audio stream per speaker, so the transcript is
+attributed without diarization. Each utterance is transcribed in the
+background as it ends, and kept in a rolling in-memory window (90 seconds by
+default). When a name the bot answers to appears in an utterance, the window
+is handed to the model and the reply is synthesised sentence by sentence, so
+the first words are audible before the answer is complete.
 
 ```
-Discord voice receive (one Opus stream per speaker)
+Discord voice (one Opus stream per speaker)
         │
-        ├─► transcribed in the background, seconds after it is spoken
-        │        │
-        │        └─► name detected? ──► think ──► speak
+        ├─► transcribed as spoken ─► name detected? ─► think ─► speak
         │
-        └─► rolling in-memory window, default 90s
+        └─► rolling window, 90 s
 ```
 
-Discord delivers one audio stream per speaker, so speaker attribution requires
-no diarization:
+Nothing recorded is written to disk. While the bot is not listening it is
+self-deafened, which Discord shows next to it in the member list.
 
-```
-[21:14:02] Vero: ...the dayZ servers were down all weekend
-[21:14:09] Marco: that's not what he said though
-```
+The bot also answers without its name for twelve seconds after it asks a
+question itself, to the person it asked, and it waits for anyone still
+talking before it reads the window. Both are explained in
+[docs/design/conversation.md](docs/design/conversation.md).
 
-Name detection is a string match over text that already exists, so there is no
-wake-word engine, no native dependency and no model download. Names are
-configurable, comma-separated, and matched with a similarity threshold of 0.65
-against every word in the utterance.
+## Modes
 
-**Choose a name that survives transcription.** An English name inside
-non-English speech is frequently rewritten: "hey mirror" in a Spanish sentence
-was transcribed as "Amy" and "mi herrero". A name that exists in the language
-being spoken is transcribed correctly.
-
-**Avoid names that resemble common words.** Words within the similarity
-threshold are excluded by name in `src/agent/wake.js`; the Spanish verb forms
-of *mirar* and *esperar* collide with both default names and are listed there.
-
-**Nothing is written to disk.** Audio is held in memory and expires from the
-window. `/mj deaf` stops capture and clears the buffer.
-
-**Listening state is visible in Discord.** While not listening the bot is
-self-deafened, which is both the mechanism that prevents Discord sending audio
-and a badge shown next to it in the member list.
-
-## Hearing, thinking, speaking
-
-All three are set in the control panel. Latency figures below were measured on
-a laptop without a GPU.
-
-| Stage | API | On the host machine |
+| `brainKind` | What answers | When to use it |
 | --- | --- | --- |
-| Hearing | OpenAI Whisper, ~1.0s | whisper.cpp — 2.4s on CPU, faster with a GPU |
-| Thinking | OpenAI or Anthropic | — |
-| Speaking | OpenAI, ~0.9s to first audio, variable | Piper, ~0.3s, consistent |
+| `chat` | One model call through Anthropic or OpenAI | Fastest; no tools, no memory between answers |
+| `agent` | A persistent Claude Agent SDK session per channel, with tools and MCP servers | Actions: reminders, moving people, music, changing its own settings |
+| `cascade` | A fast model that answers what needs no tool and hands the rest to the agent | The default for a channel that mostly asks questions and sometimes asks for things |
 
-Transcription quality is identical: whisper.cpp runs the same model as the API.
-The difference is hardware. With a discrete GPU, local is faster and has no
-per-request cost. Without one it is slower than the network round trip, so the
-API is the default.
+## What it can do
 
-Speech synthesis is the opposite case. Local is faster on a laptop and more
-consistent — 692/703/723ms across runs, against 1.1s to 4.1s for the same
-sentence through the API.
+In agent and cascade modes the model can search the web, set spoken reminders
+that survive a restart, move, mute and disconnect people (checking the
+permissions of whoever asked, not its own), play music through its own voice
+connection, keep standing instructions, change its own settings by voice, and
+use any MCP server you configure. Every tool, what it checks and what it
+writes is listed in [docs/configuration.md](docs/configuration.md).
 
-Replies are synthesised sentence by sentence as the model produces them, so
-audio begins before the answer is complete. Time to first audible word:
+Slash commands: `/mj join`, `leave`, `listen`, `deaf`, `ask`, `transcript`,
+`shush`, `status`.
 
-| Configuration | Before | After |
-| --- | --- | --- |
-| Chat, `claude-sonnet-5` | 7.9s | 4.9s |
-| Chat, `claude-haiku-4-5` | 5.2s | 2.4s |
-| Agent, MCP tool call | 8.6s | ~4s |
-| Agent, web search | 21.0s | ~5.6s |
+## Running it on a server
 
-Measured in a live channel afterwards: 3.7–4.4s median, with the first answer
-of a session slower while it starts.
+The repository ships a `Dockerfile` and a `compose.yaml`:
 
-## Agent mode
-
-`brainKind` selects between two implementations.
-
-**`chat`** issues one stateless API call per answer through Anthropic or
-OpenAI. It is the fastest option and has no memory between answers.
-
-**`cascade`** puts a small fast model in front of `agent`. It answers what
-needs no tools and hands the rest over. See below.
-
-**`agent`** runs a persistent Claude Agent SDK session per voice channel. The
-conversation accumulates inside it, so follow-up questions do not re-send the
-transcript and are measurably faster than the first (1.9s against 4.0s). It can
-use MCP servers and a set of built-in tools. Each session holds roughly 1 GiB
-of RAM and is released when the bot leaves the channel or after 30 minutes
-idle.
-
-Agent mode includes these tools:
-
-| Tool | Effect | Requires |
-| --- | --- | --- |
-| `search_web` | Web search via Claude Haiku with the server-side search tool (~3.5s) | `webSearch` enabled |
-| `set_reminder` | Speaks a message in the channel after a delay, 5s–24h | — |
-| `list_reminders`, `cancel_reminder` | Manage pending reminders | — |
-| `who_is_in_voice` | Reports who is in which voice channel | — |
-| `move_member` | Moves a member between channels | Asker has Move Members |
-| `disconnect_member` | Disconnects a member from voice | Asker has Move Members |
-| `set_member_mute` | Server-mutes or unmutes a member | Asker has Mute Members |
-| `leave_voice` | Leaves the channel after the current reply | — |
-| `remember_instruction` | Adds a standing instruction, effective immediately | — |
-| `list_instructions`, `forget_instruction` | Manage standing instructions | — |
-| `set_names` | Changes the names the bot answers to | — |
-| `describe_settings` | Reports the current configuration, secrets excluded | — |
-| `change_setting` | Changes one setting, effective immediately | Manage Server for `folders` |
-| `configure_mcp_server` | Adds or replaces an MCP server in the configuration | Asker has Manage Server |
-| `list_mcp_servers` | Lists configured servers and their granted tools | — |
-| `play_music` | Queues a song, artist or album by posting your music bot's command | Asker can post in that channel |
-| `skip_song` | Skips whatever is playing | Asker can post in that channel |
-
-Reminders survive a restart: they are written to `data/reminders.json` and
-re-armed on boot. One that came due while the process was down is dropped
-rather than said late — announcing it hours afterwards, to whoever happens to
-be in the channel now, is worse than not announcing it — and that case is
-logged.
-
-## The rest of the room
-
-A call is not two people taking turns. Someone asks "cuánto tardaríamos
-manejando" and, over the top of them, one person says "a Bariloche" and another
-"saliendo de noche" — the question finished by the room rather than by whoever
-said the bot's name.
-
-An utterance only reaches the buffer once its speaker has been quiet for 500ms,
-and the answer is assembled from the buffer. So anyone still mid-sentence when
-the wake timer fired was not late to the answer, they were missing from it, and
-nothing downstream could tell the difference.
-
-The wake now waits for anyone else who is still talking before it reads the
-buffer, bounded at 1.5s and ended the instant they stop. A question asked into a
-quiet room pays nothing, because the wait only happens when somebody else is
-genuinely speaking at that moment.
-
-Passing the lines to the model needed no change, which was worth measuring
-before assuming: the transcript already reached all three brains, and the model
-already used it. A version of this that also re-labelled those lines as "part of
-the question" in the prompt made no measurable difference over four trials, so
-it was thrown away.
-
-## Answering back without saying its name
-
-When the bot ends a reply by asking something — "¿desde qué ciudad lo calculo?"
-— it is waiting for an answer, and making the person say its name again to hand
-it over is a bug in the conversation rather than a policy.
-
-So for 12 seconds afterwards, the next thing *that person* says counts as
-addressing it. No wake word, no model call, no guessing.
-
-It is deliberately narrow, because the cost of being wrong is the one failure
-that gets a bot removed from a server: speaking when nobody asked.
-
-- It only opens when the bot's own reply actually ended in a question mark.
-- It belongs to the person who was asked. Two other people resuming their own
-  conversation is not an answer.
-- It is spent on the first thing they say, so it cannot catch a sentence a
-  minute later.
-- It expires.
-
-The Thinking tab reports how often this path fires as "answered without its
-name", so it is a rate rather than a feeling.
-
-A looser version — judging every utterance in a window with a cheap model — is
-deliberately not built. It costs a model call per sentence and adds a way to be
-wrong, and this covers the case that actually stings.
-
-## Cascade mode
-
-`agent` is slow for a reason that has nothing to do with the answer: a session
-with a dozen tools reasons about whether to use them before it says anything.
-Measured to the first spoken word, that is 4.9s against `claude-haiku-4-5`'s
-2.4s — and most of what is said in a call needs no tool at all.
-
-The routing is not a classifier. A classifier is itself a model call sitting in
-front of every question, so it spends latency on exactly the path it is meant
-to make faster, and it is a second thing that can be wrong. Instead the fast
-model is given one tool, `escalate`, and decides by attempting: it either
-answers, streaming into speech with no routing cost at all, or it defers.
-
-On this project's measurements — 2.4s fast, 4.9s agent, ≈0.6s for a deferral —
-the expected change per turn is `p × (−2.5s) + (1 − p) × (+0.6s)`, where `p` is
-the share of turns needing no tool. It is a net saving above `p ≈ 0.19`. The
-Thinking tab reports the real `p` for your channel.
-
-Measured on this repository, no Discord involved:
-
-| Turn | Route | First words |
-| --- | --- | --- |
-| "why are people afraid of flying" | fast | 1.8s |
-| follow-up: "what would you advise" | fast | 1.3s |
-| "remind me in two minutes" | escalated | 1.2s, reminder set at 12.2s |
-| "what's the weather in Buenos Aires" | escalated | 1.2s, answered at 11.6s |
-
-Three things make it one conversation rather than two:
-
-- **The fast leg is reminded of its own answers.** Nothing transcribes the bot,
-  so an answer exists only where it was produced. Without this, "and why?"
-  asked straight after a reply reaches a model with no idea what it just said.
-- **The agent is told what was answered without it**, once, when it is next
-  reached. It remembers its own turns and only needs the ones it missed.
-- **A handover continues rather than restarts.** Whatever the fast leg already
-  said has been spoken into the channel and cannot be retracted, so the agent
-  is given it and told to carry on. It also serves as the filler, which is
-  better than the stock clip: the bot's own voice, in the right language, about
-  this question. The stock clip is suppressed in that case.
-
-One routing rule costs nothing and is applied before any model call: if the
-previous turn used a tool, the next goes straight to the agent, since a
-follow-up nearly always refers to what that tool returned. Deliberately *not* a
-rule: "no MCP servers configured means the agent has nothing to offer" — it
-always has its own tools, so that reasoning is simply wrong.
-
-The failure mode worth knowing about is a misrouted *action*. The fast leg has
-no tools, so if it took "remind me to take the bins out" it would say "listo"
-and nothing would ever fire. Its prompt is therefore biased hard toward
-deferring, with no judgement call on anything imperative.
-
-## What answers cost
-
-Every answer already records which tools it used and how long each stage took;
-`agent/answers.js` keeps the last 60 in memory and the Thinking tab shows the
-summary. The share that used no tool is the share a fast model could have
-taken, which is the whole case for or against cascade mode — and it is a fact
-about your channel rather than a general claim.
-
-It also records `heard → asked`: from the moment someone stops talking to the
-moment the model is asked anything, which covers silence detection,
-transcription and the grace pause. That is the half of the wait that had never
-been measured, and it is only present for spoken questions — one typed into the
-panel never waited for any of it.
-
-No question text and no answer text is retained, only which brain ran, which
-tools it used and the timings. The audio buffer never reaches disk and neither
-does this.
-
-## Music
-
-The bot plays it itself, through the voice connection it is already on.
-
-This started as a tool that typed `m!p` into a text channel for the music bot
-that was already in the server. It cannot work, and the reason is Discord
-rather than anything we wrote: a bot's message carries `author.bot = true`, and
-essentially every bot drops those in its first line to avoid loops. Measured
-both ways, with a command confirmed to work when a person typed it — posted as
-the bot, no reply; posted through a webhook, no reply, because a webhook
-message is flagged as a bot too.
-
-Playing it directly turned out to be the better answer anyway. The bot knows
-what is on, which is the thing a separate music bot could never tell it.
-
-| Tool | Effect |
-| --- | --- |
-| `play_music` | Plays a song, artist or URL, or queues it behind what is on |
-| `play_album` | Queues a record track by track |
-| `skip_song` | Skips to the next thing queued |
-| `pause_music` / `resume_music` | Holds a track where it is |
-| `stop_music` | Stops and clears the queue |
-| `remove_from_queue` / `move_in_queue` | Edits what is waiting, by title or position |
-| `set_volume` | Up or down, by a step or to a number |
-| `now_playing` | What is on, who asked for it, the volume, and what is next |
-
-Every one of those except `now_playing` is carried out **without saying
-anything**. Speaking pauses the track to make room for the voice, so confirming
-that you skipped a song costs the song you just moved to. What happened is
-written into the music channel instead.
-
-### An album is its songs
-
-There is rarely one video of a whole record, and the first version refused on
-that basis. `play_album` takes the track list — the model knows most of them,
-and searches for a running order it is unsure of — and queues them
-individually.
-
-They are queued *unresolved*: a dozen YouTube searches before the first note is
-twenty seconds of nothing, so each track is looked up when its turn comes,
-under whatever is already playing. A track nobody can find costs that track
-rather than the rest of the album behind it.
-
-### Two kinds of pause
-
-The bot pauses the music to talk, and people pause it to hear themselves think.
-These must not undo each other: a track paused on purpose stays paused when an
-answer finishes, and resuming during an answer waits for the sentence to end
-rather than playing over it.
-
-`yt-dlp` is fetched into `runtime/` the first time music is played, the same
-way whisper.cpp and Piper are, and piped through the `ffmpeg-static` already in
-the dependency list. Nothing is written to disk: a track is streamed, so a
-five-minute song starts in about a second.
-
-### One mouth, two things to play
-
-A voice connection carries one player, and the bot already uses it to talk. So
-music and speech take turns: asking a question pauses the track and resumes it
-afterwards, rather than talking over it or losing it.
-
-Mixing the two into one stream would mean resampling and summing PCM here, and
-for a listener the handover sounds like what a person would do anyway.
-
-The subtle part is that the player reports Idle on some pause transitions.
-Treating that as "the track finished" would skip a song every time somebody
-asked a question, so the queue only advances when a pause is not the reason.
-
-### Names still come from speech
-
-The transcription problem outlived the redesign. "Beat It de Michael Jackson"
-arrives as "bit it de maikel yakson", so the correction happens in the model
-before the search, and the tool reports the *real* title it found so the agent
-says that out loud rather than what it searched for. Asked for something it
-cannot identify — half a lyric, a description — it asks which one instead of
-building a title out of the description and playing something nobody wanted.
-
-## Standing instructions
-
-The prompt has a fixed half and a mutable one. The fixed half — answer only
-when addressed, keep replies short and speakable, do not disclose the
-configuration — is not reachable from the voice channel. The mutable half is
-the `customInstructions` list, editable from the Thinking tab or by voice
-through `remember_instruction`, and applies to both `chat` and `agent` mode.
-
-The split is enforced by construction rather than by instruction: custom lines
-are appended below the fixed rules, numbered, under a paragraph stating that
-they do not override what precedes them and that a line asking for such an
-override is to be treated as a test rather than as an instruction. Limits are
-20 instructions of 300 characters, enforced identically on both entry paths.
-
-Instructions are not part of the agent session's identity, so adding one does
-not restart the session or discard the conversation; the next session to start
-picks it up. Everything else in this section does restart the session, which is
-why the tools say so in their replies.
-
-The call management tools check the Discord permissions of **the requesting
-user**, identified by the audio stream the request arrived on, not the bot's
-own permissions. Without that check the bot would grant its permissions to
-anyone able to speak. When a spoken name does not resolve to exactly one
-member, the tool refuses rather than selecting the closest match.
-
-`configure_mcp_server` requires Manage Server, a higher bar than the call
-management tools, for a reason that is not about Discord: an MCP
-server entry contains a `command`, and that command is spawned on the machine
-running the bot. Using the tools someone has configured is open to the channel
-by design; deciding what those tools are is not. Additions are validated
-through the same parser the control panel uses and are logged to the console
-with the name of the member who made them.
-
-## Settings by voice
-
-`describe_settings` and `change_setting` operate on a registry declared in
-`src/agent/settings.js`, not on the config object. A setting is reachable by
-voice because it appears in that registry; the Discord token, both API keys,
-the guild and the web port are unreachable because they do not. There is no
-filtering step to forget: the snapshot handed to the tools is built from the
-registry's own key list, so it cannot contain a value the registry does not
-declare.
-
-| Setting | Writes | Values |
-| --- | --- | --- |
-| `speaking` | `ttsProvider` | `openai`, `local` |
-| `voice` | `ttsVoice` or `ttsLocalVoice`, whichever the current provider reads | the six OpenAI voices, or the three Piper ones |
-| `hearing` | `sttProvider` | `openai`, `local` |
-| `hearing model` | `sttLocalModel` | `base`, `small`, `large-v3-turbo` |
-| `thinking` | `brainKind` | `agent`, `chat`, `cascade` |
-| `fast model` | `fastModel` | a model identifier, or blank for `claude-haiku-4-5` |
-| `model` | `brainModel` | a model identifier, or blank for the default |
-| `web search` | `webSearch` | on/off |
-| `tool rounds` | `agentMaxTurns` | 1–25 |
-| `memory` | `bufferSeconds` | 10–600 |
-| `wake` | `wakeEnabled` | on/off |
-| `listening` | `agentEnabled` | on/off |
-| `eager transcription` | `eagerTranscription` | on/off |
-| `folders` | `agentDirectories` | full paths, one per line |
-
-Values are parsed rather than validated, because they arrive as speech: `local`
-also answers to "en esta máquina" and "offline", `openai` to "la API", and a
-number survives being said with its unit. A value that does not parse is
-refused with the accepted options named, and the agent reads that refusal back
-to the channel.
-
-`folders` is the only entry requiring Manage Server. It decides what a
-connected filesystem server may read, which is a security boundary rather than
-a preference, so it carries the same bar as configuring the server itself. It
-also rejects anything that is not already a full path — a dictated folder name
-is a guess, and the panel is the right place to type one.
-
-Changing `thinking`, `model`, `fast model`, `web search`, `tool rounds` or
-`folders` starts a new agent session, which discards the conversation so far. The tool says so in
-its reply, since a bot that silently loses the thread immediately after being
-asked to change something reads as broken rather than as reconfigured.
-
-Turning `listening` off self-deafens the bot, which means it cannot hear itself
-being turned back on. `/mj listen` and the control panel both undo it.
-
-`set_names` is deliberately not gated, since renaming the bot is a decision for
-the room. It is the one setting that can lock the channel out of the bot: a
-name nobody says, or one transcription never produces, leaves nothing to wake
-it with. Recovery is the Listening tab, not the voice channel.
-
-## MCP servers
-
-Agent mode accepts MCP servers in the same format as Claude Desktop and Claude
-Code. Paste the `mcpServers` object into the control panel; a whole
-configuration file with the wrapper is also accepted.
-
-```json
-{
-  "github": {
-    "command": "npx",
-    "args": ["-y", "@modelcontextprotocol/server-github"],
-    "env": { "GITHUB_TOKEN": "..." }
-  },
-  "remote-service": { "type": "http", "url": "https://example.com/mcp" }
-}
+```bash
+docker compose up --build
 ```
 
-The configuration is validated when saved; errors name the field.
+Same bot, same panel, with `data/` and `runtime/` on named volumes so they
+survive a new image. The panel stays on the host's loopback. Provisioning a
+small VPS, deploying on push and reading logs are in
+[docs/running.md](docs/running.md).
 
-**Restricting tools.** By default a server's entire tool set is granted. Add
-`allow` to grant only named tools:
+## Documentation
 
-```json
-{ "files": { "command": "npx", "args": ["..."], "allow": ["list_directory", "read_text_file"] } }
-```
-
-This matters for servers that both read and write. The standard filesystem
-server exposes `write_file`, `edit_file`, `create_directory` and `move_file`
-alongside its read operations.
-
-**Access scope.** MCP tools are available to anyone in the voice channel. The
-bot answers whoever addresses it, and an arbitrary MCP server exposes no
-permission model to consult. Connect what is appropriate for everyone present.
-
-**Filesystem scope.** For servers that support the MCP roots protocol —
-including the standard filesystem server — the accessible directories come
-from the panel's *Folders the agent may reach* setting, not from the server's
-own arguments. The agent runtime advertises its working directories as roots,
-and root-aware servers use those in preference to their argv.
-
-The agent receives only the configured MCP servers, the built-in tools listed
-above, and web search. The SDK's file and shell tools are denied.
-
-## Slash commands
-
-| Command | Effect |
-| --- | --- |
-| `/mj join [channel]` | Join your channel, or a named one |
-| `/mj leave` | Disconnect |
-| `/mj listen` | Start listening; un-deafens and begins buffering |
-| `/mj deaf` | Stop listening and clear the buffer |
-| `/mj ask <question>` | Ask without saying the name |
-| `/mj transcript` | Print recent transcribed speech |
-| `/mj shush` | Stop the current reply |
-| `/mj status` | Connection, listening state, buffer contents |
-
-Playback volume is controlled per-listener in Discord (right-click the bot in
-the member list). Audio is sent as Opus and played without re-encoding, so the
-application cannot adjust its own level.
-
-## Configuration
-
-Settings are stored in `data/config.json`, written with mode `0600` —
-owner-only on macOS and Linux; on Windows the file inherits the folder's
-permissions. Values in `.env` are read at startup; values saved through the
-panel take precedence.
-
-| Setting | Env var | Default | Notes |
-| --- | --- | --- | --- |
-| `token` | `DISCORD_TOKEN` | — | Bot token |
-| `guildId` | `DISCORD_GUILD_ID` | — | Registers slash commands on one server immediately; global registration can take an hour |
-| `agentEnabled` | — | `true` | Listen to the channel. When false the bot is self-deafened |
-| `bufferSeconds` | `BUFFER_SECONDS` | `90` | Conversation held in memory, 10–600 |
-| `agentNames` | — | `mirror, espejo` | Names it answers to, comma-separated |
-| `wakeEnabled` | — | `true` | Answer when addressed, not only via `/mj ask` |
-| `eagerTranscription` | — | `true` | Transcribe as people speak. Required for name detection |
-| `sttProvider` | — | `openai` | `openai` or `local` |
-| `sttLocalModel` | — | `ggml-base` | `ggml-base`, `ggml-small`, `ggml-large-v3-turbo` |
-| `brainKind` | — | `agent` | `agent` or `chat` |
-| `brainProvider` | — | `anthropic` | `anthropic` or `openai`; applies to `chat` only |
-| `brainModel` | — | *(blank)* | Blank uses the provider default |
-| `mcpServers` | — | *(blank)* | JSON object of MCP servers |
-| `agentDirectories` | — | *(blank)* | Directories reachable by root-aware MCP servers, one absolute path per line |
-| `agentMaxTurns` | — | `8` | Tool rounds per agent answer, 1–25 |
-| `webSearch` | — | `true` | Enable web search |
-| `ttsProvider` | — | `openai` | `openai` or `local` (Piper) |
-| `ttsVoice` / `ttsLocalVoice` | — | `onyx` / `es_ES-davefx-medium` | Voice per provider |
-| `openaiApiKey` | `OPENAI_API_KEY` | — | Transcription and speech |
-| `anthropicApiKey` | `ANTHROPIC_API_KEY` | — | Agent mode, and Claude in chat mode |
-| `webPort` | `WEB_PORT` | `3000` | Control panel port. Read at startup, so a change requires a restart; not exposed in the panel for that reason |
-| — | `WEB_HOST` | `127.0.0.1` | The panel has no authentication. Expose it beyond localhost only behind something that provides it |
+- [docs/configuration.md](docs/configuration.md): every setting, tool,
+  permission and slash command.
+- [docs/running.md](docs/running.md): Docker, a server, deploy on push, logs.
+- [docs/design/](docs/design/README.md): why it is built the way it is, with
+  the measurements.
+- [docs/roadmap.md](docs/roadmap.md): where it may go next.
+- [AUDIT.md](AUDIT.md): known problems, kept current.
+- [CONTRIBUTING.md](CONTRIBUTING.md): checks, lockfile, CI, the launcher.
 
 ## Source layout
 
 ```
-launcher/main.go          double-click launcher (Go, stdlib only)
-Start-Windows.cmd         script launcher for Windows
-start.sh                  script launcher for macOS and Linux
 src/
   index.js                startup: web panel, then the bot if a token exists
   config.js               defaults ← .env ← data/config.json, with live updates
-  bot/index.js            Discord client lifecycle
-  bot/commands.js         /mj slash commands
-  voice/session.js        one guild: connection, player, receiver
-  voice/receiver.js       per-speaker capture, utterances cut on silence
-  voice/manager.js        session registry
-  voice/speech-queue.js   plays synthesised pieces back to back
-  agent/buffer.js         rolling in-memory window of utterances
-  agent/audio.js          Opus → 16 kHz mono WAV
-  agent/eager.js          background transcription queue
-  agent/wake.js           name detection
-  agent/stt.js            transcription — API or whisper.cpp
-  agent/brain.js          chat mode — Anthropic or OpenAI
-  agent/agent-brain.js    agent mode — the Claude Agent SDK session itself
-  agent/tools/            the bot's own tools, by what they act on
-    tools/call.js           the voice call — move, mute, disconnect, leave
-    tools/config.js         its own settings, instructions and MCP servers
-    tools/reminders.js      handing a promise to the machine's clock
-    tools/search.js         web search as a fast side-call
-    tools/wrappers.js       how a tool says no without killing the turn
-  agent/cascade.js        cascade mode — fast model in front, deferring by tool
-  agent/answers.js        what the last answers cost, in memory
-  agent/settings.js       the settings reachable by voice, and only those
-  agent/instructions.js   the mutable half of the prompt, and the fixed half
-  agent/mcp.js            MCP configuration parsing and tool allow-lists
-  agent/reminders.js      timer registry for spoken reminders
-  agent/discord-tools.js  call management, gated on the requester's permissions
-  agent/sentences.js      splits a token stream into speakable chunks
-  agent/tts.js            speech synthesis — API or Piper
-  agent/filler.js         pre-rendered clips played during tool calls
-  agent/whisper.js        whisper.cpp runtime, downloaded on demand
-  agent/piper.js          Piper runtime, downloaded on demand
-  web/server.js           control panel API and static files
+  paths.js                where data/ and runtime/ are
+  bot/                    Discord client lifecycle and the /mj commands
+  voice/                  one session per guild: connection, receiver, speech queue, music
+  agent/
+    index.js              a turn: from an utterance to spoken sentences
+    wake.js               name detection
+    buffer.js, eager.js   the rolling window and its background transcription
+    stt.js, tts.js        hearing and speaking, API or local
+    brain.js              chat mode
+    agent-brain.js        agent mode: the Claude Agent SDK session
+    cascade.js            cascade mode: a fast model in front, deferring by tool
+    tools/                the bot's own tools, by what they act on
+    settings.js           the settings reachable by voice, and only those
+    instructions.js       the fixed and the mutable halves of the prompt
+    trace.js              the opt-in trace of what the models see and say
+    whisper.js, piper.js, ytdlp.js   runtimes fetched on demand
+  web/                    the control panel
+deploy/                   server provisioning, deploy and log scripts
+launcher/                 the compiled launcher (Go)
 ```
 
-## Checks
+## License
 
-```
-npm run check     lint and tests, the same two things CI runs
-npm run lint      eslint
-npm test          node --test
-npm run lock      regenerate package-lock.json after changing dependencies
-```
-
-`npm run lock` is not optional after a dependency change, and the reason is
-not obvious. `npm install` resolves for *this* machine, so platform-specific
-optional packages this OS will never use are pruned and their dependencies go
-with them — `@snazzah/davey`'s wasm32 variant peers on three `@emnapi`
-packages that no Linux x64 machine installs. `npm ci` validates the whole
-graph including those branches and refuses a lockfile missing them, so the
-file a normal install leaves behind is exactly the file CI rejects.
-`--package-lock-only` does not help either; npm still reads the existing
-`node_modules`. The script resolves in a temp directory where there is none.
-
-Both run automatically in two places.
-
-**Before each commit.** `npm install` points `core.hooksPath` at `.githooks/`,
-so the hook installs itself and there is nothing to remember. It runs only when
-JavaScript or the manifest changed, takes about two seconds, and prints the
-whole failure when the suite fails. `git commit --no-verify` skips it
-deliberately.
-
-**On every push and pull request**, via `.github/workflows/ci.yml`, on Node 20
-and 22 — the floor `package.json` claims and the version people actually run.
-Actions is free here: public repositories are not billed for standard runners.
-A second job runs `npm audit --audit-level=high`, since the tests never make a
-network call and a dependency that suddenly wants one is worth knowing about in
-a bot holding three API keys.
-
-The linter is configured for the class of mistake that reads fine and fails at
-runtime — a variable that no longer exists, a promise nobody awaited, a
-condition that is always true. It is deliberately not a formatter: this
-codebase has a voice, and a style rule set would rewrite it into something
-uniform and bury every real change for a month. `eslint.config.js` says which
-rules are off and why, including the two turned off because they were all noise
-here and the one real finding they surfaced, which is written down in
-[AUDIT.md](AUDIT.md) rather than silenced.
-
-[AUDIT.md](AUDIT.md) is where known problems live instead of a board: the
-symptom, where it is, and why it happens. Entries are deleted by the commit
-that fixes them, so the file is always the current list rather than a history.
-
-## Rebuilding the launcher
-
-Only required after changing `launcher/main.go`. Go is needed on the build
-machine; the machines running the result need nothing.
-
-```bash
-./launcher/build.sh   # → dist/ManInTheMirror.exe and the macOS/Linux equivalents
-```
-
-It is stdlib-only and cross-compiles, so a Linux host can produce the Windows
-binary.
-
+[MIT](LICENSE).

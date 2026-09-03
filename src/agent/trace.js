@@ -6,6 +6,12 @@
  *
  *   MIRROR_TRACE=1 npm start            → data/trace.log
  *   MIRROR_TRACE=/some/where/trace.log  → that file
+ *   MIRROR_TRACE=stdout                 → the process's own stdout, every
+ *                                         line prefixed `[trace] ` so it can
+ *                                         be told apart from the operational
+ *                                         log it now shares a stream with.
+ *                                         For containers, where stdout is
+ *                                         the log and files are not kept.
  *
  * Every entry is classified by a fixed vocabulary so the file can be grepped
  * by kind:
@@ -25,13 +31,26 @@ import { DATA_DIR } from '../paths.js';
 
 const setting = process.env.MIRROR_TRACE ?? '';
 const enabled = setting !== '' && !/^(0|false|no|off)$/i.test(setting);
-const file = /^(1|true|yes|on)$/i.test(setting) ? path.join(DATA_DIR, 'trace.log') : setting;
+const toStdout = /^(stdout|-)$/i.test(setting);
+const file = toStdout
+  ? null
+  : /^(1|true|yes|on)$/i.test(setting)
+    ? path.join(DATA_DIR, 'trace.log')
+    : setting;
 
 /** Longest single entry; tool results and transcripts can be huge. */
 const MAX_CHARS = Number(process.env.MIRROR_TRACE_MAX ?? 4000);
 
 let out = null;
-if (enabled) {
+if (enabled && toStdout) {
+  // Only non-empty lines get the prefix: the blank line that closes each
+  // entry stays blank, so `grep -A` context reads the same as in the file.
+  out = {
+    write(chunk) {
+      process.stdout.write(String(chunk).replace(/^(?=.)/gm, '[trace] '));
+    },
+  };
+} else if (enabled) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   out = fs.createWriteStream(file, { flags: 'a' });
   out.write(`\n===== trace started ${new Date().toISOString()} =====\n`);

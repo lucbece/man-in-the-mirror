@@ -32,6 +32,14 @@ should close it, so a package's brief can be its goal plus its entries.
 
 ## High
 
+- **An invalid Anthropic key costs the room two minutes of silence, not a
+  sentence.** Seen on 2026-09-03 with a revoked key: the fast leg failed in
+  under a second with a clear 401 and escalated, then the agent leg sat until
+  the two-minute limit ("The agent took over two minutes — gave up on that
+  one"). `cascade.js` and `agent-brain.js`: an `authentication_error` from
+  either leg should end the turn at once and say so in the log, and the
+  panel's state should show it instead of "ready".
+
 ### It tells the room it is deafened while it is listening
 
 `/mj join` answers "In #channel, deafened. Run `/mj listen` when you want me
@@ -225,6 +233,14 @@ Package: WP3
 
 
 ## Low
+
+- **`docker compose up` on the server warns that the volumes "already exist
+  but were not created by Docker Compose".** Cosmetic: cloud-init creates
+  `mirror_data` and `mirror_runtime` before the first `up` so `config.json`
+  has somewhere to land, and compose recognises its own volumes by label.
+  Creating them in `deploy/cloud-init.yaml` with
+  `--label com.docker.compose.project=mirror --label com.docker.compose.volume=<name>`
+  should silence it; unverified because it needs a fresh server to test.
 
 ### Whisper's invented-phrase lists only know Spanish and English
 

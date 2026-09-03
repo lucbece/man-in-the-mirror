@@ -394,6 +394,14 @@ export class VoiceSession extends EventEmitter {
 
   async waitUntilReady() {
     await entersState(this.connection, VoiceConnectionStatus.Ready, READY_TIMEOUT_MS);
+    // Which of Discord's voice servers carries this call decides the audio
+    // leg of every answer's latency, and it is Discord's choice, not ours. The
+    // hostname is in the VOICE_SERVER_UPDATE data that @discordjs/voice keeps
+    // as `connectionOptions` on its networking state — the only public route
+    // to it (the raw packet is private). Just the host: the same object holds
+    // the voice token.
+    const endpoint = this.connection.state.networking?.state?.connectionOptions?.endpoint;
+    if (endpoint) console.log(`[voice] endpoint ${endpoint.replace(/:\d+$/, '')}`);
     // Only subscribe to speakers once the connection can actually carry audio.
     if (this.agentEnabled) this.receiver.start();
     return this;

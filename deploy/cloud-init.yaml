@@ -1,0 +1,87 @@
+#cloud-config
+# First boot of the server that runs the bot. Hand this file to the provider
+# when creating the machine (Hetzner: "cloud config" / hcloud --user-data-from-file)
+# after replacing the two keys below. Everything here is idempotent enough to
+# re-run on a fresh machine in about two minutes; nothing here is secret, which
+# is why it can live in the repository.
+#
+# What it sets up, and why:
+# - Docker from Ubuntu's own packages: one apt source fewer to trust, and 24.04
+#   ships a current compose v2 plugin.
+# - A `deploy` user that owns /opt/mirror, can talk to Docker, and has
+#   passwordless sudo: it is the only account that can log in, so it is also
+#   the administrator. Root never logs in over ssh, nobody logs in with a
+#   password.
+# - Two ssh keys for that user. Yours, unrestricted. And the one GitHub Actions
+#   holds, pinned to a forced command: it can run `deploy.sh` and nothing else,
+#   so a leaked deploy key cannot open a shell here.
+# - ufw with only 22 open. The control panel stays on loopback and is reached
+#   through an ssh tunnel; Discord, OpenAI and Anthropic are all outbound.
+# - fail2ban and unattended-upgrades so the box looks after itself.
+
+package_update: true
+package_upgrade: true
+packages:
+  - docker.io
+  - docker-compose-v2
+  - ufw
+  - fail2ban
+  - unattended-upgrades
+  - curl
+
+ssh_pwauth: false
+
+users:
+  - name: deploy
+    groups: [docker]
+    shell: /bin/bash
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    ssh_authorized_keys:
+      # Your own key. Unrestricted.
+      - "ADMIN_SSH_PUBLIC_KEY"
+      # The key GitHub Actions uses. Forced command: see deploy/deploy.sh.
+      - 'command="/opt/mirror/deploy.sh",no-port-forwarding,no-agent-forwarding,no-X11-forwarding,no-pty DEPLOY_SSH_PUBLIC_KEY'
+
+write_files:
+  - path: /etc/ssh/sshd_config.d/60-mirror.conf
+    content: |
+      PermitRootLogin no
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      AllowUsers deploy
+  - path: /etc/apt/apt.conf.d/52-mirror-unattended
+    content: |
+      Unattended-Upgrade::Automatic-Reboot "true";
+      Unattended-Upgrade::Automatic-Reboot-Time "06:00";
+  # Operational settings only. Keys live in data/config.json inside the volume
+  # and get there over scp, never through this file or the repository.
+  # `defer` because files are normally written before users exist, and this
+  # one is owned by `deploy`: without it cloud-init fails the whole boot with
+  # "unknown user" and leaves no .env behind.
+  - path: /opt/mirror/.env
+    owner: deploy:deploy
+    permissions: "0640"
+    defer: true
+    content: |
+      MIRROR_IMAGE=ghcr.io/lucbece/man-in-the-mirror:mirror
+      MIRROR_TRACE=stdout
+      WEB_PORT=3000
+
+runcmd:
+  - mkdir -p /opt/mirror && chown -R deploy:deploy /opt/mirror
+  # compose.yaml and deploy.sh come from the branch the instance follows, so
+  # the server never carries a copy that drifts from what is deployed.
+  - sudo -u deploy curl -fsSL -o /opt/mirror/compose.yaml https://raw.githubusercontent.com/lucbece/man-in-the-mirror/mirror/compose.yaml
+  - sudo -u deploy curl -fsSL -o /opt/mirror/deploy.sh https://raw.githubusercontent.com/lucbece/man-in-the-mirror/mirror/deploy/deploy.sh
+  - sudo -u deploy curl -fsSL -o /opt/mirror/logs.sh https://raw.githubusercontent.com/lucbece/man-in-the-mirror/mirror/deploy/logs.sh
+  - chmod 0755 /opt/mirror/deploy.sh /opt/mirror/logs.sh
+  - ufw default deny incoming
+  - ufw default allow outgoing
+  - ufw allow 22/tcp
+  - ufw --force enable
+  - systemctl enable --now fail2ban
+  - systemctl restart ssh
+  # The volumes are created empty here so `scp` of data/config.json has a
+  # place to land before the first `compose up`.
+  - sudo -u deploy docker volume create mirror_data
+  - sudo -u deploy docker volume create mirror_runtime
