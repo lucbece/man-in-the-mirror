@@ -165,3 +165,24 @@ describe('switching by voice', () => {
     }
   });
 });
+
+describe('shushing over a song', () => {
+  test('gives the track back instead of leaving it paused', async (t) => {
+    // The handover lives in the speech queue's `finished` handler. A shush
+    // that cleared the queue before cancelling it made that handler bail,
+    // and the song it had paused stayed paused until the next answer ended.
+    const s = session(t);
+    let resumed = 0;
+    s.music.pauseForSpeech = () => true;
+    s.music.resumeAfterSpeech = () => {
+      resumed += 1;
+    };
+    s.startSpeech();
+    s.shush();
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0);
+    });
+    assert.equal(resumed, 1);
+    assert.equal(s.speech, null, 'and the queue is gone once it has drained');
+  });
+});
