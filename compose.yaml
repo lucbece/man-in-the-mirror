@@ -1,0 +1,53 @@
+# One service, one bot. `docker compose up -d` on any Linux host with Docker.
+#
+# The image comes from MIRROR_IMAGE in .env (the deploy script writes the tag
+# there); with nothing set it falls back to the branch tag on GHCR, and
+# `docker compose up --build` builds from this checkout instead.
+services:
+  mirror:
+    image: ${MIRROR_IMAGE:-ghcr.io/lucbece/man-in-the-mirror:mirror}
+    build: .
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Inside the container only. The port mapping below keeps it private.
+      WEB_HOST: 0.0.0.0
+    ports:
+      # Loopback on the host. Reach the panel through an ssh tunnel.
+      - "127.0.0.1:${WEB_PORT:-3000}:3000"
+    volumes:
+      - mirror_data:/app/data
+      - mirror_runtime:/app/runtime
+    # About 400 MB of log before the oldest file goes: months of a bot that
+    # talks a few hours a day, trace included.
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "20"
+    # SIGTERM leaves the voice channels and exits within 300 ms.
+    stop_grace_period: 5s
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/state').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+  # Shipping logs off the box is a decision, not a default: the trace carries
+  # the room's conversation, word for word. If it is ever wanted, a Grafana
+  # Alloy sidecar reading the Docker socket is the documented path.
+  # alloy:
+  #   image: grafana/alloy:latest
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock:ro
+  #     - ./alloy.config:/etc/alloy/config.alloy:ro
+  #   command: run /etc/alloy/config.alloy
+
+volumes:
+  mirror_data:
+    name: mirror_data
+  mirror_runtime:
+    name: mirror_runtime
