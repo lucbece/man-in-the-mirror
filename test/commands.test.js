@@ -170,7 +170,7 @@ describe('leaving', () => {
 
 describe('commands that need the bot to be in a channel', () => {
   test('say so rather than doing nothing', async () => {
-    for (const sub of ['listen', 'deaf', 'transcript', 'ask', 'shush', 'play', 'skip', 'pause', 'resume', 'stop', 'queue']) {
+    for (const sub of ['transcript', 'ask', 'shush', 'skip', 'pause', 'resume', 'stop', 'queue']) {
       const i = fakeInteraction({ sub, guildId: 'not-joined' });
       await handleInteraction(i);
       assert.notEqual(said(i), '', `/mj ${sub} answered nothing`);
@@ -217,6 +217,20 @@ describe('/mj play and friends', () => {
     assert.match(said(i), /Beat It/);
     assert.match(said(i), /4:18/);
     assert.match(said(i), /Vero/);
+  });
+
+  test('play joins the channel the caller is in when the bot is in none', async () => {
+    // Reaching the permission check proves it resolved the caller's channel
+    // instead of asking for /mj join first.
+    const i = fakeInteraction({ sub: 'play', guildId: 'not-joined', query: 'beat it', memberChannel: voiceChannel({ permissions: [] }) });
+    await handleInteraction(i);
+    assert.match(said(i), /Connect.*Speak/s);
+  });
+
+  test('play with nobody in a channel says where to go', async () => {
+    const i = fakeInteraction({ sub: 'play', guildId: 'not-joined', query: 'beat it' });
+    await handleInteraction(i);
+    assert.match(said(i), /Join a voice channel/);
   });
 
   test('play without a query does not reach the player', async (t) => {

@@ -6,9 +6,7 @@ import {
   SlashCommandBuilder,
 } from 'discord.js';
 
-import { config } from '../config.js';
 import { sessionManager } from '../voice/manager.js';
-import { agentSessionStatus } from '../agent/agent-brain.js';
 import { formatTranscript, transcribeBuffer } from '../agent/stt.js';
 import { ask, AgentBusyError } from '../agent/index.js';
 import { mmss, noteInMusicChannel } from '../agent/tools/music.js';
@@ -30,14 +28,6 @@ export const commandData = [
         ),
     )
     .addSubcommand((sub) => sub.setName('leave').setDescription('Leave the voice channel'))
-    .addSubcommand((sub) =>
-      sub
-        .setName('listen')
-        .setDescription('Start listening (the bot un-deafens and buffers audio)'),
-    )
-    .addSubcommand((sub) =>
-      sub.setName('deaf').setDescription('Stop listening and wipe the buffered audio'),
-    )
     .addSubcommand((sub) =>
       sub.setName('transcript').setDescription('Transcribe what was said recently'),
     )
@@ -67,9 +57,6 @@ export const commandData = [
     .addSubcommand((sub) => sub.setName('resume').setDescription('Resume the music'))
     .addSubcommand((sub) => sub.setName('stop').setDescription('Stop the music and clear the queue'))
     .addSubcommand((sub) => sub.setName('queue').setDescription('What is playing and what is next'))
-    .addSubcommand((sub) =>
-      sub.setName('status').setDescription('Show what the bot is up to'),
-    )
     .toJSON(),
 ];
 
@@ -87,18 +74,12 @@ export async function handleInteraction(interaction) {
         return await cmdJoin(interaction);
       case 'leave':
         return await cmdLeave(interaction);
-      case 'listen':
-        return await cmdListen(interaction);
-      case 'deaf':
-        return await cmdDeaf(interaction);
       case 'transcript':
         return await cmdTranscript(interaction);
       case 'ask':
         return await cmdAsk(interaction);
       case 'shush':
         return await cmdShush(interaction);
-      case 'status':
-        return await cmdStatus(interaction);
       case 'play':
         return await cmdPlay(interaction);
       case 'skip':
@@ -160,44 +141,6 @@ async function cmdLeave(interaction) {
 }
 
 // --- listening --------------------------------------------------------------
-
-async function cmdListen(interaction) {
-  const session = requireSession(interaction);
-  if (!session) return;
-
-  if (session.agentEnabled) {
-    return interaction.reply(ephemeral('Already listening. `/mj transcript` to read it back.'));
-  }
-
-  await interaction.deferReply();
-  config.update({ agentEnabled: true });
-  await session.setAgentEnabled(true);
-
-  const minutes = Math.round(config.get('bufferSeconds') / 60);
-  return interaction.editReply(
-    [
-      `👂 **Listening.** Keeping the last ${minutes} minute(s) of audio in memory.`,
-      '',
-      'Nothing is transcribed until someone runs `/mj transcript`, nothing is written to disk,',
-      'and anything older than the window is dropped. `/mj deaf` stops this and wipes the buffer.',
-    ].join('\n'),
-  );
-}
-
-async function cmdDeaf(interaction) {
-  const session = requireSession(interaction);
-  if (!session) return;
-
-  if (!session.agentEnabled) {
-    return interaction.reply(ephemeral("I'm already deafened — not receiving any audio."));
-  }
-
-  await interaction.deferReply();
-  config.update({ agentEnabled: false });
-  await session.setAgentEnabled(false);
-
-  return interaction.editReply('🙉 **Deafened.** Buffer wiped, no longer receiving audio.');
-}
 
 async function cmdTranscript(interaction) {
   const session = requireSession(interaction);
@@ -299,49 +242,6 @@ async function cmdShush(interaction) {
 
 // --- status -----------------------------------------------------------------
 
-async function cmdStatus(interaction) {
-  const session = sessionManager.get(interaction.guildId);
-  const cfg = config.all();
-
-  const lines = [];
-
-  if (!session) {
-    lines.unshift('**Voice:** not connected');
-  } else {
-    const s = session.status();
-    lines.unshift(`**Voice:** <#${s.channelId}> (${s.listeners} in channel)`);
-
-    if (s.agentEnabled) {
-      const l = s.listening;
-      lines.push(
-        `**Listening:** yes — ${l.utterances} utterance(s), ` +
-          `${l.speechSeconds}s of speech from ${l.speakers} speaker(s), ` +
-          `${l.pendingUtterances} not yet transcribed`,
-      );
-    } else {
-      lines.push('**Listening:** no (deafened)');
-    }
-  }
-
-  const agent = agentSessionStatus(interaction.guildId);
-  if (agent) {
-    const mins = (ms) => Math.round(ms / 60_000);
-    lines.push(
-      `**Agent session:** ${agent.model} · ${agent.answers} answer(s) · ` +
-        `$${agent.spentUsd.toFixed(2)} · up ${mins(agent.ageMs)}min, idle ${mins(agent.idleMs)}min` +
-        (agent.tools.length ? ` · MCP: ${agent.tools.join(', ')}` : '') +
-        (agent.answering ? ' · answering now' : ''),
-    );
-  }
-
-  lines.push(
-    `**Transcription:** ${cfg.sttProvider}` +
-      (cfg.sttProvider === 'openai' && !cfg.openaiApiKey ? ' ⚠️ no API key set' : ''),
-  );
-
-  return interaction.reply(ephemeral(lines.join('\n')));
-}
-
 // --- helpers ----------------------------------------------------------------
 
 // --- music ------------------------------------------------------------------
@@ -358,12 +258,24 @@ const requester = (interaction) =>
 const noteFrom = (interaction) => ({ guild: () => interaction.guild });
 
 async function cmdPlay(interaction) {
-  const session = requireSession(interaction);
-  if (!session) return;
   const query = interaction.options.getString('query')?.trim();
   if (!query) return interaction.reply(ephemeral('Tell me what to play.'));
-  // Resolving a search takes seconds — past Discord's 3s reply deadline.
-  await interaction.deferReply();
+  // Not in a channel yet: the one the caller is in is the obvious place, and
+  // asking them to run /mj join first is a second command for no reason.
+  let session = sessionManager.get(interaction.guildId);
+  if (!session) {
+    const channel = interaction.member?.voice?.channel;
+    if (!channel) return interaction.reply(ephemeral('Join a voice channel first, so I know where to play it.'));
+    const perms = channel.permissionsFor(interaction.guild.members.me);
+    if (!perms?.has(PermissionFlagsBits.Connect) || !perms?.has(PermissionFlagsBits.Speak)) {
+      return interaction.reply(ephemeral(`I need **Connect** and **Speak** permissions in ${channel}.`));
+    }
+    await interaction.deferReply();
+    session = await sessionManager.join(channel);
+  } else {
+    // Resolving a search takes seconds — past Discord's 3s reply deadline.
+    await interaction.deferReply();
+  }
   const who = requester(interaction);
   let result;
   try {
