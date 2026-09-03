@@ -146,8 +146,7 @@ and a value that does not parse is refused with the accepted options named.
 Changing `thinking`, `model`, `fast model`, `web search`, `tool rounds` or
 `folders` starts a new agent session and discards the conversation so far;
 the tool says so in its reply. Turning `listening` off self-deafens the bot,
-which then cannot hear itself being turned back on: `/mj listen` and the panel
-both undo it.
+which then cannot hear itself being turned back on: the panel undoes it.
 
 ## Standing instructions
 
@@ -210,13 +209,10 @@ web search. The SDK's file and shell tools are denied.
 | --- | --- |
 | `/mj join [channel]` | Join your channel, or a named one |
 | `/mj leave` | Disconnect |
-| `/mj listen` | Start listening: un-deafens and begins buffering |
-| `/mj deaf` | Stop listening and clear the buffer |
 | `/mj ask <question>` | Ask without saying the name |
 | `/mj transcript` | Print recent transcribed speech |
 | `/mj shush` | Stop the current reply |
-| `/mj status` | Connection, listening state, buffer contents |
-| `/mj play <query>` | Play a song, artist, album or URL, or queue it behind what is on. Same player as the voice tools, no model in between |
+| `/mj play <query>` | Play a song, artist, album or URL, or queue it behind what is on. Joins the channel you are in if the bot is in none. Same player as the voice tools, no model in between |
 | `/mj skip`, `/mj pause`, `/mj resume`, `/mj stop` | Control the music |
 | `/mj queue` | What is playing and what is next |
 
@@ -234,5 +230,6 @@ Opus and played without re-encoding, so the bot cannot adjust its own level.
 - `data/trace.log`: only when `MIRROR_TRACE` points there.
 
 Audio never reaches the disk. It is held in memory for `bufferSeconds` and
-expires; `/mj deaf` clears it. The per-answer statistics the panel shows keep
+expires; turning listening off in the panel clears it. To stop the bot
+hearing from inside Discord, server-deafen it in the voice channel. The per-answer statistics the panel shows keep
 which mode ran, which tools it used and the timings, never the text.
