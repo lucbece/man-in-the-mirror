@@ -57,9 +57,13 @@ case "$verb" in
     new=$IMAGE:$tag
     old=$(current_image)
 
-    # Registry token on stdin, if any. Never stored: logout at the end.
+    # Registry token on stdin, if any. Never stored: logout at the end. A
+    # bounded read, because over ssh stdin is a pipe even from a terminal
+    # and `cat` would sit there until Ctrl-D: a human typing
+    # `ssh deploy@host deploy <sha>` sends nothing, and gets on with it.
+    token=""
     if [ ! -t 0 ]; then
-      token=$(cat || true)
+      IFS= read -r -t 3 token || token=""
       if [ -n "${token:-}" ]; then
         echo "$token" | docker login ghcr.io -u "${GHCR_USER:-github-actions}" --password-stdin >/dev/null
         trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
