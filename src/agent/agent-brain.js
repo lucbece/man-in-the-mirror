@@ -21,11 +21,11 @@ import { trace, BlockCollector } from './trace.js';
 
 import { bot } from '../bot/index.js';
 import { config } from '../config.js';
-import { SYSTEM_PROMPT } from './brain.js';
+import { promptWithInstructions } from './brain.js';
+import { displayNameLookup } from './discord-tools.js';
 import { formatTranscript } from './stt.js';
 import { allowedToolsFor, parseDirectories, parseMcpServers } from './mcp.js';
 import { SentenceSplitter } from './sentences.js';
-import { customInstructionBlock } from './instructions.js';
 import { botToolsServer } from './tools/index.js';
 import { DATA_DIR } from '../paths.js';
 
@@ -94,6 +94,19 @@ class AgentError extends Error {}
  */
 function botClient() {
   return bot?.client ?? null;
+}
+
+/**
+ * Look a user id up to the name this guild calls them today, or nothing.
+ *
+ * Standing instructions store people by id, so this is what turns one back
+ * into a name at prompt time — in every brain, which is why it lives here
+ * next to the only client handle they can all reach. An id that resolves to
+ * nobody gets undefined and the caller falls back to the name stored beside
+ * it.
+ */
+export function guildNameResolver(guildId) {
+  return (userId) => displayNameLookup(botClient()?.guilds.cache.get(guildId))(userId);
 }
 
 /**
@@ -369,8 +382,10 @@ function buildSession(guildId) {
     turn,
     options: {
       model,
-      systemPrompt:
-        SYSTEM_PROMPT + AGENT_PROMPT_EXTRA + customInstructionBlock(config.get('customInstructions')),
+      // Built once, with the session: names are re-read whenever the session
+      // is, which is every configuration change and every rejoin. A rename
+      // mid-session is not picked up until then — see AUDIT.md.
+      systemPrompt: promptWithInstructions(guildId, AGENT_PROMPT_EXTRA),
       mcpServers: servers,
       // The fence, both directions: only the user's MCP tools (plus web
       // search) are approved, and the built-ins that touch this machine are

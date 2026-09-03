@@ -231,7 +231,6 @@ reading `voiced NaNs`.
 
 Package: WP3
 
-
 ## Low
 
 - **`docker compose up` on the server warns that the volumes "already exist
@@ -241,6 +240,32 @@ Package: WP3
   Creating them in `deploy/cloud-init.yaml` with
   `--label com.docker.compose.project=mirror --label com.docker.compose.volume=<name>`
   should silence it; unverified because it needs a fresh server to test.
+
+### An instruction about someone renames itself only when the session does
+
+Person tokens are rendered when the prompt is built, and the agent's prompt is
+built once per session (`src/agent/agent-brain.js`, `buildSession`). A session's
+signature deliberately excludes standing instructions, so someone who renames
+themselves mid-call is still called by the old name in the prompt until the
+session is rebuilt — a configuration change, a rejoin, or thirty minutes idle.
+The chat and cascade legs have no such window because they build the prompt per
+question. Nobody has hit this in use, and the fix is not obviously free: adding
+display names to the signature would restart the session, and the conversation
+with it, every time somebody edits their nickname for a joke.
+
+Package: WP3
+
+### The panel shows the raw token, not the name
+
+The Thinking tab renders `customInstructions` verbatim, so an instruction saved
+by voice reads `a <@481920374856102938|Fede> decile tío Fede` there. It is
+editable and it round-trips, and the token is arguably the honest thing to show
+someone editing the stored form — but it is not what the room hears, and nobody
+has been told what the angle brackets are for. Either the panel renders through
+`renderInstruction` and hides the ids, or `docs/configuration.md` explains the
+syntax. It currently does neither.
+
+Package: WP3
 
 ### Whisper's invented-phrase lists only know Spanish and English
 
