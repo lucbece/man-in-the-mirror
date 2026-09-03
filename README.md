@@ -91,13 +91,15 @@ talking before it reads the window. Both are explained in
 In agent and cascade modes the model can search the web, set spoken reminders
 that survive a restart, move, mute and disconnect people (checking the
 permissions of whoever asked, not its own), play music through its own voice
-connection, keep standing instructions, change its own settings by voice, and
-use any MCP server you configure. Every tool, what it checks and what it
+connection, go into music mode (it keeps listening and acting, only the voice
+stops, until told otherwise), keep standing instructions that follow a person
+across display-name changes, change its own settings by voice, and use any
+MCP server you configure. Every tool, what it checks and what it
 writes is listed in [docs/configuration.md](docs/configuration.md).
 
-Slash commands: `/mj join`, `leave`, `ask`, `transcript`, `shush`, and for
-music `play` (which joins your channel if needed), `skip`, `pause`, `resume`,
-`stop`, `queue`.
+Slash commands: `/mj join`, `leave`, `ask`, `transcript`, `shush`, `mute`,
+`unmute`, and for music `play` (which joins your channel if needed), `skip`,
+`pause`, `resume`, `stop`, `queue`.
 
 ## Running it on a server
 
