@@ -121,11 +121,13 @@ ssh deploy@<ip> 'docker run --rm -v mirror_data:/data -v /tmp:/src alpine \
 Then the first deploy, by hand, of the commit you want running:
 
 ```bash
-ssh deploy@<ip> deploy $(git rev-parse mirror)
+ssh deploy@<ip> /opt/mirror/deploy.sh deploy $(git rev-parse mirror)
 ```
 
 `deploy.sh` pulls the image built by CI for that commit, starts it, and waits
-for the healthcheck. From here on, pushes do this for you.
+for the healthcheck. From here on, pushes do this for you. (The bare
+`deploy <sha>` form is what the Actions key sends; its forced command adds
+the path. Your key has no forced command, so you name the script.)
 
 If no image exists yet on GHCR (the workflow has not run on `mirror` once),
 build it on the server from a branch tarball; 85 seconds on a CX23:
@@ -200,7 +202,7 @@ A rollback is a deploy of an older commit. Either run the workflow by hand
 from the Actions tab with the commit in the `sha` box, or from a shell:
 
 ```bash
-ssh deploy@<ip> deploy <full sha>
+ssh deploy@<ip> /opt/mirror/deploy.sh deploy <full sha>
 ```
 
 Only commits that CI has built exist in GHCR; anything pushed to `mirror`

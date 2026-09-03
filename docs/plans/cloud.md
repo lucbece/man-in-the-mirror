@@ -307,7 +307,7 @@ answers on port 3000 from outside.
 
 **Don't.** Expose the panel behind basic auth "for now". Tunnel or nothing.
 
-### CD2 — Deploy on push · Status: first start by hand 2026-09-03 — image built on the server from the branch tarball and started with `docker compose up -d`; `deploy.sh status` and the forced command verified with the Actions key (`status` answers, anything else gets the usage line). The push path itself runs the first time PR #1 merges into `mirror`
+### CD2 — Deploy on push · Status: done 2026-09-03 — three pushes to `mirror` deployed themselves (check → image → roll, ~2 min each); the `[deploy]` marker lands in the log; a manual `deploy.sh deploy <sha>` with the admin key works without a token, so a rollback is one command. Rollback-on-unhealthy is written and reviewed, not yet exercised by a real bad build
 
 **Goal.** A green CI run on the deploy branch becomes the running instance
 within a few minutes, and a bad one rolls back by itself.
@@ -342,7 +342,7 @@ Actions run red.
 **Don't.** Deploy on `main`. Store keys anywhere but GitHub secrets and the
 server's `.env`.
 
-### CD3 — Log retention and reading · Status: written 2026-09-03 — rotation in `compose.yaml`, `deploy/logs.sh` with `since <sha>` over the `[deploy]` marker, sidecar block commented out. Retention sizing waits for a week of real log
+### CD3 — Log retention and reading · Status: done 2026-09-03 except sizing — `logs.sh since <sha>` verified against a real deploy marker; rotation is 20 files × 20 MB, to be resized after a week of real log
 
 **Goal.** Six weeks of operational log and trace readable from a shell, and a
 way to diff behaviour across a deploy.
@@ -361,7 +361,7 @@ way to diff behaviour across a deploy.
 **Done when.** After two deploys, `logs.sh since <first sha>` prints only
 what the second version did.
 
-### CD4 — Cutover and cleanup · Status: planned
+### CD4 — Cutover and cleanup · Status: cut over 2026-09-03 — the desktop process is stopped and stays stopped; the instance follows `mirror`. Left: a week of real calls, the first invoice into this file, and the two Done-when items that need a human in the call
 
 **Goal.** The desktop stops being a host.
 

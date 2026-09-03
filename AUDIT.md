@@ -41,6 +41,15 @@ Nothing open.
 
 ## Low
 
+- **`docker compose up` on the server warns that the volumes "already exist
+  but were not created by Docker Compose".** Cosmetic: cloud-init creates
+  `mirror_data` and `mirror_runtime` before the first `up` so `config.json`
+  has somewhere to land, and compose recognises its own volumes by label.
+  Creating them in `deploy/cloud-init.yaml` with
+  `--label com.docker.compose.project=mirror --label com.docker.compose.volume=<name>`
+  should silence it; unverified because it needs a fresh server to test.
+
+
 ### The wake chain is measured now, but not yet tuned
 
 `answers.js` records `beforeAskMs` — from the moment someone stops talking to
