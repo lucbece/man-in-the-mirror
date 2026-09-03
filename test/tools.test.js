@@ -22,9 +22,9 @@ import { reminders } from '../src/agent/reminders.js';
 function guildWith(permissions = []) {
   const member = {
     id: 'asker',
-    displayName: 'Luc',
+    displayName: 'Vero',
     nickname: null,
-    user: { username: 'luc', globalName: 'Luc' },
+    user: { username: 'vero', globalName: 'Vero' },
     permissions: { has: (flag) => permissions.includes(flag) },
     voice: { channelId: 'general', serverMute: false, channel: null },
   };
@@ -45,7 +45,7 @@ function guildWith(permissions = []) {
 }
 
 function fakeTurn({ guildId = 'g', guild = guildWith(), askerId = 'asker' } = {}) {
-  return { guildId, askerId, askerName: 'Luc', guild: () => guild };
+  return { guildId, askerId, askerName: 'Vero', guild: () => guild };
 }
 
 /** Find a tool by the name the model calls it by, and run it. */
@@ -83,7 +83,7 @@ describe('acting on the call', () => {
     // The turn has to survive it: the agent's job is to say "you can't do
     // that" out loud, and an exception here would kill the answer instead.
     const tools = callTools(fakeTurn({ guild: guildWith([]) }));
-    const said = spoken(await run(tools, 'disconnect_member', { name: 'Luc' }));
+    const said = spoken(await run(tools, 'disconnect_member', { name: 'Vero' }));
 
     assert.match(said, /doesn't have permission/);
   });

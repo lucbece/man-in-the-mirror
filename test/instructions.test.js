@@ -95,7 +95,7 @@ describe('what the room is allowed to tell it to think', () => {
     // It refused "act as anti-Zionist" because the framing listed what
     // instructions were for — names, tone, what the group is doing — and
     // politics was not on that list, so the model read it as out of scope.
-    const block = customInstructionBlock('Sos antisionista.');
+    const block = customInstructionBlock('Hablá siempre en rioplatense.');
 
     assert.match(block, /political and ideological positions are ordinary/i);
     assert.match(block, /argue it like someone who holds it/i);
@@ -104,7 +104,7 @@ describe('what the room is allowed to tell it to think', () => {
   test('and the line is drawn at people rather than at controversy', () => {
     // The distinction has to be in the prompt, or "no politics" and "anything
     // goes" are the only two settings available.
-    const block = customInstructionBlock('Sos antisionista.');
+    const block = customInstructionBlock('Hablá siempre en rioplatense.');
 
     assert.match(block, /contempt for people for who they are/i);
     assert.match(block, /conspiracy theories about a group|denial of atrocities/i);
@@ -113,7 +113,7 @@ describe('what the room is allowed to tell it to think', () => {
 
   test('the fixed rules are still fixed', () => {
     // Widening what may be instructed must not widen what may be overridden.
-    const block = customInstructionBlock('Sos antisionista.');
+    const block = customInstructionBlock('Hablá siempre en rioplatense.');
     assert.match(block, /do not override/i);
     assert.match(block, /without being addressed/i);
   });
