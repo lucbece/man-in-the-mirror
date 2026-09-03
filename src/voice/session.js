@@ -545,9 +545,12 @@ export class VoiceSession extends EventEmitter {
   /** Cut off playback immediately. Backs a "stop talking" control. */
   shush() {
     // Cancel the queue first: stopping the player alone would just start the
-    // next sentence, which is the opposite of being asked to stop.
+    // next sentence, which is the opposite of being asked to stop. The queue
+    // is not cleared here: cancelling settles its `finished`, and that handler
+    // is what hands the mouth back to the music and resumes a paused track.
+    // Clearing it first made the handler bail, and a shush over a song left
+    // the song paused for good.
     this.speech?.cancel();
-    this.speech = null;
     this.player.stop(true);
     this.emit('update');
   }
