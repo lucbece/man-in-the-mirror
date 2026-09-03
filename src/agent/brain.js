@@ -8,7 +8,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 
 import { config } from '../config.js';
-import { AgentBrain } from './agent-brain.js';
+import { AgentBrain, guildNameResolver } from './agent-brain.js';
 import { CascadeBrain } from './cascade.js';
 import { SentenceSplitter } from './sentences.js';
 import { customInstructionBlock } from './instructions.js';
@@ -53,6 +53,22 @@ How to answer:
 - If your name came up but nobody was actually asking you anything, answer with a word or two and stop — "qué pasó", "acá estoy", "jaja". Do not explain that there was no question in it; that explanation is longer than the answer and it gets spoken.
 - The transcript comes from automatic speech recognition and will contain errors. If a word looks garbled, work with the likely meaning rather than quoting it back.
 - Do not include internal or system XML tags in your response.`;
+
+/**
+ * The system prompt a brain in this guild actually sends.
+ *
+ * All three brains build it the same way — fixed rules, whatever that mode
+ * adds, then the room's own standing instructions — and all three have to
+ * render the people written into those instructions through the same
+ * resolver. Rendering is what makes an instruction about someone keep working
+ * after they rename themselves: the model reads the name that also labels
+ * that person's lines in the transcript it is given.
+ *
+ * `resolve` is injectable so this can be exercised without a Discord client.
+ */
+export function promptWithInstructions(guildId, extra = '', resolve = guildNameResolver(guildId)) {
+  return SYSTEM_PROMPT + extra + customInstructionBlock(config.get('customInstructions'), resolve);
+}
 
 class BrainError extends Error {}
 
@@ -100,8 +116,10 @@ function claudeSupports(model) {
 }
 
 class ClaudeBrain {
-  constructor({ apiKey, model, webSearch }) {
+  constructor({ apiKey, model, webSearch, guildId }) {
     if (!apiKey) throw new BrainError('No Anthropic API key configured.');
+    // Only ever used to look people up by id when the prompt is built.
+    this.guildId = guildId ?? 'default';
     this.client = new Anthropic({ apiKey });
     this.model = model || DEFAULT_CLAUDE_MODEL;
     this.can = claudeSupports(this.model);
@@ -116,7 +134,7 @@ class ClaudeBrain {
     const stream = this.client.beta.messages.stream({
       model: this.model,
       max_tokens: MAX_TOKENS,
-      system: SYSTEM_PROMPT + customInstructionBlock(config.get('customInstructions')),
+      system: promptWithInstructions(this.guildId),
       // Low effort keeps latency down; a voice reply that lands four seconds
       // late has already lost the moment. Not every model accepts it.
       ...(this.can.effort ? { output_config: { effort: 'low' } } : {}),
@@ -215,8 +233,9 @@ const DEFAULT_MODEL = 'gpt-4.1';
  * characters.
  */
 class OpenAiBrain {
-  constructor({ apiKey, model, webSearch }) {
+  constructor({ apiKey, model, webSearch, guildId }) {
     if (!apiKey) throw new BrainError('No OpenAI API key configured.');
+    this.guildId = guildId ?? 'default';
     this.apiKey = apiKey;
     this.webSearch = webSearch;
     this.model = model || DEFAULT_MODEL;
@@ -240,7 +259,7 @@ class OpenAiBrain {
       },
       body: JSON.stringify({
         model: this.model,
-        instructions: SYSTEM_PROMPT + customInstructionBlock(config.get('customInstructions')),
+        instructions: promptWithInstructions(this.guildId),
         input: buildUserMessage(context),
         ...(this.webSearch ? { tools: [{ type: 'web_search' }] } : {}),
         max_output_tokens: 400,
@@ -332,12 +351,14 @@ export function createBrain({ guildId } = {}) {
       apiKey: config.get('openaiApiKey'),
       model,
       webSearch: config.get('webSearch'),
+      guildId: guildId ?? 'default',
     });
   }
   return new ClaudeBrain({
     apiKey: config.get('anthropicApiKey'),
     model,
     webSearch: config.get('webSearch'),
+    guildId: guildId ?? 'default',
   });
 }
 

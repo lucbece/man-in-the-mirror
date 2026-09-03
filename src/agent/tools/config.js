@@ -16,17 +16,62 @@ import { z } from 'zod';
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 
 import { config } from '../../config.js';
-import { DiscordToolError, requireOwnerish } from '../discord-tools.js';
+import {
+  DiscordToolError,
+  displayNameLookup,
+  rawNamesOf,
+  requireOwnerish,
+  voiceMembers,
+} from '../discord-tools.js';
 import {
   InstructionError,
   addInstruction,
-  parseInstructions,
+  linkPeople,
   removeInstruction,
+  renderInstructions,
   serialiseInstructions,
 } from '../instructions.js';
 import { mergeMcpServer, parseDirectories, parseMcpServers } from '../mcp.js';
 import { describeSettings, planChange, settingsSnapshot } from '../settings.js';
 import { discordTool, speakableTool } from './wrappers.js';
+
+/**
+ * Who to look for in an instruction that is being saved.
+ *
+ * Whoever the model named explicitly comes first — it is answering a question
+ * about who it meant, and that beats a guess from the roster — followed by
+ * everyone currently in a voice channel. The roster is the candidate set for
+ * the same reason it is everywhere else in this file: the bot does not carry
+ * the Guild Members intent, so people in voice are who it can actually see,
+ * and they are also the only people an instruction said out loud is plausibly
+ * about.
+ */
+function peopleToLink(guild, explicit) {
+  const members = guild ? voiceMembers(guild) : [];
+  const byId = new Map(members.map((m) => [m.id, m]));
+  const list = [];
+
+  for (const entry of explicit ?? []) {
+    const userId = String(entry?.userId ?? '').trim();
+    // A model that answers this with a name rather than an id would otherwise
+    // write a token nothing can ever resolve.
+    if (!/^\d+$/.test(userId)) continue;
+    const member = byId.get(userId) ?? guild?.members.cache.get(userId) ?? null;
+    const name = String(entry?.name ?? '').trim();
+    list.push({
+      userId,
+      displayName: member?.displayName ?? name,
+      names: [name, ...(member ? rawNamesOf(member) : [])].filter(Boolean),
+      preferred: true,
+    });
+  }
+
+  for (const member of members) {
+    if (list.some((p) => p.userId === member.id)) continue;
+    list.push({ userId: member.id, displayName: member.displayName, names: rawNamesOf(member) });
+  }
+  return list;
+}
 
 export function configTools(turn) {
   return [
@@ -190,12 +235,34 @@ export function configTools(turn) {
           instruction: z
             .string()
             .describe('The instruction, written as a rule for yourself, in the speaker\'s language.'),
+          people: z
+            .array(
+              z.object({
+                name: z.string().describe('The name exactly as it is written in the instruction.'),
+                userId: z.string().describe('That person\'s Discord user id, digits only.'),
+              }),
+            )
+            .optional()
+            .describe(
+              'Who the instruction is about, when the name alone would be ambiguous — two people ' +
+                'answering to the same name, or someone referred to by a nickname the roster does ' +
+                'not list. Names that plainly match one person in the call are linked for you, so ' +
+                'this is only needed when who_is_in_voice shows the name could be more than one ' +
+                'person. Ids come from who_is_in_voice.',
+            ),
         },
-        async ({ instruction }) => {
+        async ({ instruction, people }) => {
           try {
-            const list = addInstruction(config.get('customInstructions'), instruction);
+            const guild = turn.guild();
+            // Names are pinned to ids here, at the one moment when the person
+            // is demonstrably in the room and the name demonstrably refers to
+            // them. Doing it later — from the panel, or on a rename — would be
+            // guessing about a sentence nobody is around to explain.
+            const linked = linkPeople(instruction, peopleToLink(guild, people));
+            const resolve = displayNameLookup(guild);
+            const list = addInstruction(config.get('customInstructions'), linked, resolve);
             config.update({ customInstructions: serialiseInstructions(list) });
-            console.log(`[instructions] added #${list.length}: "${instruction}"`);
+            console.log(`[instructions] added #${list.length}: "${linked}"`);
             return {
               content: [
                 {
@@ -215,7 +282,13 @@ export function configTools(turn) {
         'List the standing instructions currently in effect, with their numbers.',
         {},
         async () => {
-          const list = parseInstructions(config.get('customInstructions'));
+          // Rendered, never raw: this is read out loud, and a token read aloud
+          // is a string of digits. It also has to come back as the sentence
+          // somebody would say to have it forgotten.
+          const list = renderInstructions(
+            config.get('customInstructions'),
+            displayNameLookup(turn.guild()),
+          );
           return {
             content: [
               {
@@ -234,7 +307,11 @@ export function configTools(turn) {
         { number: z.number().describe('Which one to remove, counting from 1.') },
         async ({ number }) => {
           try {
-            const { list, removed } = removeInstruction(config.get('customInstructions'), number);
+            const { list, removed } = removeInstruction(
+              config.get('customInstructions'),
+              number,
+              displayNameLookup(turn.guild()),
+            );
             config.update({ customInstructions: serialiseInstructions(list) });
             console.log(`[instructions] removed: "${removed}"`);
             return { content: [{ type: 'text', text: `Removed: ${removed}` }] };

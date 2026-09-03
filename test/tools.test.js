@@ -7,6 +7,8 @@ import { configTools } from '../src/agent/tools/config.js';
 import { reminderTools } from '../src/agent/tools/reminders.js';
 import { botToolsServer } from '../src/agent/tools/index.js';
 import { reminders } from '../src/agent/reminders.js';
+import { config } from '../src/config.js';
+import { promptWithInstructions } from '../src/agent/brain.js';
 
 /**
  * These were unreachable until the catalogue came out of agent-brain.js.
@@ -155,5 +157,134 @@ describe('reminders', () => {
       spoken(await run(tools, 'set_reminder', { delay_minutes: 60 * 48, message: 'pasado' })),
       /twenty-four hours/i,
     );
+  });
+});
+
+/**
+ * A call with real people in it, so an instruction saved by voice has someone
+ * to be pinned to. Display names and usernames differ on purpose: the whole
+ * feature is about which of the two survives a rename.
+ */
+function callWith(people) {
+  const members = people.map(({ id, displayName, username }) => ({
+    id,
+    displayName,
+    nickname: null,
+    user: { username, globalName: displayName },
+    permissions: { has: () => true },
+    voice: { channelId: 'general', serverMute: false, channel: null },
+  }));
+  const channel = {
+    id: 'general',
+    name: 'general',
+    isVoiceBased: () => true,
+    members: new Map(members.map((m) => [m.id, m])),
+  };
+  for (const m of members) m.voice.channel = channel;
+  return {
+    channels: { cache: new Map([['general', channel]]) },
+    members: {
+      cache: new Map(members.map((m) => [m.id, m])),
+      me: { permissions: { has: () => true } },
+    },
+  };
+}
+
+const FEDE = '481920374856102938';
+const PATO = '102938475601928374';
+
+describe('standing instructions that follow the person', () => {
+  /** These write to the real config, so put it back whatever happens. */
+  function keepInstructions(t) {
+    const before = config.get('customInstructions');
+    t.after(() => config.update({ customInstructions: before }));
+    config.update({ customInstructions: '' });
+  }
+
+  test('pins a name said out loud to the person in the call who has it', async (t) => {
+    keepInstructions(t);
+    const guild = callWith([
+      { id: FEDE, displayName: 'Fede', username: 'fedecito' },
+      { id: PATO, displayName: 'Pato', username: 'patoo' },
+    ]);
+    const tools = configTools(fakeTurn({ guild }));
+
+    await run(tools, 'remember_instruction', { instruction: 'a Fede decile tío Fede' });
+
+    // Stored with the id, so it survives him renaming himself…
+    assert.equal(config.get('customInstructions'), `a <@${FEDE}|Fede> decile tío Fede`);
+    // …and only the first mention: the second is the nickname, not the person.
+    assert.equal(config.get('customInstructions').match(/<@/g).length, 1);
+  });
+
+  test('leaves alone a name that is nobody in the call', async (t) => {
+    keepInstructions(t);
+    const guild = callWith([{ id: FEDE, displayName: 'Fede', username: 'fedecito' }]);
+    const tools = configTools(fakeTurn({ guild }));
+
+    await run(tools, 'remember_instruction', { instruction: 'a Marco tratalo de usted' });
+    assert.equal(config.get('customInstructions'), 'a Marco tratalo de usted');
+  });
+
+  test('takes the model\'s word for who it meant when it says so', async (t) => {
+    keepInstructions(t);
+    // Two people answer to Fede; the roster alone cannot say which.
+    const guild = callWith([
+      { id: FEDE, displayName: 'Fede', username: 'fedecito' },
+      { id: PATO, displayName: 'Fede', username: 'federicoo' },
+    ]);
+    const tools = configTools(fakeTurn({ guild }));
+
+    await run(tools, 'remember_instruction', {
+      instruction: 'a Fede no le sigas la corriente',
+      people: [{ name: 'Fede', userId: PATO }],
+    });
+    assert.equal(config.get('customInstructions'), `a <@${PATO}|Fede> no le sigas la corriente`);
+  });
+
+  test('reads them back as names, and forgets one by the line it read out', async (t) => {
+    keepInstructions(t);
+    const guild = callWith([{ id: FEDE, displayName: 'Fede', username: 'fedecito' }]);
+    await run(configTools(fakeTurn({ guild })), 'remember_instruction', {
+      instruction: 'a Fede decile tío Fede',
+    });
+
+    // He renames himself. The stored line does not change; what the room
+    // hears does.
+    const renamed = callWith([{ id: FEDE, displayName: 'Federico', username: 'fedecito' }]);
+    const tools = configTools(fakeTurn({ guild: renamed }));
+
+    const listed = spoken(await run(tools, 'list_instructions'));
+    assert.equal(listed, '1. a Federico decile tío Fede');
+
+    const forgotten = spoken(await run(tools, 'forget_instruction', { number: 1 }));
+    assert.equal(forgotten, 'Removed: a Federico decile tío Fede');
+    assert.equal(config.get('customInstructions'), '');
+  });
+
+  test('with nobody in the call it is still just an instruction', async (t) => {
+    keepInstructions(t);
+    const tools = configTools({ guildId: 'g', askerId: null, guild: () => null });
+
+    await run(tools, 'remember_instruction', { instruction: 'Hablá siempre en rioplatense.' });
+    assert.equal(config.get('customInstructions'), 'Hablá siempre en rioplatense.');
+    assert.match(spoken(await run(tools, 'list_instructions')), /1\. Hablá siempre en rioplatense\./);
+  });
+
+  test('the prompt a brain sends carries the current name, not the stored one', async (t) => {
+    keepInstructions(t);
+    const guild = callWith([{ id: FEDE, displayName: 'Fede', username: 'fedecito' }]);
+    await run(configTools(fakeTurn({ guild })), 'remember_instruction', {
+      instruction: 'a Fede decile tío Fede',
+    });
+
+    // The transcript labels his lines with whatever the guild calls him now,
+    // so the prompt has to use the same word or the model cannot join them up.
+    const prompt = promptWithInstructions('g', '', (id) => (id === FEDE ? 'Federico' : undefined));
+    assert.match(prompt, /1\. a Federico decile tío Fede/);
+    assert.ok(!prompt.includes('<@'), 'no token may reach the model');
+
+    // An id that is nobody any more still reads as the name it was saved with.
+    assert.match(promptWithInstructions('g', '', () => undefined), /1\. a Fede decile tío Fede/);
   });
 });
