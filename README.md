@@ -87,6 +87,17 @@ and `applications.commands` scopes and the **Connect** and **Speak**
 permissions. Add **Move Members** and **Mute Members** to enable the call
 management tools. No privileged intents are required.
 
+### Running in Docker
+
+```bash
+docker compose up --build
+```
+
+Same bot, same panel, with `data/` and `runtime/` on named volumes so they
+survive a new image. The panel stays on loopback; the keys never enter the
+image. `docs/deploy.md` has the details, and how a push to `mirror` becomes
+the running instance on a server.
+
 ## How it hears you
 
 ```
