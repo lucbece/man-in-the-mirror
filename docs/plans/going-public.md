@@ -120,7 +120,7 @@ overlap.
 Order: WP0 first, then WP1 — it is the seam the rest hang from. WP2 and WP3
 are independent of each other and of WP1 except where noted. WP4–WP7 after.
 
-### WP0 — Cut the branch, write the audit · Status: planned
+### WP0 — Cut the branch, write the audit · Status: done 2026-09-02 — `mirror` pushed at 4f258a0 plus the two commits after it; `AUDIT.md` has 17 entries, each assigned a package
 
 **Do.** Create `mirror` from `main` and push it. Then a read-only pass over
 `src/` producing `AUDIT.md` entries in its own format (symptom, where, why)
@@ -196,9 +196,10 @@ to English rather than to Spanish.
 
 **Files.** `src/lang/*` (new), `filler.js`, `wake.js`, `sentences.js`,
 `spoken-guards.js`, `cascade.js` (regex tables only — the prompt parts are
-WP1's), `piper.js`, `config.js`, `web/public/*`; tests: existing ones move
-with their tables, plus `test/lang.test.js` asserting every pack exports
-every key.
+WP1's), `piper.js`, `config.js`, `web/public/*`, and per the audit
+`stt.js` (the invented-phrase lists) and `tools/music.js` (the Spanish
+written to the music channel); tests: existing ones move with their tables,
+plus `test/lang.test.js` asserting every pack exports every key.
 
 **Done when.** With `languages: 'en'` no Spanish string is reachable at
 runtime (grep the composed prompts and the filler cache in a test); with
@@ -225,8 +226,11 @@ that key unused.
 - `musicChannel` and the Piper voice default move under their feature/pack.
 
 **Files.** `config.js`, `settings.js`, `agent-brain.js` (tool list),
-`tools/index.js`, `commands.js`, `web/public/*`, `web/server.js`; tests:
-`settings.test.js`, `tools.test.js`, `commands.test.js`, `web-server.test.js`.
+`tools/index.js`, `commands.js`, `web/public/*`, `web/server.js`,
+`agent/index.js` (the `ask()` split and `SILENT_TOOLS`), `voice/manager.js`,
+`voice/music.js` and `piper.js` (the audit's music-pause and voice-list
+entries); tests: `settings.test.js`, `tools.test.js`, `commands.test.js`,
+`web-server.test.js`, `ask.test.js`, `music.test.js`.
 
 **Also.** Split `ask()`: the spoken guards, the filler policy and the
 timings become three small modules with their own tests, and `ask()` becomes
