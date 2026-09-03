@@ -114,7 +114,7 @@ Discord delivers one audio stream per speaker, so speaker attribution requires
 no diarization:
 
 ```
-[21:14:02] Luc: ...the dayZ servers were down all weekend
+[21:14:02] Vero: ...the dayZ servers were down all weekend
 [21:14:09] Marco: that's not what he said though
 ```
 

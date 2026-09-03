@@ -37,13 +37,13 @@ describe('asides written for a reader that has no reader', () => {
 });
 
 describe('reasoning read out loud', () => {
-  const asked = 'espejo, che, escuchá lo que dijo luc';
+  const asked = 'espejo, che, escuchá lo que dijo vero';
 
   test('the three that were actually heard in the channel', () => {
     for (const leaked of [
-      'I don\'t see an actual question here — luc just said "4. Mueh", which looks like they are still talking to ran, or testing the mic.',
+      'I don\'t see an actual question here — vero just said "4. Mueh", which looks like they are still talking to ran, or testing the mic.',
       'I hear the setup to a joke, but Dr Luchi has not finished asking yet — they are mid-sentence.',
-      'Noco just said "wtf mi horror". That is not really a question directed at me, so there is nothing to answer.',
+      'Nico just said "wtf mi horror". That is not really a question directed at me, so there is nothing to answer.',
     ]) {
       assert.equal(looksLikeLeakedReasoning(leaked, asked), true, leaked.slice(0, 40));
     }
@@ -52,7 +52,7 @@ describe('reasoning read out loud', () => {
   test('the fourth, on a question made only of small words', () => {
     // The guard was in place and did not fire, because "Al fin y al cabo."
     // was classified as English — see filler.test.js. This pins the pair.
-    const said = 'I need to work out what ran is actually asking here.';
+    const said = 'I need to work out what fede is actually asking here.';
     assert.equal(looksLikeLeakedReasoning(said, 'Al fin y al cabo.'), true);
     assert.equal(looksLikeLeakedReasoning(said, 'Espejo, la concha de tu madre.'), true);
   });

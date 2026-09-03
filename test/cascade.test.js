@@ -30,7 +30,7 @@ function brain(deps) {
   return new CascadeBrain({ guildId: 'g', deps });
 }
 
-const ask = (question) => ({ question, askedBy: 'Luc', transcript: '', utterances: [] });
+const ask = (question) => ({ question, askedBy: 'Vero', transcript: '', utterances: [] });
 
 describe('the fast leg keeping a turn', () => {
   beforeEach(resetCascade);

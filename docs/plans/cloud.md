@@ -5,7 +5,7 @@ the **Status** line on each one is the log.
 
 ## Where this starts from
 
-The bot runs as `node src/index.js` on Luc's desktop, started by hand, with the
+The bot runs as `node src/index.js` on the desktop, started by hand, with the
 trace tailed in a terminal window. When the desktop sleeps, the bot leaves the
 call. Three things are wanted:
 
@@ -223,7 +223,7 @@ The deploy key is an ed25519 key generated for this purpose alone, and its
 line in the server's `authorized_keys` carries a forced command:
 `command="/opt/mirror/deploy.sh",no-port-forwarding,no-pty,...`. Whoever holds
 that key can run the deploy script with one argument, the image tag, and
-nothing else. Luc's own key is a separate line with no restriction.
+nothing else. The admin key is a separate line with no restriction.
 
 Rotation: an app key through the panel or by editing `config.json`; the
 deploy key by generating a new pair, replacing the `authorized_keys` line and
@@ -283,7 +283,7 @@ yt-dlp binary. `npm run check` green.
 
 **Don't.** Change defaults for laptop users; everything here is additive.
 
-### CD1 — Host provisioning · Status: done 2026-09-03 — CX23 `mirror` in Falkenstein, 128.140.81.3, from `deploy/cloud-init.yaml` (second attempt: the first boot failed on a file owned by a user that did not exist yet, fixed with `defer`). `config.json`, reminders and the filler cache copied into `mirror_data` over ssh. `DEPLOY_HOST` and the pinned host key on the `production` environment
+### CD1 — Host provisioning · Status: done 2026-09-03 — CX23 `mirror` in Falkenstein, <ip>, from `deploy/cloud-init.yaml` (second attempt: the first boot failed on a file owned by a user that did not exist yet, fixed with `defer`). `config.json`, reminders and the filler cache copied into `mirror_data` over ssh. `DEPLOY_HOST` and the pinned host key on the `production` environment
 
 **Goal.** A server that a fresh `cloud-init` brings to "ready for compose" with
 no hand steps, documented so it can be rebuilt in ten minutes.

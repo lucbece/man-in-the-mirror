@@ -264,9 +264,8 @@ without meeting the word "cascade".
 
 - `LICENSE` — decide (MIT is the default for this kind of project); add the
   `license` field to `package.json`.
-- Test fixtures: keep the real sentences (they are the evidence) but replace
-  the real people's names with placeholders — `luc`, `ran`, `Maki`, `Noco`
-  appear in ten test files.
+- Test fixtures keep the real sentences (they are the evidence); the names in
+  them are placeholders, kept that way.
 - `.github/`: issue template (bot, provider, `brainKind`, logs), PR template
   pointing at `npm run check`.
 - Release notes template mentioning that a profile from an earlier version

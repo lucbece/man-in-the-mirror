@@ -212,7 +212,7 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, vi
       // signal.
       //
       // And once it starts, the rest of the turn goes with it. The one heard
-      // in a real call opened with "I need to work out what ran is actually
+      // in a real call opened with "I need to work out what fede is actually
       // asking here" and went on for eight sentences: "Looking at the
       // context:", then bullet points quoting the Spanish it was analysing.
       // Judged one at a time, only the first is clearly English; the rest are

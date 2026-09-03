@@ -47,7 +47,7 @@ describe('the queue', () => {
   test('the first request starts, the second waits', async () => {
     const music = player();
 
-    const first = await music.add('beat it', 'Luc');
+    const first = await music.add('beat it', 'Vero');
     assert.equal(first.startedNow, true);
     assert.equal(music.playing, true);
 
@@ -60,16 +60,16 @@ describe('the queue', () => {
     const music = player();
     assert.equal(music.skip(), null, 'nothing playing');
 
-    await music.add('beat it', 'Luc');
+    await music.add('beat it', 'Vero');
     const skipped = music.skip();
     assert.equal(skipped.title, 'Track 1');
   });
 
   test('stopping clears the queue, unlike skipping', async () => {
     const music = player();
-    await music.add('a', 'Luc');
-    await music.add('b', 'Luc');
-    await music.add('c', 'Luc');
+    await music.add('a', 'Vero');
+    await music.add('b', 'Vero');
+    await music.add('c', 'Vero');
     assert.equal(music.queue.length, 2);
 
     music.stop();
@@ -80,10 +80,10 @@ describe('the queue', () => {
 
   test('remembers who asked for what, since the room will ask', async () => {
     const music = player();
-    await music.add('a', 'Luc');
+    await music.add('a', 'Vero');
     await music.add('b', 'Marco');
 
-    assert.equal(music.current.requestedBy, 'Luc');
+    assert.equal(music.current.requestedBy, 'Vero');
     assert.equal(music.queue[0].requestedBy, 'Marco');
   });
 });
@@ -93,7 +93,7 @@ describe('sharing one mouth with the talking voice', () => {
     // Answering a question must not cost you the song: paused, not stopped,
     // so it picks up mid-bar.
     const music = player();
-    await music.add('beat it', 'Luc');
+    await music.add('beat it', 'Vero');
 
     assert.equal(music.pauseForSpeech(), true);
     assert.equal(music.pausedForSpeech, true);
@@ -112,8 +112,8 @@ describe('sharing one mouth with the talking voice', () => {
     // The player reports Idle on some pause transitions. Treating that as
     // "track finished" would skip a song every time somebody asked a question.
     const music = player();
-    await music.add('a', 'Luc');
-    await music.add('b', 'Luc');
+    await music.add('a', 'Vero');
+    await music.add('b', 'Vero');
     music.pauseForSpeech();
 
     music.player.emit(AudioPlayerStatus.Idle);
@@ -124,7 +124,7 @@ describe('sharing one mouth with the talking voice', () => {
 
   test('resuming twice is not an error', async () => {
     const music = player();
-    await music.add('a', 'Luc');
+    await music.add('a', 'Vero');
     music.pauseForSpeech();
     music.resumeAfterSpeech();
     assert.doesNotThrow(() => music.resumeAfterSpeech());
@@ -187,7 +187,7 @@ describe('editing the queue', () => {
     music.player.stop = () => true;
     music.player.pause = () => true;
     music.player.unpause = () => true;
-    music.queue = titles.map((title) => ({ title, requestedBy: 'Luc' }));
+    music.queue = titles.map((title) => ({ title, requestedBy: 'Vero' }));
     return music;
   }
 
@@ -301,33 +301,33 @@ describe('an album is its songs', () => {
     // under whatever is already playing.
     const music = busy();
 
-    const { queued, startedNow } = await music.addMany(['a', 'b', 'c', 'd'], 'Luc');
+    const { queued, startedNow } = await music.addMany(['a', 'b', 'c', 'd'], 'Vero');
 
     assert.equal(queued, 4);
     assert.equal(startedNow, false);
     assert.deepEqual(music.queue.map((t) => t.unresolved), [true, true, true, true]);
-    assert.deepEqual(music.queue.map((t) => t.requestedBy), ['Luc', 'Luc', 'Luc', 'Luc']);
+    assert.deepEqual(music.queue.map((t) => t.requestedBy), ['Vero', 'Vero', 'Vero', 'Vero']);
   });
 
   test('a title stands in until the real one is known', async () => {
     // The queue is readable straight away — now_playing has something to say
     // about what is coming, rather than four blanks.
     const music = busy();
-    await music.addMany(['Otherside Red Hot Chili Peppers'], 'Luc');
+    await music.addMany(['Otherside Red Hot Chili Peppers'], 'Vero');
 
     assert.match(music.queue[0].title, /Otherside/);
   });
 
   test('an empty track list is refused rather than queueing nothing', async () => {
-    await assert.rejects(() => busy().addMany([], 'Luc'), /Nothing to queue/);
-    await assert.rejects(() => busy().addMany(['  ', ''], 'Luc'), /Nothing to queue/);
+    await assert.rejects(() => busy().addMany([], 'Vero'), /Nothing to queue/);
+    await assert.rejects(() => busy().addMany(['  ', ''], 'Vero'), /Nothing to queue/);
   });
 
   test('a long album cannot overrun the queue limit', async () => {
     const music = busy();
     const { queued, dropped } = await music.addMany(
       Array.from({ length: 80 }, (_, i) => `track ${i}`),
-      'Luc',
+      'Vero',
     );
 
     assert.ok(queued <= 50, `queued ${queued}`);

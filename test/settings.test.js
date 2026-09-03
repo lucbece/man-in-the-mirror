@@ -147,8 +147,8 @@ describe('changing one', () => {
     // security boundary rather than a preference.
     assert.equal(findSetting('folders').ownerOnly, true);
     assert.equal(SETTINGS.filter((s) => s.ownerOnly).length, 1);
-    assert.equal(planChange(values(), 'folders', '/home/luc/notes').after, '/home/luc/notes');
-    assert.equal(planChange(values(), 'folders', 'C:\\Users\\luc\\notes').after, 'C:\\Users\\luc\\notes');
+    assert.equal(planChange(values(), 'folders', '/home/vero/notes').after, '/home/vero/notes');
+    assert.equal(planChange(values(), 'folders', 'C:\\Users\\vero\\notes').after, 'C:\\Users\\vero\\notes');
     assert.throws(() => planChange(values(), 'folders', 'la carpeta de documentos'), /full path/);
   });
 });
