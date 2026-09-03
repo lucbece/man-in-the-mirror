@@ -253,7 +253,7 @@ only, no agent). Each has a paragraph in `docs/profiles.md` describing who it
 is for. **Done when** each example boots into a working bot with only the
 three secrets added.
 
-### WP5 — Docs split · Status: planned
+### WP5 — Docs split · Status: done 2026-09-03 — README cut to a front page; `docs/configuration.md`, `docs/running.md`, `docs/design/` (one essay per topic, measurements dated), `docs/roadmap.md`, `CONTRIBUTING.md`; `agent-brain-plan.md` and `bot-as-mcp-server.md` folded in
 
 README becomes: what it is, download, run, make it yours (persona, languages,
 features, examples), configuration table, checks. The essays (cascade
@@ -264,7 +264,7 @@ answers cost, standing instructions, settings by voice) move to
 **Done when** a reader can reach a running, renamed bot from README alone
 without meeting the word "cascade".
 
-### WP6 — Repository hygiene · Status: planned
+### WP6 — Repository hygiene · Status: in progress — LICENSE (MIT) and the `license` field added 2026-09-03; fixtures use placeholder names since 2026-09-03; `.gitignore` cleaned of the soundboard's rules. Left: issue and PR templates, the release-notes template
 
 - `LICENSE` — decide (MIT is the default for this kind of project); add the
   `license` field to `package.json`.
@@ -278,7 +278,7 @@ without meeting the word "cascade".
 ### WP7 — Confirm the seam · Status: planned
 
 The proof that the split worked: stand up a second bot from a clean clone
-with a different name, one language we do not speak in our server, no music,
+with a different name, one language not spoken in the channel, no music,
 and run it in a test guild. Record the timings from the Thinking tab against
 the numbers in the README essays, since the fast/agent measurements were
 taken with the full tool set. **Done when** it answers to its name, in that

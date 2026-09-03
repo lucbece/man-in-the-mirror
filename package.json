@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Discord voice agent that listens to a channel and answers out loud when addressed.",
+  "license": "MIT",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",

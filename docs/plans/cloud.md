@@ -269,13 +269,13 @@ rule about not touching an in-flight package's files applies.
 - Latency baseline: a script over the log, `deploy/latency.sh`, that prints
   median and p90 of "first words at" and "answered in" for a date range.
   Run it on the desktop log before the move, on the server after.
-- UDP smoke test recipe in `docs/deploy.md`: join a voice channel from the
+- UDP smoke test recipe in `docs/running.md`: join a voice channel from the
   container and confirm `[voice] ready` in the log. Run it on the chosen host
   before CD1 buys anything.
 
 **Files.** `Dockerfile`, `.dockerignore`, `compose.yaml`, `deploy/latency.sh`
 (new), `src/agent/trace.js`, `src/voice/manager.js` (endpoint log line), `README.md` (a "Running in Docker" subsection under Running from
-source), `docs/deploy.md` (new).
+source), `docs/running.md` (new).
 
 **Done when.** A local `docker compose up` joins a channel, answers by voice,
 plays a song, and a `docker compose down && up` keeps `config.json` and the
@@ -293,13 +293,13 @@ no hand steps, documented so it can be rebuilt in ten minutes.
 - `deploy/cloud-init.yaml`: Docker from Docker's apt repo, `ufw` allowing 22
   only, `fail2ban`, `unattended-upgrades`, a `deploy` user in the `docker`
   group, `/opt/mirror` owned by it.
-- Hand steps, listed in `docs/deploy.md`: copy `compose.yaml` and a `.env`
+- Hand steps, listed in `docs/running.md`: copy `compose.yaml` and a `.env`
   (mode 600) with the three keys, `docker compose up -d`, run the UDP smoke
   test, open the panel over `ssh -L 3000:127.0.0.1:3000`.
 - Migrate `data/config.json` from the desktop (it holds the tuned settings and
   the standing instructions) with `scp`, before first start.
 
-**Files.** `deploy/cloud-init.yaml` (new), `docs/deploy.md`.
+**Files.** `deploy/cloud-init.yaml` (new), `docs/running.md`.
 
 **Done when.** The bot on the server sits in our channel and answers; the
 desktop process is stopped; the panel opens through the tunnel and nothing
@@ -332,7 +332,7 @@ within a few minutes, and a bad one rolls back by itself.
   gains a `container` job that builds the Dockerfile without pushing.
 
 **Files.** `.github/workflows/deploy.yml` (new), `.github/workflows/ci.yml`,
-`compose.yaml` (image tag from env), `docs/deploy.md`.
+`compose.yaml` (image tag from env), `docs/running.md`.
 
 **Done when.** A commit that changes a log line, pushed to `mirror`, shows the
 new line in `docker compose logs` on the server without anyone touching it;
@@ -356,7 +356,7 @@ way to diff behaviour across a deploy.
 - Sidecar block for Grafana Alloy → Grafana Cloud, present but commented out,
   with the privacy note from above beside it.
 
-**Files.** `compose.yaml`, `deploy/logs.sh` (new), `docs/deploy.md`.
+**Files.** `compose.yaml`, `deploy/logs.sh` (new), `docs/running.md`.
 
 **Done when.** After two deploys, `logs.sh since <first sha>` prints only
 what the second version did.
@@ -366,8 +366,8 @@ what the second version did.
 **Goal.** The desktop stops being a host.
 
 **Do.** Stop the local process for good, remove the desktop-specific notes
-from `docs/deploy.md`, add a "Where it runs" line to the README's
-Configuration section pointing at `docs/deploy.md`, and record the monthly
+from `docs/running.md`, add a "Where it runs" line to the README's
+Configuration section pointing at `docs/running.md`, and record the monthly
 cost actually billed after the first invoice in this file.
 
 **Done when.** A week with no local process and no missed call.

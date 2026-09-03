@@ -1,8 +1,8 @@
-# Running it somewhere else
+# Running it on a server
 
 How the bot runs as a container, on a laptop or on a server, and how a push
 becomes the running instance. The reasoning behind each choice is in
-`docs/plans/cloud.md`; this is the how.
+[plans/cloud.md](plans/cloud.md); this is the how.
 
 ## Running in Docker
 
