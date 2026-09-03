@@ -8,6 +8,7 @@
  */
 import { createBrain, clampForSpeech, BrainError, MAX_SPOKEN_CHARS } from './brain.js';
 import { takePendingLeave } from './tools/index.js';
+import { noteInMusicChannel } from './tools/music.js';
 import { recordAnswer } from './answers.js';
 import {
   isStageDirection,
@@ -112,6 +113,7 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, vi
     toAudioResource: toResource = toAudioResource,
     transcribeBuffer: transcribe = transcribeBuffer,
     formatTranscript: format = formatTranscript,
+    noteInMusicChannel: write = noteInMusicChannel,
   } = deps;
 
   if (inFlight.has(session.guildId)) {
@@ -161,6 +163,8 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, vi
 
     let budget = MAX_SPOKEN_CHARS;
     let cutOff = false;
+    /** Sentences music mode kept out of the voice, to be written instead. */
+    const written = [];
     /** Set the moment a sentence is judged to be reasoning; holds for the turn. */
     let leaking = false;
     // Which tools this answer reached for. The set is what tells the routing
@@ -181,11 +185,15 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, vi
       if (finishedThinking) return;
       quietTimer = setTimeout(() => {
         // Same reasoning as the first filler: a long wait only needs covering
-        // when somebody is waiting to hear something.
-        const filler = getFiller(guessLanguage(question), 'waiting');
-        if (filler && speech && !doingNotAnswering()) {
-          speech.push(toResource(filler.audio), null);
-          timings.waited = (timings.waited ?? 0) + 1;
+        // when somebody is waiting to hear something. In music mode nobody
+        // is, so the clip is not even fetched — the queue would drop it, and
+        // fetching it is a synthesis request for a sound with no listener.
+        if (speech && !doingNotAnswering() && !session.quiet) {
+          const filler = getFiller(guessLanguage(question), 'waiting');
+          if (filler) {
+            speech.push(toResource(filler.audio), null);
+            timings.waited = (timings.waited ?? 0) + 1;
+          }
         }
         nudge(); // and again if it keeps dragging
       }, QUIET_MS);
@@ -224,6 +232,15 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, vi
         }
         leaking = true;
         timings.droppedReasoning = (timings.droppedReasoning ?? 0) + 1;
+        return;
+      }
+      // Music mode: this sentence is the answer, and it goes to the music
+      // channel in writing rather than out loud. Asked per sentence rather
+      // than once at the top of the turn, so the turn that is told to talk
+      // again can answer that request in its own voice.
+      if (session.quiet) {
+        const line = withoutOpeningAside(text).trim();
+        if (line) written.push(line);
         return;
       }
       const clean = clampForSpeech(withoutOpeningAside(text), Math.max(0, budget));
@@ -265,6 +282,9 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, vi
             // there is no silence to cover and the music should keep playing.
             //
             if (doingNotAnswering()) return;
+            // Music mode covers no silence: the room is listening to a song,
+            // and the clip is skipped here so none is fetched at all.
+            if (session.quiet) return;
             timings.searchedAtMs = Date.now() - t1;
             const filler = getFiller(guessLanguage(question));
             if (!filler) return;
@@ -285,13 +305,27 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, vi
     timings.thinkMs = Date.now() - t1;
 
     const spoken = speech ? speech.spoken.join(' ').trim() : '';
+    const wrote = written.join(' ').trim();
     // Silence is an answer when it did something — skipping a track and
     // announcing it is worse than skipping it. Silence with nothing done is
     // the model failing, and still an error — unless what it produced was
     // reasoning and every sentence of it was dropped: it concluded, at length,
     // that nobody had asked it anything, and saying nothing is that answer.
-    if (!spoken && !toolsUsed.length && !leaking) {
+    if (!spoken && !wrote && !toolsUsed.length && !leaking) {
       throw new BrainError('The model returned nothing to say.');
+    }
+
+    // What it would have said, where the room is already reading about the
+    // music. One message for the whole turn: a reply broken into a line per
+    // sentence reads as several answers to several questions.
+    // Cut to Discord's message limit rather than to the spoken cap: the cap
+    // on speech is about how long a room will sit through a voice, and nobody
+    // has to sit through a line of text.
+    if (wrote) {
+      await write(
+        { guild: () => session.client?.guilds?.cache?.get(session.guildId) ?? null },
+        `🤫  ${wrote}`.slice(0, 2000),
+      );
     }
 
     timings.cutOffPlayback = speech ? await finishSpeaking(speech) : false;
@@ -320,7 +354,7 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, vi
     }
 
     console.log(
-      `[agent] ${spoken ? 'answered' : 'acted, without saying anything,'} in ${(timings.totalMs / 1000).toFixed(1)}s ` +
+      `[agent] ${spoken ? 'answered' : wrote ? 'answered in writing' : 'acted, without saying anything,'} in ${(timings.totalMs / 1000).toFixed(1)}s ` +
         `(heard ${(timings.transcribeMs / 1000).toFixed(1)}s, ` +
         (timings.firstAudioMs === undefined
           ? 'never spoke, '
@@ -339,6 +373,9 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, vi
 
     return {
       spoken,
+      // Empty unless music mode swallowed the voice, in which case this is the
+      // answer and `spoken` is honestly empty: nobody heard a word of it.
+      written: wrote,
       truncated: cutOff,
       timings,
       brain: brain.label,

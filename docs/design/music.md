@@ -79,3 +79,30 @@ otherwise have to be told the current level, remember it and do the arithmetic
 correctly every time. The ceiling is 150%, where amplified samples start to
 clip, and the queue is capped at 50 — nobody queues more than that on purpose,
 and an agent in a loop might.
+
+## Music mode
+
+Asked to be quiet while a song plays, the bot stops speaking until told
+otherwise and keeps doing everything else. Four decisions shape it:
+
+- **Per session, not a setting.** It is a property of the voice session and
+  disappears when the bot leaves the channel. A bot that came back from a
+  restart silently mute would look broken, and nobody asks for silence in
+  the abstract; they ask for it over this song.
+- **Dropped in the speech queue, not in the brain.** Every spoken thing goes
+  through one door: answers, filler clips, the line before a tool, a reminder.
+  Dropping there means a path added later cannot leak a sentence. The brain
+  still runs, so "espejo, saltá" skips the track and the request to leave the
+  mode itself can arrive by voice.
+- **Checked per sentence, not per turn.** `leave_music_mode` flips the switch
+  before the reply is rendered, so the same turn that ends the mode is heard
+  saying so. A per-turn decision would swallow that confirmation.
+- **The track is never paused.** Speaking hands the connection from the music
+  to the voice and pauses the song. While quiet that handover is skipped, not
+  compensated for afterwards: pausing a track to make room for a voice that
+  will not come is the failure the mode exists to prevent.
+
+What would have been said is written into the music channel, one message per
+turn. A reminder that comes due while quiet is written there too, never said
+late. The switch is reachable by voice, by `/mj mute` and `/mj unmute`, and
+from the session card in the panel.

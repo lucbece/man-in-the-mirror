@@ -13,6 +13,7 @@ import {
   MAX_INSTRUCTIONS,
   MAX_INSTRUCTION_CHARS,
   parseInstructions,
+  renderInstruction,
 } from '../agent/instructions.js';
 import { agentSessionStatus } from '../agent/agent-brain.js';
 import { answerStats } from '../agent/answers.js';
@@ -83,7 +84,11 @@ export function createApp() {
     // Same limits the voice tool enforces, so the two ways in cannot disagree
     // about what the bot is currently being told.
     if (typeof body.customInstructions === 'string' && body.customInstructions.trim()) {
-      const list = parseInstructions(body.customInstructions);
+      // Measured as the room hears it, with person tokens rendered to names:
+      // the same rule the voice path applies, so an instruction the bot saved
+      // itself can never be refused here for being a few characters longer
+      // on disk than it is out loud.
+      const list = parseInstructions(body.customInstructions).map((line) => renderInstruction(line));
       const long = list.find((line) => line.length > MAX_INSTRUCTION_CHARS);
       if (long) {
         return res.status(400).json({
@@ -176,6 +181,17 @@ export function createApp() {
     const session = sessionManager.get(guildId);
     if (!session) return res.status(404).json({ error: 'Not connected in that guild' });
     session.shush();
+    res.json(session.status());
+  });
+
+  app.post('/api/voice/quiet', (req, res) => {
+    const { guildId, quiet } = req.body ?? {};
+    const session = sessionManager.get(guildId);
+    if (!session) return res.status(404).json({ error: 'Not connected in that guild' });
+    // Not written to the config on the way past, unlike listening: music mode
+    // belongs to this session and this song, and a bot that came back from a
+    // restart still mute would look broken.
+    session.setQuiet(Boolean(quiet));
     res.json(session.status());
   });
 

@@ -6,7 +6,10 @@ import {
   DiscordToolError,
   describeVoice,
   disconnectMember,
+  displayNameLookup,
   moveMember,
+  namesOf,
+  rawNamesOf,
   requireOwnerish,
   requirePermission,
   resolveMember,
@@ -191,11 +194,45 @@ describe('describeVoice', () => {
       member('2', 'Marco', { channelId: 'general', muted: true }),
     ]);
     const text = describeVoice(g);
-    assert.match(text, /general: Vero, Marco \(muted\)/);
+    assert.match(text, /general: Vero \(@vero\), Marco \(@marco\) \(muted\)/);
+  });
+
+  test('gives the username too, because that is the half that does not change', () => {
+    // Two people called Fede is not hypothetical, and neither is one of them
+    // being called something else next week. The username is how the model
+    // tells them apart and how it picks the id to pin an instruction to.
+    const twins = [member('11', 'Fede'), member('22', 'Fede')];
+    twins[0].user.username = 'fedecito';
+    twins[1].user.username = 'federicoo';
+
+    const text = describeVoice(guild(twins));
+    assert.match(text, /Fede \(@fedecito\), Fede \(@federicoo\)/);
+    assert.match(text, /Display names change and the @username does not/);
   });
 
   test('says plainly when nobody is around', () => {
     assert.match(describeVoice(guild([])), /Nobody is in a voice channel/);
+  });
+});
+
+describe('the names a person answers to', () => {
+  test('keeps them as written for matching, and drops the duplicates', () => {
+    const m = member('1', 'Fede');
+    m.nickname = 'Fede';
+    m.user.username = 'fedecito';
+    m.user.globalName = 'Federico';
+    assert.deepEqual(rawNamesOf(m), ['Fede', 'fedecito', 'Federico']);
+    assert.deepEqual(namesOf(m), ['fede', 'fedecito', 'federico']);
+  });
+
+  test('the id lookup answers with today\'s name, and with nothing for a stranger', () => {
+    const g = guild([member('1', 'Vero')]);
+    const lookup = displayNameLookup(g);
+    assert.equal(lookup('1'), 'Vero');
+    assert.equal(lookup('999'), undefined);
+    // No guild at all is the same answer, not a crash: the bot can be asked
+    // about its instructions while it is between servers.
+    assert.equal(displayNameLookup(null)('1'), undefined);
   });
 });
 
