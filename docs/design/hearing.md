@@ -125,3 +125,20 @@ shares one WASM heap with the decoder used for transcription.
 Replies are synthesised sentence by sentence as the model produces them, so the
 first words are audible before the answer is complete. That mechanism, and what
 it moved, is in [agent-mode.md](agent-mode.md).
+
+## Paying only for voices
+
+Discord starts a stream whenever a client decides its user is speaking, and
+clients decide that on breath, a keyboard, a chair. Every such burst used to
+become a Whisper request, and Whisper, given near-silence, answers with the
+subtitle boilerplate it was trained on. Measured on 2026-09-02 over one
+evening: 76 requests came back as boilerplate and were discarded after being
+paid for, against 16 sentences that addressed the bot.
+
+The clip is decoded to 16 kHz mono before it is sent, so its loudness is
+known for free: the peak, the average level, and the share of 20 ms windows
+above a floor that breath does not reach. A clip whose peak never reaches
+-40 dBFS is not sent. The threshold is deliberately loose, well below any
+voice that meant to be heard, and every clip is logged with its numbers, kept
+or not, so it can be tightened from evidence rather than from a guess.
+`MIRROR_STT_GATE_DB` moves it without a release.

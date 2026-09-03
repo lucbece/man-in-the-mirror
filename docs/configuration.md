@@ -44,6 +44,7 @@ ssh tunnel (see [running.md](running.md)), never a public port.
 | `musicChannel` | — | `music` | Text channel where music actions are written, since they are carried out without speaking. In music mode it also receives what the bot would have said (`🤫`) and any reminder that came due (`⏰`). A server without one gets no message; the music still plays |
 | `webPort` | `WEB_PORT` | `3000` | Control panel port. Read at startup, so a change needs a restart |
 | — | `WEB_HOST` | `127.0.0.1` | Panel bind address. Leave it |
+| — | `MIRROR_STT_GATE_DB` | `-40` | Loudness a clip's peak must reach, in dBFS, to be sent for transcription. `off` disables the gate. See [Hearing and speaking](#hearing-and-speaking-api-or-local) |
 | — | `MIRROR_TRACE` | *(unset)* | `1` writes a trace of what the models are given, think and say to `data/trace.log`; a path writes it there; `stdout` writes it to the process's stdout with a `[trace]` prefix. Off unless set, because it records the conversation |
 
 ## Names
@@ -85,6 +86,13 @@ Each of the two stages can run through the OpenAI API or on the host machine.
 | --- | --- | --- |
 | Hearing | Whisper (`whisper-1`) | whisper.cpp, downloaded on first use into `runtime/` |
 | Speaking | `tts-1` | Piper, downloaded on first use into `runtime/` |
+
+Before a clip is sent anywhere it is measured. Discord starts a stream on a
+breath or a keyboard as readily as on a word, and a clip whose loudest moment
+never reaches -40 dBFS is not a voice: it is dropped locally, logged as
+`[stt] clip … → too quiet, not sent`, and costs nothing. Every clip that is
+sent is logged with the same numbers, so the threshold can be tuned from the
+log with `MIRROR_STT_GATE_DB`.
 
 Local hearing is worth it with a GPU and slower than the API without one.
 Local speaking is faster and more consistent than the API on any machine, and
