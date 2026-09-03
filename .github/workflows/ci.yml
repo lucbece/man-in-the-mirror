@@ -6,7 +6,7 @@ name: CI
 
 on:
   push:
-    branches: [main, development]
+    branches: [main]
   pull_request:
 
 # A second push to the same branch makes the first run pointless.
@@ -64,3 +64,17 @@ jobs:
       # Advisory: a high-severity finding in a transitive dependency should
       # interrupt someone's day, a moderate one in a dev tool should not.
       - run: npm audit --audit-level=high
+
+  # The Dockerfile is code too. Build it on every change, push nothing: the
+  # deploy workflow publishes, this only proves the image still assembles.
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

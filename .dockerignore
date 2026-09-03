@@ -1,0 +1,37 @@
+# What the image must not contain. Secrets and state first, then everything
+# the running bot never reads. CI builds from a clean checkout where none of
+# the first group exists; this file is for builds on a machine that runs it.
+.env
+data/
+runtime/
+sounds/
+incoming/
+*.mp3
+*.wav
+*.ogg
+*.oga
+*.opus
+*.m4a
+*.aac
+*.flac
+*.webm
+*.log
+
+.git
+.github
+.githooks
+.claude
+.gstack
+node_modules/
+dist/
+launcher/
+test/
+docs/
+deploy/
+scripts/
+compose.yaml
+Dockerfile
+*.md
+start.sh
+Start-Windows.cmd
+eslint.config.js
