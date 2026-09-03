@@ -20,6 +20,7 @@ function fakeInteraction({
   memberChannel = null,
   commandName = 'mj',
   chatInput = true,
+  query = null,
 } = {}) {
   const calls = [];
   return {
@@ -32,7 +33,7 @@ function fakeInteraction({
     options: {
       getSubcommand: () => sub,
       getChannel: () => channel,
-      getString: () => null,
+      getString: (name) => (name === 'query' ? query : null),
     },
     member: { voice: { channel: memberChannel } },
     guild: { members: { me: { id: 'bot' } } },
@@ -169,10 +170,102 @@ describe('leaving', () => {
 
 describe('commands that need the bot to be in a channel', () => {
   test('say so rather than doing nothing', async () => {
-    for (const sub of ['listen', 'deaf', 'transcript', 'ask', 'shush']) {
+    for (const sub of ['listen', 'deaf', 'transcript', 'ask', 'shush', 'play', 'skip', 'pause', 'resume', 'stop', 'queue']) {
       const i = fakeInteraction({ sub, guildId: 'not-joined' });
       await handleInteraction(i);
       assert.notEqual(said(i), '', `/mj ${sub} answered nothing`);
     }
+  });
+});
+
+describe('/mj play and friends', () => {
+  // A fake player with the same surface the voice tools use, so the command
+  // is tested for what only it does: which method it calls, with what, and
+  // what it says back. The music channel note is best effort and the fake
+  // guild has no channels, which is the case it must survive silently.
+  function withPlayer(t, overrides = {}) {
+    const calls = [];
+    const music = {
+      current: null,
+      queue: [],
+      async add(query, requestedBy) {
+        calls.push(['add', query, requestedBy]);
+        return { track: { title: 'Beat It', seconds: 258 }, startedNow: true, position: 1 };
+      },
+      skip: () => null,
+      pause: () => false,
+      resume: () => false,
+      stop: () => calls.push(['stop']),
+      ...overrides,
+    };
+    const session = {
+      destroyed: false,
+      music,
+      musicStatus: () => ({ current: music.current, queue: music.queue, paused: false, volume: 100 }),
+    };
+    sessionManager.sessions.set('music-guild', session);
+    t.after(() => sessionManager.sessions.delete('music-guild'));
+    return { calls, music };
+  }
+
+  test('play hands the query to the player as typed and names who asked', async (t) => {
+    const { calls } = withPlayer(t);
+    const i = fakeInteraction({ sub: 'play', guildId: 'music-guild', query: '  beat it  ' });
+    i.member.displayName = 'Vero';
+    await handleInteraction(i);
+    assert.deepEqual(calls, [['add', 'beat it', 'Vero']]);
+    assert.match(said(i), /Beat It/);
+    assert.match(said(i), /4:18/);
+    assert.match(said(i), /Vero/);
+  });
+
+  test('play without a query does not reach the player', async (t) => {
+    const { calls } = withPlayer(t);
+    const i = fakeInteraction({ sub: 'play', guildId: 'music-guild', query: '   ' });
+    await handleInteraction(i);
+    assert.deepEqual(calls, []);
+    assert.match(said(i), /what to play/i);
+  });
+
+  test('a search that fails is reported, not thrown at the user', async (t) => {
+    withPlayer(t, {
+      add: async () => {
+        throw new Error('nothing found');
+      },
+    });
+    const i = fakeInteraction({ sub: 'play', guildId: 'music-guild', query: 'x' });
+    await handleInteraction(i);
+    assert.match(said(i), /nothing found/);
+    assert.ok(!i.calls.some(([kind]) => kind === 'followUp'));
+  });
+
+  test('skip, pause, resume and stop say so when there is nothing to act on', async (t) => {
+    withPlayer(t);
+    for (const sub of ['skip', 'pause', 'resume', 'stop', 'queue']) {
+      const i = fakeInteraction({ sub, guildId: 'music-guild' });
+      await handleInteraction(i);
+      assert.match(said(i), /Nothing/, `/mj ${sub}`);
+    }
+  });
+
+  test('skip names what was skipped and what comes next', async (t) => {
+    withPlayer(t, {
+      skip: () => ({ title: 'Beat It' }),
+      queue: [{ title: 'Thriller', requestedBy: 'Fede' }],
+    });
+    const i = fakeInteraction({ sub: 'skip', guildId: 'music-guild' });
+    await handleInteraction(i);
+    assert.match(said(i), /Beat It/);
+    assert.match(said(i), /Thriller/);
+  });
+
+  test('queue lists what is on and what follows', async (t) => {
+    const { music } = withPlayer(t);
+    music.current = { title: 'Beat It', seconds: 258, requestedBy: 'Vero' };
+    music.queue = [{ title: 'Thriller', requestedBy: 'Fede' }];
+    const i = fakeInteraction({ sub: 'queue', guildId: 'music-guild' });
+    await handleInteraction(i);
+    assert.match(said(i), /Beat It.*4:18.*Vero/);
+    assert.match(said(i), /1\. Thriller/);
   });
 });

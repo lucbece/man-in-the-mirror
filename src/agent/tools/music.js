@@ -42,7 +42,7 @@ import { speakableTool } from './wrappers.js';
  * mishears, and the whole reason this correction exists is that speech
  * recognition mangled it on the way in.
  */
-async function note(turn, text) {
+export async function noteInMusicChannel(turn, text) {
   try {
     const guild = turn.guild?.();
     const wanted = config.get('musicChannel').trim().toLowerCase();
@@ -71,7 +71,7 @@ function musicFor(turn) {
   return session;
 }
 
-const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+export const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 export function musicTools(turn) {
   return [
@@ -98,7 +98,7 @@ export function musicTools(turn) {
         );
 
         const who = turn.askerName ?? 'someone';
-        await note(
+        await noteInMusicChannel(
           turn,
           startedNow
             ? `▶️  **${track.title}**  ·  ${mmss(track.seconds)}  ·  pedido por ${who}`
@@ -119,7 +119,7 @@ export function musicTools(turn) {
         const skipped = session.music.skip();
         if (!skipped) return 'Nothing is playing.';
         const next = session.music.queue[0];
-        await note(turn, `⏭️  saltado: ${skipped.title}${next ? `  →  **${next.title}**` : ''}`);
+        await noteInMusicChannel(turn, `⏭️  saltado: ${skipped.title}${next ? `  →  **${next.title}**` : ''}`);
         return next
           ? `Skipped "${skipped.title}", now playing "${next.title}". Say nothing — they will hear it.`
           : `Skipped "${skipped.title}", nothing else queued. Say nothing — they will hear the silence.`;
@@ -133,7 +133,7 @@ export function musicTools(turn) {
         const session = musicFor(turn);
         if (!session.music.playing) return 'Nothing is playing.';
         session.music.stop();
-        await note(turn, '⏹️  música detenida, cola vacía');
+        await noteInMusicChannel(turn, '⏹️  música detenida, cola vacía');
         return 'Stopped and cleared. Say nothing — they will hear it stop.';
       }),
     ),
@@ -158,7 +158,7 @@ export function musicTools(turn) {
           list.map((title) => `${title} ${artist}`),
           turn.askerName ?? 'someone',
         );
-        await note(
+        await noteInMusicChannel(
           turn,
           `💿  **${album}** — ${artist}  ·  ${queued} temas  ·  pedido por ${turn.askerName ?? 'alguien'}`,
         );
@@ -177,7 +177,7 @@ export function musicTools(turn) {
       speakableTool(async ({ which }) => {
         const session = musicFor(turn);
         const removed = session.music.remove(which);
-        await note(turn, `➖  fuera de la cola: ${removed.title}`);
+        await noteInMusicChannel(turn, `➖  fuera de la cola: ${removed.title}`);
         return `Removed "${removed.title}" from the queue. Say nothing — nothing changed in what they can hear.`;
       }),
     ),
@@ -191,7 +191,7 @@ export function musicTools(turn) {
       speakableTool(async ({ which, to }) => {
         const session = musicFor(turn);
         const { track, position } = session.music.move(which, to);
-        await note(turn, `↕️  ${track.title} → posición ${position}`);
+        await noteInMusicChannel(turn, `↕️  ${track.title} → posición ${position}`);
         return `Moved "${track.title}" to position ${position}. Say nothing.`;
       }),
     ),
@@ -242,7 +242,7 @@ export function musicTools(turn) {
             ? `Already at ${to} percent, which is as far as it goes. Say so — this one they cannot hear.`
             : `Volume unchanged at ${to} percent.`;
         }
-        await note(turn, `🔊  volumen: ${from}% → ${to}%`);
+        await noteInMusicChannel(turn, `🔊  volumen: ${from}% → ${to}%`);
         return `Volume ${to > from ? 'up' : 'down'} to ${to} percent. Say nothing — they can hear it.`;
       }),
     ),
