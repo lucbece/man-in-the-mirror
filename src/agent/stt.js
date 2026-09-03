@@ -7,7 +7,8 @@
  * no per-minute cost, audio never leaves the box).
  */
 import { config } from '../config.js';
-import { packetsToWav } from './audio.js';
+import { decodeToMono16k, pcmToWav } from './audio.js';
+import { describeEnergy, measureEnergy, tooQuiet } from './energy.js';
 import { MODELS, ensureModel, ensureWhisper, transcribeWav } from './whisper.js';
 
 /** Below this an "utterance" is a cough or a mic bump. Not worth a request. */
@@ -398,15 +399,31 @@ async function runTranscription(utterance, stt) {
     return { spoken: false, failed: false };
   }
 
+  // Decoded once, measured, then sent: the numbers are the only thing known
+  // about a clip before paying for it, and a clip that never got loud enough
+  // to be a voice is not sent at all. See energy.js for the threshold.
+  const pcm = decodeToMono16k(utterance.packets);
+  const energy = measureEnergy(pcm);
+  if (tooQuiet(energy)) {
+    console.log(`[stt] clip ${describeEnergy(energy)} → too quiet, not sent`);
+    utterance.text = '';
+    utterance.energy = energy;
+    return { spoken: false, failed: false, skipped: true };
+  }
+  utterance.energy = energy;
   try {
-    const text = await stt.transcribe(packetsToWav(utterance.packets), {
+    const text = await stt.transcribe(pcmToWav(pcm), {
       prompt,
     });
     // The prompt echo has to go before anything else reads the text: it
     // contains the bot's names, so it reads as someone calling the bot.
     const junk = echoesPrompt(text, prompt) || looksHallucinated(text, utterance.durationMs);
     if (junk && text.trim()) {
-      console.log(`[stt] discarded, nobody said this: "${text.trim().slice(0, 80)}"`);
+      console.log(
+        `[stt] clip ${describeEnergy(energy)} → discarded, nobody said this: "${text.trim().slice(0, 80)}"`,
+      );
+    } else if (text.trim()) {
+      console.log(`[stt] clip ${describeEnergy(energy)} → kept`);
     }
     utterance.text = junk ? '' : text;
     return { spoken: Boolean(utterance.text), failed: false };
