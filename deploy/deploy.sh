@@ -42,10 +42,11 @@ wait_healthy() {
 }
 log_marker() {
   # One line into the container's own log stream, so `logs.sh since <sha>`
-  # has a boundary to find. It goes through the container so it lands in the
-  # same json-file as everything else.
+  # has a boundary to find. `docker exec` output goes to the exec, not to the
+  # log driver; writing to PID 1's stdout is what lands in the same json-file
+  # as everything else.
   local id; id=$(container)
-  [ -n "$id" ] && docker exec "$id" node -e "console.log('[deploy] $1')" 2>/dev/null || true
+  [ -n "$id" ] && docker exec "$id" sh -c "echo '[deploy] $1' >> /proc/1/fd/1" 2>/dev/null || true
 }
 
 case "$verb" in
