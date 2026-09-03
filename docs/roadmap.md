@@ -113,6 +113,23 @@ audience: same handlers, different transport.
 - **Naming.** A framework for connecting agents to voice channels is not called
   Man in the Mirror. Not urgent, but it is a different product.
 
+## TypeScript, with a build
+
+The code is JavaScript with no build step, which is what lets the release
+archives and the launcher run `node src/index.js` on the source and keeps
+"anyone with Node" true. It is also 10,000 lines with no type annotations, and
+the refactors in [plans/going-public.md](plans/going-public.md) would be
+safer with them. Two ways forward, neither started:
+
+- **JSDoc with `checkJs`**: types from discord.js and the Agent SDK, checked
+  by `tsc --noEmit` in `npm run check`, no build, adoptable file by file.
+- **TypeScript proper, with a build in the repository**: the launcher, the
+  start scripts and the Dockerfile would run the compiled output instead of
+  the source. Node runs `.ts` without a build from 23.6, but the floor the
+  project promises is 20, so a build is what keeps that promise.
+
+The first is the cheaper step and does not preclude the second.
+
 ## Plans tracked separately
 
 Two longer plans live under [plans/](plans/), each a plan and a log: the work
