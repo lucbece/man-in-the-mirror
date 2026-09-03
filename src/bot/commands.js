@@ -11,6 +11,7 @@ import { sessionManager } from '../voice/manager.js';
 import { agentSessionStatus } from '../agent/agent-brain.js';
 import { formatTranscript, transcribeBuffer } from '../agent/stt.js';
 import { ask, AgentBusyError } from '../agent/index.js';
+import { mmss, noteInMusicChannel } from '../agent/tools/music.js';
 
 export const commandData = [
   new SlashCommandBuilder()
@@ -54,6 +55,19 @@ export const commandData = [
     )
     .addSubcommand((sub) => sub.setName('shush').setDescription('Stop the agent mid-sentence'))
     .addSubcommand((sub) =>
+      sub
+        .setName('play')
+        .setDescription('Play a song, artist, album or URL, or queue it behind what is on')
+        .addStringOption((opt) =>
+          opt.setName('query').setDescription('What to play').setRequired(true),
+        ),
+    )
+    .addSubcommand((sub) => sub.setName('skip').setDescription('Skip to the next song'))
+    .addSubcommand((sub) => sub.setName('pause').setDescription('Pause the music'))
+    .addSubcommand((sub) => sub.setName('resume').setDescription('Resume the music'))
+    .addSubcommand((sub) => sub.setName('stop').setDescription('Stop the music and clear the queue'))
+    .addSubcommand((sub) => sub.setName('queue').setDescription('What is playing and what is next'))
+    .addSubcommand((sub) =>
       sub.setName('status').setDescription('Show what the bot is up to'),
     )
     .toJSON(),
@@ -85,6 +99,18 @@ export async function handleInteraction(interaction) {
         return await cmdShush(interaction);
       case 'status':
         return await cmdStatus(interaction);
+      case 'play':
+        return await cmdPlay(interaction);
+      case 'skip':
+        return await cmdSkip(interaction);
+      case 'pause':
+        return await cmdPause(interaction);
+      case 'resume':
+        return await cmdResume(interaction);
+      case 'stop':
+        return await cmdStop(interaction);
+      case 'queue':
+        return await cmdQueue(interaction);
       default:
         return await interaction.reply(ephemeral('Unknown subcommand.'));
     }
@@ -317,6 +343,95 @@ async function cmdStatus(interaction) {
 }
 
 // --- helpers ----------------------------------------------------------------
+
+// --- music ------------------------------------------------------------------
+//
+// The same player the agent drives by voice, reached without a model in the
+// way: typing a title is the one case where nothing needs correcting, so the
+// query goes to the search as written. What happened is written into the
+// music channel exactly as it is for a spoken request, so the room learns
+// about it the same way whichever path it came in by.
+
+const requester = (interaction) =>
+  interaction.member?.displayName ?? interaction.user?.username ?? 'someone';
+
+const noteFrom = (interaction) => ({ guild: () => interaction.guild });
+
+async function cmdPlay(interaction) {
+  const session = requireSession(interaction);
+  if (!session) return;
+  const query = interaction.options.getString('query')?.trim();
+  if (!query) return interaction.reply(ephemeral('Tell me what to play.'));
+  // Resolving a search takes seconds — past Discord's 3s reply deadline.
+  await interaction.deferReply();
+  const who = requester(interaction);
+  let result;
+  try {
+    result = await session.music.add(query, who);
+  } catch (err) {
+    return interaction.editReply(`Couldn't play that: ${err.message}`);
+  }
+  const { track, startedNow, position } = result;
+  const line = startedNow
+    ? `▶️  **${track.title}**  ·  ${mmss(track.seconds)}  ·  pedido por ${who}`
+    : `➕  **${track.title}**  ·  en cola (${position})  ·  pedido por ${who}`;
+  await noteInMusicChannel(noteFrom(interaction), line);
+  return interaction.editReply(line);
+}
+
+async function cmdSkip(interaction) {
+  const session = requireSession(interaction);
+  if (!session) return;
+  const skipped = session.music.skip();
+  if (!skipped) return interaction.reply(ephemeral('Nothing is playing.'));
+  const next = session.music.queue[0];
+  const line = `⏭️  saltado: ${skipped.title}${next ? `  →  **${next.title}**` : ''}`;
+  await noteInMusicChannel(noteFrom(interaction), line);
+  return interaction.reply(ephemeral(line));
+}
+
+async function cmdPause(interaction) {
+  const session = requireSession(interaction);
+  if (!session) return;
+  const paused = session.music.pause();
+  return interaction.reply(ephemeral(paused ? '⏸️  Paused.' : 'Nothing to pause.'));
+}
+
+async function cmdResume(interaction) {
+  const session = requireSession(interaction);
+  if (!session) return;
+  const resumed = session.music.resume();
+  return interaction.reply(ephemeral(resumed ? '▶️  Resumed.' : 'Nothing to resume.'));
+}
+
+async function cmdStop(interaction) {
+  const session = requireSession(interaction);
+  if (!session) return;
+  if (!session.music.current && session.music.queue.length === 0) {
+    return interaction.reply(ephemeral('Nothing is playing.'));
+  }
+  session.music.stop();
+  await noteInMusicChannel(noteFrom(interaction), '⏹️  detenido, cola vacía');
+  return interaction.reply(ephemeral('⏹️  Stopped, queue cleared.'));
+}
+
+async function cmdQueue(interaction) {
+  const session = requireSession(interaction);
+  if (!session) return;
+  const { current, queue, paused, volume } = session.musicStatus();
+  if (!current && queue.length === 0) return interaction.reply(ephemeral('Nothing is playing.'));
+  const lines = [];
+  if (current) {
+    lines.push(
+      `${paused ? '⏸️' : '▶️'}  **${current.title}**` +
+        (current.seconds ? `  ·  ${mmss(current.seconds)}` : '') +
+        `  ·  pedido por ${current.requestedBy}  ·  volumen ${volume}`,
+    );
+  }
+  queue.slice(0, 10).forEach((t, i) => lines.push(`${i + 1}. ${t.title}  ·  ${t.requestedBy}`));
+  if (queue.length > 10) lines.push(`… y ${queue.length - 10} más`);
+  return interaction.reply(ephemeral(lines.join('\n')));
+}
 
 function requireSession(interaction) {
   const session = sessionManager.get(interaction.guildId);

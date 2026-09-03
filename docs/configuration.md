@@ -216,6 +216,9 @@ web search. The SDK's file and shell tools are denied.
 | `/mj transcript` | Print recent transcribed speech |
 | `/mj shush` | Stop the current reply |
 | `/mj status` | Connection, listening state, buffer contents |
+| `/mj play <query>` | Play a song, artist, album or URL, or queue it behind what is on. Same player as the voice tools, no model in between |
+| `/mj skip`, `/mj pause`, `/mj resume`, `/mj stop` | Control the music |
+| `/mj queue` | What is playing and what is next |
 
 Anyone who can see the commands can use them. To restrict them to a role,
 use Discord's own integration settings for the bot (Server Settings →
