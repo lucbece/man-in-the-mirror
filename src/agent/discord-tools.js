@@ -46,11 +46,40 @@ export function voiceMembers(guild) {
   return [...seen.values()];
 }
 
+/**
+ * Every name a person might be called by, as written.
+ *
+ * Two of these are stable and two are not: the username is Discord-wide and
+ * changing it is deliberate and rare, while the display name and the nickname
+ * are per-server and get changed for a joke. Anything that has to survive a
+ * rename keys off the id; this list is for recognising a name that was just
+ * spoken or typed.
+ */
+export function rawNamesOf(member) {
+  return [
+    ...new Set(
+      [member.displayName, member.nickname, member.user?.username, member.user?.globalName].filter(
+        Boolean,
+      ),
+    ),
+  ];
+}
+
 /** Every name a person might be called by, normalised. */
-function namesOf(member) {
-  return [member.displayName, member.nickname, member.user?.username, member.user?.globalName]
-    .filter(Boolean)
-    .map(normalise);
+export function namesOf(member) {
+  return rawNamesOf(member).map(normalise);
+}
+
+/**
+ * Look a user id up to the name this guild uses for them today, or nothing.
+ *
+ * This is the resolver standing instructions are rendered through: they store
+ * the id and the name it had when they were saved, and this is what turns the
+ * id back into a name the room would recognise. Undefined for someone the
+ * cache has never seen, which the caller reads as "use the stored name".
+ */
+export function displayNameLookup(guild) {
+  return (userId) => guild?.members.cache.get(String(userId))?.displayName;
 }
 
 /**
@@ -196,11 +225,23 @@ export function describeVoice(guild) {
     if (!members.length) continue;
     lines.push(
       `${channel.name}: ${members
-        .map((m) => `${m.displayName}${m.voice.serverMute ? ' (muted)' : ''}`)
+        .map(
+          (m) =>
+            `${m.displayName}${m.user?.username ? ` (@${m.user.username})` : ''}` +
+            `${m.voice.serverMute ? ' (muted)' : ''}`,
+        )
         .join(', ')}`,
     );
   }
-  return lines.length ? lines.join('\n') : 'Nobody is in a voice channel.';
+  if (!lines.length) return 'Nobody is in a voice channel.';
+  // Said here rather than left to the model to infer, because it is the whole
+  // reason the username is in the line at all: two people can be called Fede
+  // today and one of them can stop being called Fede tomorrow.
+  lines.push(
+    'Display names change and the @username does not — use the username to tell two people ' +
+      'with the same display name apart.',
+  );
+  return lines.join('\n');
 }
 
 export async function moveMember(guild, askerId, { name, channel: channelName }) {
