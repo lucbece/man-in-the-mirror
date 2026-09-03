@@ -144,17 +144,38 @@ stays on the API. The improvement worth having is a separate, host-independent
 change: `gpt-4o-mini-transcribe` at the same endpoint, half the price of
 `whisper-1` and a lower word error rate. Not part of this plan.
 
+### Where Hetzner actually sells what
+
+Learned at purchase time, 2026-09-03, from the API rather than from third
+parties: the CX line does not exist in the US. In Ashburn and Hillsboro the
+cheapest machine is a CPX11 (2 vCPU, 2 GB) at **€20.49**; in Falkenstein,
+Nuremberg and Helsinki the CX23 (2 vCPU, 4 GB) is **€6.49** and the CPX11
+€5.99. The docs page that said €5.49 was already stale.
+
+That turns the region choice into a fork:
+
+| | Monthly | RTT from Buenos Aires | Network overhead per turn (audio + API legs) |
+| --- | --- | --- | --- |
+| Falkenstein CX23, 4 GB | €6.49 + IPv4 | 237 ms | ≈0.2 s audio + ≈0.27 s API ≈ **0.47 s** |
+| Ashburn CPX11, 2 GB | €20.49 + IPv4 | 145 ms | ≈0.12 s audio + ≈0.06 s API ≈ **0.18 s** |
+| Desktop today | — | — | ≈0.03 s audio + ≈0.6 s API ≈ **0.63 s** |
+
+Falkenstein is still a little faster than the desktop and a third of the
+price of Ashburn; Ashburn buys about 0.3 s per answer for €14 a month more.
+The server was created in Falkenstein as the reversible default: moving is
+the same cloud-init in `ash` plus one `scp`, fifteen minutes.
+
 ### Deployment alone
 
 What the hosting line is, with the APIs left out:
 
 | | Monthly |
 | --- | --- |
-| Hetzner CX23 (2 vCPU, 4 GB, 40 GB, 20 TB traffic) | €5.49 |
+| Hetzner CX23 in Falkenstein (2 vCPU, 4 GB, 40 GB, 20 TB traffic) | €6.49 |
 | Primary IPv4 (IPv6 is free, but Discord voice needs v4) | €0.50 |
-| Optional automated backups, 20% of the server | €1.10 |
+| Optional automated backups, 20% of the server | €1.30 |
 | GitHub Actions minutes and GHCR storage on a public repo | €0 |
-| **Total** | **€5.99, €7.09 with backups, plus VAT where it applies** |
+| **Total** | **€6.99, €8.29 with backups, plus VAT where it applies** |
 
 Fly's equivalent is $11.11 for the 2 GB machine plus $0.15 per GB of volume.
 
@@ -259,7 +280,7 @@ yt-dlp binary. `npm run check` green.
 
 **Don't.** Change defaults for laptop users; everything here is additive.
 
-### CD1 — Host provisioning · Status: prepared 2026-09-03 — `deploy/cloud-init.yaml` and the `docs/deploy.md` recipe written; deploy key generated and stored on the `production` environment; `hcloud` installed. Blocked on a Hetzner account and token
+### CD1 — Host provisioning · Status: server up 2026-09-03 — CX23 `mirror` in Falkenstein (fsn1), 128.140.81.3, from `deploy/cloud-init.yaml`; Ashburn rejected the CX line, see the fork above. Waiting on the first deploy, which needs PR #1 merged so the workflow builds an image
 
 **Goal.** A server that a fresh `cloud-init` brings to "ready for compose" with
 no hand steps, documented so it can be rebuilt in ten minutes.
@@ -350,8 +371,9 @@ cost actually billed after the first invoice in this file.
 
 ## Decided
 
-- Hetzner CX23 in Ashburn, Docker Compose, GHCR image, ssh deploy. Fly.io
-  `iad` is the fallback, same Dockerfile.
+- Hetzner CX23 in Falkenstein (Ashburn does not sell the CX line; the fork
+  is priced above), Docker Compose, GHCR image, ssh deploy. Fly.io `iad` is
+  the fallback, same Dockerfile.
 - Transcription stays on the OpenAI API; no GPU host, no local whisper.
 - US East over South America: the API round trips outnumber the audio legs,
   measured above. Revisit only if the before/after medians disagree.

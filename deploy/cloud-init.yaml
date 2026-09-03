@@ -8,8 +8,10 @@
 # What it sets up, and why:
 # - Docker from Ubuntu's own packages: one apt source fewer to trust, and 24.04
 #   ships a current compose v2 plugin.
-# - A `deploy` user that owns /opt/mirror and can talk to Docker. Root never
-#   logs in over ssh, nobody logs in with a password.
+# - A `deploy` user that owns /opt/mirror, can talk to Docker, and has
+#   passwordless sudo: it is the only account that can log in, so it is also
+#   the administrator. Root never logs in over ssh, nobody logs in with a
+#   password.
 # - Two ssh keys for that user. Yours, unrestricted. And the one GitHub Actions
 #   holds, pinned to a forced command: it can run `deploy.sh` and nothing else,
 #   so a leaked deploy key cannot open a shell here.
@@ -27,11 +29,13 @@ packages:
   - unattended-upgrades
   - curl
 
+ssh_pwauth: false
+
 users:
   - name: deploy
     groups: [docker]
     shell: /bin/bash
-    sudo: false
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
     ssh_authorized_keys:
       # Your own key. Unrestricted.
       - "ADMIN_SSH_PUBLIC_KEY"
@@ -51,9 +55,13 @@ write_files:
       Unattended-Upgrade::Automatic-Reboot-Time "06:00";
   # Operational settings only. Keys live in data/config.json inside the volume
   # and get there over scp, never through this file or the repository.
+  # `defer` because files are normally written before users exist, and this
+  # one is owned by `deploy`: without it cloud-init fails the whole boot with
+  # "unknown user" and leaves no .env behind.
   - path: /opt/mirror/.env
     owner: deploy:deploy
     permissions: "0640"
+    defer: true
     content: |
       MIRROR_IMAGE=ghcr.io/lucbece/man-in-the-mirror:mirror
       MIRROR_TRACE=stdout

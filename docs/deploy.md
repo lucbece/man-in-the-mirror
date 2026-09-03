@@ -76,10 +76,11 @@ tables are the before and after.
 
 <!-- CD1 -->
 
-One Hetzner CX23 in Ashburn (2 vCPU, 4 GB, 40 GB), Ubuntu 24.04, brought up
-by `deploy/cloud-init.yaml`. Ashburn rather than São Paulo because a turn
-spends more time in round trips to the model APIs, which live in US East,
-than in the audio path to Discord's Brazil voice server; the arithmetic is in
+One Hetzner CX23 in Falkenstein (2 vCPU, 4 GB, 40 GB), Ubuntu 24.04, brought
+up by `deploy/cloud-init.yaml`. Not South America, because a turn spends more
+time in round trips to the model APIs, which live in US East, than in the
+audio path to Discord's Brazil voice server; not Ashburn, because Hetzner
+sells only its €20 line there. The arithmetic and the fork are in
 `docs/plans/cloud.md`.
 
 ### Creating it
@@ -96,7 +97,7 @@ sed -e "s#ADMIN_SSH_PUBLIC_KEY#$(cat ~/.ssh/id_ed25519.pub)#" \
     deploy/cloud-init.yaml > /tmp/mirror-cloud-init.yaml
 
 hcloud server create --name mirror --type cx23 --image ubuntu-24.04 \
-  --location ash --user-data-from-file /tmp/mirror-cloud-init.yaml
+  --location fsn1 --user-data-from-file /tmp/mirror-cloud-init.yaml
 ```
 
 The same file pastes into the web console's "Cloud config" box if you would
