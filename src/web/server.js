@@ -179,6 +179,17 @@ export function createApp() {
     res.json(session.status());
   });
 
+  app.post('/api/voice/quiet', (req, res) => {
+    const { guildId, quiet } = req.body ?? {};
+    const session = sessionManager.get(guildId);
+    if (!session) return res.status(404).json({ error: 'Not connected in that guild' });
+    // Not written to the config on the way past, unlike listening: music mode
+    // belongs to this session and this song, and a bot that came back from a
+    // restart still mute would look broken.
+    session.setQuiet(Boolean(quiet));
+    res.json(session.status());
+  });
+
   app.post('/api/voice/transcript', async (req, res) => {
     const { guildId } = req.body ?? {};
     const session = sessionManager.get(guildId);

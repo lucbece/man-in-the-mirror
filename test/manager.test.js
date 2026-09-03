@@ -209,6 +209,68 @@ describe('a reminder with nowhere to go', () => {
   });
 });
 
+describe('a reminder that comes due in music mode', () => {
+  /**
+   * A guild whose music channel accepts a message, so what the reminder does
+   * with it is visible. The bot never speaks on this path, which is the point:
+   * an alarm over the song is exactly what the mode was turned on to stop.
+   */
+  function guildWithMusicChannel(sent) {
+    const channel = {
+      name: 'music',
+      isTextBased: () => true,
+      isVoiceBased: () => false,
+      permissionsFor: () => ({ has: () => true }),
+      send: (text) => {
+        sent.push(text);
+        return Promise.resolve();
+      },
+    };
+    return {
+      channels: { cache: new Map([['music', channel]]) },
+      members: { me: {} },
+    };
+  }
+
+  async function fire(t, { guild, spoke }) {
+    const m = manager(t);
+    const session = await m.join(channel('general'));
+    session.quiet = true;
+    session.client = { guilds: { cache: new Map([['g1', guild]]) } };
+    // Speaking would go through the player; a fake session has none, so
+    // reaching for one at all is what "it spoke" looks like here.
+    Object.defineProperty(session, 'player', {
+      get() {
+        spoke.push('spoke');
+        return { stop: () => {}, play: () => {} };
+      },
+    });
+
+    reminders.emit('fire', { guildId: 'g1', id: 7, message: 'sacá la pizza del horno' });
+    await new Promise((resolve) => { setImmediate(resolve); });
+    await new Promise((resolve) => { setImmediate(resolve); });
+    return session;
+  }
+
+  test('is written in the music channel, not spoken', async (t) => {
+    const sent = [];
+    const spoke = [];
+    await fire(t, { guild: guildWithMusicChannel(sent), spoke });
+
+    assert.deepEqual(sent, ['⏰  sacá la pizza del horno']);
+    assert.deepEqual(spoke, [], 'an alarm over the song serves nobody');
+  });
+
+  test('with no music channel it is dropped, never said late', async (t) => {
+    // Same rule as one that came due while the process was down: a promise
+    // kept half an hour after the fact is worse than one quietly missed.
+    const spoke = [];
+    await fire(t, { guild: { channels: { cache: new Map() }, members: { me: {} } }, spoke });
+
+    assert.deepEqual(spoke, []);
+  });
+});
+
 describe('leaving', () => {
   test('reports whether there was anything to leave', async (t) => {
     const m = manager(t);

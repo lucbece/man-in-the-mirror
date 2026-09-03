@@ -45,6 +45,10 @@ export const commandData = [
     )
     .addSubcommand((sub) => sub.setName('shush').setDescription('Stop the agent mid-sentence'))
     .addSubcommand((sub) =>
+      sub.setName('mute').setDescription('Music mode: stop speaking, and write what it would have said'),
+    )
+    .addSubcommand((sub) => sub.setName('unmute').setDescription('Leave music mode and speak again'))
+    .addSubcommand((sub) =>
       sub
         .setName('play')
         .setDescription('Play a song, artist, album or URL, or queue it behind what is on')
@@ -80,6 +84,10 @@ export async function handleInteraction(interaction) {
         return await cmdAsk(interaction);
       case 'shush':
         return await cmdShush(interaction);
+      case 'mute':
+        return await cmdMute(interaction);
+      case 'unmute':
+        return await cmdUnmute(interaction);
       case 'play':
         return await cmdPlay(interaction);
       case 'skip':
@@ -222,9 +230,15 @@ async function cmdAsk(interaction) {
     `voiced ${(t.speakMs / 1000).toFixed(1)}s · ` +
     `${(t.totalMs / 1000).toFixed(1)}s total`;
 
-  return interaction.editReply(
-    `🗣️ ${result.spoken}${result.truncated ? ' *(trimmed)*' : ''}\n-# ${detail}`,
-  );
+  // In music mode nothing was said, so quoting it as speech would be a lie
+  // about what the room heard — and a turn that only carried out a command
+  // said nothing on purpose, which is not the same as an empty answer.
+  const answer = result.spoken
+    ? `🗣️ ${result.spoken}`
+    : result.written
+      ? `🤫 ${result.written}`
+      : '🔇 *Done, without saying anything.*';
+  return interaction.editReply(`${answer}${result.truncated ? ' *(trimmed)*' : ''}\n-# ${detail}`);
 }
 
 // --- speaking ---------------------------------------------------------------
@@ -238,6 +252,30 @@ async function cmdShush(interaction) {
   }
   session.shush();
   return interaction.reply('🤐 Stopped.');
+}
+
+// Music mode from the keyboard. The same switch the voice tools flip, for the
+// person who is at a keyboard anyway — and, more usefully, for getting the
+// voice back when the room is too loud to be heard asking for it.
+
+async function cmdMute(interaction) {
+  const session = requireSession(interaction);
+  if (!session) return;
+
+  if (session.quiet) return interaction.reply(ephemeral('🤫 Already in music mode.'));
+  session.setQuiet(true);
+  return interaction.reply(
+    ephemeral('🤫 Music mode on. Still listening — what I would have said goes to the music channel.'),
+  );
+}
+
+async function cmdUnmute(interaction) {
+  const session = requireSession(interaction);
+  if (!session) return;
+
+  if (!session.quiet) return interaction.reply(ephemeral("I'm not in music mode."));
+  session.setQuiet(false);
+  return interaction.reply(ephemeral('🗣️ Music mode off — talking again.'));
 }
 
 // --- status -----------------------------------------------------------------
