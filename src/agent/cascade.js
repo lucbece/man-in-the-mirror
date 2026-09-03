@@ -55,8 +55,7 @@ import Anthropic from '@anthropic-ai/sdk';
 
 import { config } from '../config.js';
 import { AgentBrain, DEFAULT_AGENT_MODEL } from './agent-brain.js';
-import { SYSTEM_PROMPT } from './brain.js';
-import { customInstructionBlock } from './instructions.js';
+import { promptWithInstructions } from './brain.js';
 import { SentenceSplitter } from './sentences.js';
 import { trace } from './trace.js';
 
@@ -320,10 +319,7 @@ export class CascadeBrain {
     const stream = client.messages.stream({
       model: this.fastModel,
       max_tokens: MAX_TOKENS,
-      system:
-        SYSTEM_PROMPT +
-        FAST_PROMPT_EXTRA +
-        customInstructionBlock(config.get('customInstructions')),
+      system: promptWithInstructions(this.guildId, FAST_PROMPT_EXTRA),
       tools: [ESCALATE_TOOL],
       messages: [{ role: 'user', content: buildFastMessage(context, memory) }],
     });
