@@ -20,7 +20,7 @@ function utterance({ name, agoSeconds, packets = 25 }) {
 describe('AudioBuffer', () => {
   test('drops utterances older than the window', () => {
     const buf = new AudioBuffer({ windowSeconds: 180 });
-    buf.add(utterance({ name: 'Luc', agoSeconds: 400 }), NOW);
+    buf.add(utterance({ name: 'Vero', agoSeconds: 400 }), NOW);
     buf.add(utterance({ name: 'Marco', agoSeconds: 100 }), NOW);
     buf.add(utterance({ name: 'Ana', agoSeconds: 40 }), NOW);
 
@@ -87,8 +87,8 @@ describe('AudioBuffer', () => {
 
   test('stats counts distinct speakers, not utterances', () => {
     const buf = new AudioBuffer({ windowSeconds: 180 });
-    buf.add(utterance({ name: 'Luc', agoSeconds: 30 }), NOW);
-    buf.add(utterance({ name: 'Luc', agoSeconds: 20 }), NOW);
+    buf.add(utterance({ name: 'Vero', agoSeconds: 30 }), NOW);
+    buf.add(utterance({ name: 'Vero', agoSeconds: 20 }), NOW);
     buf.add(utterance({ name: 'Ana', agoSeconds: 10 }), NOW);
 
     const stats = buf.stats(NOW);

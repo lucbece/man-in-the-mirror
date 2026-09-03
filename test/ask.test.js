@@ -75,7 +75,7 @@ function fakeSession(guildId = 'g1') {
 describe('ask()', () => {
   test('speaks each sentence and reports what was said', async () => {
     const d = deps({ sentences: ['Primera frase.', 'Segunda frase.'] });
-    const result = await ask(fakeSession(), { question: 'hola', askedBy: 'Luc' }, d);
+    const result = await ask(fakeSession(), { question: 'hola', askedBy: 'Vero' }, d);
 
     assert.deepEqual(d.rendered, ['Primera frase.', 'Segunda frase.']);
     assert.equal(result.spoken, 'Primera frase. Segunda frase.');
@@ -85,7 +85,7 @@ describe('ask()', () => {
 
   test('one question at a time per guild', async () => {
     const session = fakeSession('busy');
-    const first = ask(session, { question: 'a', askedBy: 'Luc' }, deps({ sentences: ['Una.'] }));
+    const first = ask(session, { question: 'a', askedBy: 'Vero' }, deps({ sentences: ['Una.'] }));
     await assert.rejects(
       () => ask(session, { question: 'b', askedBy: 'Marco' }, deps({ sentences: ['Dos.'] })),
       AgentBusyError,
@@ -98,25 +98,25 @@ describe('ask()', () => {
     // the same shape as the playback bug, from a different direction.
     const session = fakeSession('recovers');
     await assert.rejects(
-      () => ask(session, { question: 'a', askedBy: 'Luc' }, deps({ sentences: ['x.'], failWith: 'boom' })),
+      () => ask(session, { question: 'a', askedBy: 'Vero' }, deps({ sentences: ['x.'], failWith: 'boom' })),
       /boom/,
     );
     // Reaching the brain again proves the guard let go.
     await assert.rejects(
-      () => ask(session, { question: 'b', askedBy: 'Luc' }, deps({ sentences: ['x.'], failWith: 'boom again' })),
+      () => ask(session, { question: 'b', askedBy: 'Vero' }, deps({ sentences: ['x.'], failWith: 'boom again' })),
       /boom again/,
     );
   });
 
   test('a partial answer is still spoken when the brain fails midway', async () => {
     const d = deps({ sentences: ['Alcancé a decir esto.'], failWith: 'died midway' });
-    await assert.rejects(() => ask(fakeSession(), { question: 'a', askedBy: 'Luc' }, d));
+    await assert.rejects(() => ask(fakeSession(), { question: 'a', askedBy: 'Vero' }, d));
     assert.deepEqual(d.rendered, ['Alcancé a decir esto.'], 'what was said should have played');
   });
 
   test('an answer with nothing sayable is an error, not silence', async () => {
     await assert.rejects(
-      () => ask(fakeSession(), { question: 'a', askedBy: 'Luc' }, deps({ sentences: [] })),
+      () => ask(fakeSession(), { question: 'a', askedBy: 'Vero' }, deps({ sentences: [] })),
       /nothing to say/,
     );
   });
@@ -125,7 +125,7 @@ describe('ask()', () => {
     const session = fakeSession();
     const result = await ask(
       session,
-      { question: 'a', askedBy: 'Luc' },
+      { question: 'a', askedBy: 'Vero' },
       deps({ sentences: ['La respuesta.'], search: true }),
     );
 
@@ -137,7 +137,7 @@ describe('ask()', () => {
   test('speech is capped, and the cap is reported', async () => {
     const largo = `${'palabra '.repeat(40)}.`;
     const d = deps({ sentences: [largo, largo, largo] });
-    const result = await ask(fakeSession(), { question: 'a', askedBy: 'Luc' }, d);
+    const result = await ask(fakeSession(), { question: 'a', askedBy: 'Vero' }, d);
 
     assert.ok(d.rendered.join('').length <= 380, 'spoke past the cap');
     assert.equal(result.truncated, true, 'should report being cut');
@@ -147,11 +147,11 @@ describe('ask()', () => {
     let called = 0;
     const d = { ...deps({ sentences: ['Hola.'] }), transcribeBuffer: async () => { called += 1; } };
 
-    await ask(fakeSession(), { question: 'a', askedBy: 'Luc' }, d);
+    await ask(fakeSession(), { question: 'a', askedBy: 'Vero' }, d);
     assert.equal(called, 0, 'deafened: nothing to transcribe');
 
     const listening = { ...fakeSession('g2'), agentEnabled: true };
-    await ask(listening, { question: 'a', askedBy: 'Luc' }, d);
+    await ask(listening, { question: 'a', askedBy: 'Vero' }, d);
     assert.equal(called, 1);
   });
 });

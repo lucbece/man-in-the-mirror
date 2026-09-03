@@ -27,7 +27,7 @@ function opusPackets(frames) {
 }
 
 /** An utterance long enough to be worth transcribing. 50 frames is one second. */
-function utterance({ frames = 50, displayName = 'Luc' } = {}) {
+function utterance({ frames = 50, displayName = 'Vero' } = {}) {
   const u = new Utterance({ userId: '1', displayName, startedAt: Date.now() });
   for (const packet of opusPackets(frames)) u.push(packet);
   return u;

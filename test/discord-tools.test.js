@@ -187,11 +187,11 @@ describe('actions', () => {
 describe('describeVoice', () => {
   test('reports who is where, and who is muted', () => {
     const g = guild([
-      member('1', 'Luc', { channelId: 'general' }),
+      member('1', 'Vero', { channelId: 'general' }),
       member('2', 'Marco', { channelId: 'general', muted: true }),
     ]);
     const text = describeVoice(g);
-    assert.match(text, /general: Luc, Marco \(muted\)/);
+    assert.match(text, /general: Vero, Marco \(muted\)/);
   });
 
   test('says plainly when nobody is around', () => {
@@ -226,36 +226,36 @@ describe('channel names as people actually say them', () => {
 
   test('a word out of a long channel name is enough', async () => {
     const asker = member('1', 'Mod', { permissions: [MOVE], channelId: 'sala' });
-    const target = member('2', 'Maki', { channelId: 'sala' });
+    const target = member('2', 'Pato', { channelId: 'sala' });
     const g = withChannels(['AFK - Muted (en plena paja)', 'stellar-stream'], asker);
     g.channels.cache.get('stellar-stream').members.set('2', target);
     g.members.cache.set('2', target);
 
-    await moveMember(g, '1', { name: 'maki', channel: 'AFK' });
+    await moveMember(g, '1', { name: 'pato', channel: 'AFK' });
     assert.equal(target.moved, 'AFK - Muted (en plena paja)');
   });
 
   test('lists the real channels when nothing matches', async () => {
     const asker = member('1', 'Mod', { permissions: [MOVE], channelId: 'sala' });
-    const target = member('2', 'Maki', { channelId: 'sala' });
+    const target = member('2', 'Pato', { channelId: 'sala' });
     const g = withChannels(['general', 'stellar-stream'], asker);
     g.channels.cache.get('general').members.set('2', target);
     g.members.cache.set('2', target);
 
     await assert.rejects(
-      () => moveMember(g, '1', { name: 'maki', channel: 'terraza' }),
+      () => moveMember(g, '1', { name: 'pato', channel: 'terraza' }),
       /general, stellar-stream/,
     );
   });
 
   test('refuses when two channels match equally', async () => {
     const asker = member('1', 'Mod', { permissions: [MOVE], channelId: 'sala' });
-    const target = member('2', 'Maki', { channelId: 'sala' });
+    const target = member('2', 'Pato', { channelId: 'sala' });
     const g = withChannels(['Sala uno', 'Sala dos'], asker);
     g.channels.cache.get('Sala uno').members.set('2', target);
     g.members.cache.set('2', target);
 
-    await assert.rejects(() => moveMember(g, '1', { name: 'maki', channel: 'sala' }), /could be/);
+    await assert.rejects(() => moveMember(g, '1', { name: 'pato', channel: 'sala' }), /could be/);
     assert.equal(target.moved, undefined);
   });
 });

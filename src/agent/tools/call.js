@@ -22,7 +22,7 @@ import { discordTool } from './wrappers.js';
  * Guilds where the agent has asked to leave once it stops talking.
  *
  * Leaving cannot happen inside the tool call that requests it. Found in use:
- * "traelo a Maki de vuelta y desconectate vos" moved Maki, then called
+ * "traelo a Pato de vuelta y desconectate vos" moved Pato, then called
  * leave_voice, which destroyed the voice session — which ends the agent
  * session — while that very tool call was still open. Both actions actually
  * happened, but the run died with `stop_reason=tool_use` and the bot never
