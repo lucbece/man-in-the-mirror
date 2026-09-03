@@ -155,15 +155,22 @@ curl -s -X POST -H 'Content-Type: application/json' -d '{"guildId":"<guild>"}' h
 A join that returns the session's status has reached ready: UDP works. The
 endpoint line says which Discord voice server carries the call.
 
-### Reaching the panel
+### Reaching the panel, and the live log
 
-The control panel has no login, so it never listens on the public address.
-Open a tunnel and use it as if it were local:
+The control panel has no login, so it never listens on the public address,
+and neither does the log viewer. One tunnel carries both; keep it open in a
+terminal and use them as if they were local:
 
 ```bash
-ssh -N -L 3000:127.0.0.1:3000 deploy@<ip>
-# then http://localhost:3000
+ssh -i ~/.ssh/mirror-admin -N -L 3000:127.0.0.1:3000 -L 8080:127.0.0.1:8080 deploy@<ip>
+# panel:     http://localhost:3000
+# live log:  http://localhost:8080
 ```
+
+The log viewer is Dozzle, a second container in `compose.yaml` that reads
+Docker's own log stream: everything the bot prints, trace included, live,
+with search and a pause button. It keeps nothing of its own; the retention
+is the json-file rotation, and nothing is sent anywhere.
 
 ### Two GitHub values to set once the server exists
 
