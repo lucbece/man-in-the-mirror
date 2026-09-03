@@ -60,7 +60,7 @@ const wait = (ms) => new Promise((resolve) => {
 describe('hearing out a question', () => {
   test('takes the question when it arrives in one breath', async () => {
     const s = stubSession();
-    s.checkForWake(said('u1', 'Luc', 'mirror what do you think'));
+    s.checkForWake(said('u1', 'Vero', 'mirror what do you think'));
     await wait(GRACE * 3);
     assert.equal(s.fired.length, 1);
     assert.equal(s.fired[0].question, 'mirror what do you think');
@@ -68,21 +68,21 @@ describe('hearing out a question', () => {
 
   test('waits when only the name arrives, then uses what follows', async () => {
     const s = stubSession();
-    s.checkForWake(said('u1', 'Luc', 'mirror'));
+    s.checkForWake(said('u1', 'Vero', 'mirror'));
 
     await wait(GRACE * 1.5);
     assert.equal(s.fired.length, 0, 'should still be listening, not answering');
 
-    s.checkForWake(said('u1', 'Luc', 'what do you think about the servers'));
+    s.checkForWake(said('u1', 'Vero', 'what do you think about the servers'));
     await wait(GRACE * 3);
     assert.equal(s.fired[0].question, 'mirror what do you think about the servers');
   });
 
   test('stitches a question split by a mid-sentence pause', async () => {
     const s = stubSession();
-    s.checkForWake(said('u1', 'Luc', 'mirror what do you think about'));
+    s.checkForWake(said('u1', 'Vero', 'mirror what do you think about'));
     await wait(GRACE * 0.6);
-    s.checkForWake(said('u1', 'Luc', 'the servers being down'));
+    s.checkForWake(said('u1', 'Vero', 'the servers being down'));
     await wait(GRACE * 3);
     assert.equal(
       s.fired[0].question,
@@ -92,7 +92,7 @@ describe('hearing out a question', () => {
 
   test('ignores someone else talking over the asker', async () => {
     const s = stubSession();
-    s.checkForWake(said('u1', 'Luc', 'mirror who is right'));
+    s.checkForWake(said('u1', 'Vero', 'mirror who is right'));
     s.checkForWake(said('u2', 'Marco', 'no way that is wrong'));
     await wait(GRACE * 3);
     assert.equal(s.fired[0].question, 'mirror who is right');
@@ -100,7 +100,7 @@ describe('hearing out a question', () => {
 
   test('prompts back when nobody follows up', async () => {
     const s = stubSession();
-    s.checkForWake(said('u1', 'Luc', 'mirror'));
+    s.checkForWake(said('u1', 'Vero', 'mirror'));
     await wait(OPEN * 1.6);
     assert.equal(s.fired.length, 1);
     assert.match(s.fired[0].question, /ask what they want/i);
@@ -108,16 +108,16 @@ describe('hearing out a question', () => {
 
   test('a rapid repeat produces one answer, not two', async () => {
     const s = stubSession();
-    s.checkForWake(said('u1', 'Luc', 'mirror one thing'));
+    s.checkForWake(said('u1', 'Vero', 'mirror one thing'));
     await wait(GRACE * 3);
-    s.checkForWake(said('u1', 'Luc', 'mirror another thing'));
+    s.checkForWake(said('u1', 'Vero', 'mirror another thing'));
     await wait(GRACE * 3);
     assert.equal(s.fired.length, 1, 'cooldown should suppress the second');
   });
 
   test('does nothing at all when its name is not mentioned', async () => {
     const s = stubSession();
-    s.checkForWake(said('u1', 'Luc', 'the servers were down all weekend'));
+    s.checkForWake(said('u1', 'Vero', 'the servers were down all weekend'));
     await wait(GRACE * 3);
     assert.equal(s.fired.length, 0);
   });
@@ -132,7 +132,7 @@ describe('the rest of the room finishing the question', () => {
     const s = stubSession();
     const stops = talking(s, 'u2');
 
-    s.checkForWake(said('u1', 'Luc', 'mirror how long would it take'));
+    s.checkForWake(said('u1', 'Vero', 'mirror how long would it take'));
     await wait(GRACE * 3);
     assert.equal(s.fired.length, 0, 'must not answer while someone is still talking');
 
@@ -143,7 +143,7 @@ describe('the rest of the room finishing the question', () => {
 
   test('a quiet room costs nothing', async () => {
     const s = stubSession();
-    s.checkForWake(said('u1', 'Luc', 'mirror what do you think'));
+    s.checkForWake(said('u1', 'Vero', 'mirror what do you think'));
 
     await wait(GRACE * 3);
     assert.equal(s.fired.length, 1, 'no waiting when nobody else is speaking');
@@ -155,7 +155,7 @@ describe('the rest of the room finishing the question', () => {
     const s = stubSession();
     talking(s, 'u1');
 
-    s.checkForWake(said('u1', 'Luc', 'mirror what do you think'));
+    s.checkForWake(said('u1', 'Vero', 'mirror what do you think'));
     await wait(GRACE * 3);
 
     assert.equal(s.fired.length, 1);
@@ -167,7 +167,7 @@ describe('the rest of the room finishing the question', () => {
     const s = stubSession();
     talking(s, 'u2');
 
-    s.checkForWake(said('u1', 'Luc', 'mirror what do you think'));
+    s.checkForWake(said('u1', 'Vero', 'mirror what do you think'));
     await wait(GRACE * 3);
     assert.equal(s.fired.length, 0);
 
@@ -183,7 +183,7 @@ describe('answering the question the bot asked', () => {
     const s = stubSession();
     s.expectReply('u1', '¿Desde qué ciudad lo calculo?');
 
-    s.checkForWake(said('u1', 'Luc', 'desde Córdoba'));
+    s.checkForWake(said('u1', 'Vero', 'desde Córdoba'));
     await wait(GRACE * 3);
 
     assert.equal(s.fired.length, 1);
@@ -197,7 +197,7 @@ describe('answering the question the bot asked', () => {
     const s = stubSession();
     assert.equal(s.expectReply('u1', 'Son unas dieciocho horas de ruta.'), false);
 
-    s.checkForWake(said('u1', 'Luc', 'qué largo che'));
+    s.checkForWake(said('u1', 'Vero', 'qué largo che'));
     await wait(GRACE * 3);
 
     assert.equal(s.fired.length, 0);
@@ -212,7 +212,7 @@ describe('answering the question the bot asked', () => {
     await wait(GRACE * 3);
     assert.equal(s.fired.length, 0, 'somebody else is not the answer');
 
-    s.checkForWake(said('u1', 'Luc', 'desde Córdoba'));
+    s.checkForWake(said('u1', 'Vero', 'desde Córdoba'));
     await wait(GRACE * 3);
     assert.equal(s.fired.length, 1, 'and the window survived for the person it was for');
   });
@@ -221,10 +221,10 @@ describe('answering the question the bot asked', () => {
     const s = stubSession();
     s.expectReply('u1', '¿Desde qué ciudad?');
 
-    s.checkForWake(said('u1', 'Luc', 'desde Córdoba'));
+    s.checkForWake(said('u1', 'Vero', 'desde Córdoba'));
     await wait(GRACE * 3);
 
-    s.checkForWake(said('u1', 'Luc', 'bueno me voy a comer'));
+    s.checkForWake(said('u1', 'Vero', 'bueno me voy a comer'));
     await wait(GRACE * 3);
 
     assert.equal(s.fired.length, 1, 'the second sentence was not for the bot');
@@ -235,7 +235,7 @@ describe('answering the question the bot asked', () => {
     s.expectReply('u1', '¿Desde qué ciudad?');
 
     await wait(REPLY + 50);
-    s.checkForWake(said('u1', 'Luc', 'y bueno, mañana vemos'));
+    s.checkForWake(said('u1', 'Vero', 'y bueno, mañana vemos'));
     await wait(GRACE * 3);
 
     assert.equal(s.fired.length, 0);
@@ -245,7 +245,7 @@ describe('answering the question the bot asked', () => {
     const s = stubSession();
     s.expectReply('u1', '¿Desde qué ciudad?');
 
-    s.checkForWake(said('u1', 'Luc', 'mirror olvidalo, otra cosa'));
+    s.checkForWake(said('u1', 'Vero', 'mirror olvidalo, otra cosa'));
     await wait(GRACE * 3);
 
     assert.equal(s.fired.length, 1);

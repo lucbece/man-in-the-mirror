@@ -68,7 +68,7 @@ const words = (text) =>
  *
  * Not a language-policing rule — a leak detector. Three times now the model
  * has narrated its deliberation out loud, and every time it did so in English
- * inside a Spanish conversation: "I don't see an actual question here — luc
+ * inside a Spanish conversation: "I don't see an actual question here — vero
  * just said '4. Mueh'". Reasoning comes out in the model's own language, and
  * the reply is supposed to be in the speaker's, so the mismatch is the
  * cheapest reliable signal there is that this text was never meant to be said.

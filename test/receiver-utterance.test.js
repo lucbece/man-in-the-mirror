@@ -28,7 +28,7 @@ function fakeClient() {
   return {
     guilds: {
       cache: new Map([
-        ['g1', { members: { cache: new Map([['u1', { displayName: 'Luc', user: {} }]]) } }],
+        ['g1', { members: { cache: new Map([['u1', { displayName: 'Vero', user: {} }]]) } }],
       ]),
     },
   };

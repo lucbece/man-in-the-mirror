@@ -37,13 +37,13 @@ describe('asides written for a reader that has no reader', () => {
 });
 
 describe('reasoning read out loud', () => {
-  const asked = 'espejo, che, escuchá lo que dijo luc';
+  const asked = 'espejo, che, escuchá lo que dijo vero';
 
   test('the three that were actually heard in the channel', () => {
     for (const leaked of [
-      'I don\'t see an actual question here — luc just said "4. Mueh", which looks like they are still talking to ran, or testing the mic.',
+      'I don\'t see an actual question here — vero just said "4. Mueh", which looks like they are still talking to ran, or testing the mic.',
       'I hear the setup to a joke, but Dr Luchi has not finished asking yet — they are mid-sentence.',
-      'Noco just said "wtf mi horror". That is not really a question directed at me, so there is nothing to answer.',
+      'Nico just said "wtf mi horror". That is not really a question directed at me, so there is nothing to answer.',
     ]) {
       assert.equal(looksLikeLeakedReasoning(leaked, asked), true, leaked.slice(0, 40));
     }
