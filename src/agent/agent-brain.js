@@ -7,7 +7,7 @@
  * re-sent cold every turn), and it can use whatever MCP tools the user
  * configured in the panel — which is the point of the whole exercise.
  *
- * The honest trade, documented in docs/agent-brain-plan.md: every tool call
+ * The honest trade, documented in docs/design/agent-mode.md: every tool call
  * is another model round trip, so this is *slower* per answer than chat, not
  * faster. The filler ("dame un segundo") fires on the first tool call to
  * cover the silence honestly.
