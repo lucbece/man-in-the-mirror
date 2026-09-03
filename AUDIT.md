@@ -40,27 +40,6 @@ should close it, so a package's brief can be its goal plus its entries.
   either leg should end the turn at once and say so in the log, and the
   panel's state should show it instead of "ready".
 
-### It tells the room it is deafened while it is listening
-
-`/mj join` answers "In #channel, deafened. Run `/mj listen` when you want me
-hearing" (`src/bot/commands.js:125`), and `/mj listen` explains that "Nothing is
-transcribed until someone runs `/mj transcript`, nothing is written to disk"
-(`src/bot/commands.js:155`). Run the two in order and Discord shows "deafened"
-followed immediately by "Already listening" (`src/bot/commands.js:143`).
-
-Both sentences were true once. Neither is now: `agentEnabled` defaults to
-`true` (`src/config.js:28`), so the bot joins un-deafened and subscribed to
-every speaker, and `eagerTranscription` defaults to `true`
-(`src/config.js:44`), so each utterance is uploaded to the transcriber moments
-after it is spoken rather than when somebody asks for a transcript. The
-defaults moved; the sentences describing them did not.
-
-These are the lines a server reads to decide whether a bot is recording them,
-which makes them the worst place in the codebase to be out of date.
-
-Package: WP3
-
----
 
 ## Medium
 

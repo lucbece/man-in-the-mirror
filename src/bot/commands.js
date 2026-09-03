@@ -126,10 +126,13 @@ async function cmdJoin(interaction) {
   }
 
   await interaction.deferReply();
-  await sessionManager.join(channel);
-
+  const session = await sessionManager.join(channel);
+  // Say what is actually the case. Listening is the default, and the member
+  // list shows a deafened badge only when it is off, so the two must agree.
   return interaction.editReply(
-    `🪞 In ${channel}, deafened. Run \`/mj listen\` when you want me hearing.`,
+    session.agentEnabled
+      ? `🪞 In ${channel}, listening. Say my name when you want me.`
+      : `🪞 In ${channel}, deafened. Turn listening on in the panel when you want me hearing.`,
   );
 }
 

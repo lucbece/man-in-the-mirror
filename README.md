@@ -95,9 +95,9 @@ connection, keep standing instructions, change its own settings by voice, and
 use any MCP server you configure. Every tool, what it checks and what it
 writes is listed in [docs/configuration.md](docs/configuration.md).
 
-Slash commands: `/mj join`, `leave`, `listen`, `deaf`, `ask`, `transcript`,
-`shush`, `status`, and for music `play`, `skip`, `pause`, `resume`, `stop`,
-`queue`.
+Slash commands: `/mj join`, `leave`, `ask`, `transcript`, `shush`, and for
+music `play` (which joins your channel if needed), `skip`, `pause`, `resume`,
+`stop`, `queue`.
 
 ## Running it on a server
 

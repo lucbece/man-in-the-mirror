@@ -80,7 +80,7 @@ with. Recovery is the control panel, not the voice channel.
 ## What is kept
 
 Nothing is written to disk. Audio is held in memory and expires from the
-rolling window, whose length is `bufferSeconds`. `/mj deaf` stops capture and
+rolling window, whose length is `bufferSeconds`. Turning listening off stops capture and
 clears the buffer immediately.
 
 The listening state is visible inside Discord rather than only in the panel.
