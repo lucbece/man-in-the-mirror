@@ -41,12 +41,16 @@ import { speakableTool } from './wrappers.js';
  * Written rather than spoken because a title is exactly what a listener
  * mishears, and the whole reason this correction exists is that speech
  * recognition mangled it on the way in.
+ *
+ * Reports whether it actually wrote. Music notes ignore that — the song is
+ * the point — but a caller with nothing else to fall back on, a reminder that
+ * came due in music mode, needs to know its promise went nowhere.
  */
 export async function noteInMusicChannel(turn, text) {
   try {
     const guild = turn.guild?.();
     const wanted = config.get('musicChannel').trim().toLowerCase();
-    if (!guild || !wanted) return;
+    if (!guild || !wanted) return false;
 
     const channels = [...guild.channels.cache.values()].filter(
       (c) => c.isTextBased?.() && !c.isVoiceBased?.(),
@@ -54,11 +58,15 @@ export async function noteInMusicChannel(turn, text) {
     const channel =
       channels.find((c) => c.name.toLowerCase() === wanted) ??
       channels.find((c) => c.name.toLowerCase().includes(wanted));
-    if (!channel?.permissionsFor(guild.members.me)?.has(PermissionFlagsBits.SendMessages)) return;
+    if (!channel?.permissionsFor(guild.members.me)?.has(PermissionFlagsBits.SendMessages)) {
+      return false;
+    }
 
     await channel.send(text);
+    return true;
   } catch (err) {
     console.warn(`[music] could not write to the channel: ${err.message}`);
+    return false;
   }
 }
 

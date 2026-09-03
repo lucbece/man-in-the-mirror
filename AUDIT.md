@@ -221,6 +221,24 @@ again.
 
 Package: WP3
 
+### Shushing the bot while music is on leaves the track paused for good
+
+`shush()` (`src/voice/session.js:546-553`) cancels the speech queue and then
+sets `this.speech = null` in the same tick. The handover that gives the
+connection back to the music and unpauses the track hangs off
+`speech.finished` (`src/voice/session.js:511-524`), and its first line is
+`if (this.destroyed || this.speech !== speech) return` — by the time that
+microtask runs, `this.speech` is already null, so it returns and neither
+`#handMouthTo('music')` nor `resumeAfterSpeech` ever happens. `/mj shush` and
+the panel's Shush button, pressed while the bot is answering over a song,
+therefore stop the song too: the connection stays subscribed to the speaking
+player and the music player stays paused until the *next* answer finishes
+normally. Music mode's own switch (`setQuiet`) cancels the same queue without
+clearing `this.speech`, which is why it does not have the problem — the two
+should not disagree about that.
+
+Package: WP3
+
 ### `/mj ask` reports "voiced NaNs"
 
 `src/bot/commands.js:253` formats `t.speakMs`, and nothing ever sets it: the
@@ -280,6 +298,21 @@ confirmation names the old model — and that line exists only so people can tel
 whether a setting took.
 
 Package: WP3
+
+### Music mode exists only in the tool descriptions
+
+`enter_music_mode` and `leave_music_mode` (`src/agent/tools/quiet.js`) carry
+the phrasings people use — "mutéate", "modo música", "hablá de nuevo" — and
+that is the only place the model is told the mode exists. The system prompt
+(`src/agent/agent-brain.js:69-73`) still describes music as the one thing
+carried out in silence and says nothing about being able to stop speaking
+altogether, so nothing tells the model that a room asking it to be quiet has a
+mode rather than a single ignored request, and nothing tells it that its
+answers are being written down while the mode is on. Tool descriptions are
+enough to get the tool called; they are not enough for the model to explain
+the mode to somebody who asks what it can do.
+
+Package: WP1
 
 ### The wake chain is measured now, but not yet tuned
 

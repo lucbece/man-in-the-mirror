@@ -485,6 +485,7 @@ function renderSessions(sessions) {
         s.agentEnabled ? 'listening' : 'deafened',
         s.agentEnabled ? `${l.utterances} utterance(s), ${l.speechSeconds}s of speech` : null,
         s.speaking ? 'speaking now' : null,
+        s.quiet ? 'music mode' : null,
         s.agentEnabled && s.wakeEnabled ? `answers to "${s.agentNames}"` : null,
         s.eager?.failures ? `${s.eager.failures} transcription failure(s)` : null,
         s.eager?.error ? `transcription stopped: ${s.eager.error}` : null,
@@ -509,6 +510,12 @@ function renderSessions(sessions) {
               s.agentEnabled ? 'Deafened, buffer wiped.' : 'Listening.',
             ),
           s.agentEnabled ? '' : 'primary',
+        ),
+        button(s.quiet ? 'Talk again' : 'Music mode', () =>
+          act(
+            () => post('/api/voice/quiet', { guildId: s.guildId, quiet: !s.quiet }),
+            s.quiet ? 'Talking again.' : 'Music mode: writing instead of speaking.',
+          ),
         ),
         button('Read transcript', () => showTranscript(s.guildId)),
         button('Leave', () =>
@@ -580,7 +587,7 @@ async function askAgent(guildId, question) {
       // `first words at` is the number that matters — it's when a listener
       // stops wondering whether the thing is broken.
       out.textContent =
-        `You: ${question}\n\n${result.spoken}` +
+        `You: ${question}\n\n${result.spoken || result.written}` +
         `\n\n— first words at ${((t.firstAudioMs ?? 0) / 1000).toFixed(1)}s, ` +
         `finished thinking at ${((t.thinkMs ?? 0) / 1000).toFixed(1)}s, ` +
         `${((t.totalMs ?? 0) / 1000).toFixed(1)}s total`;
