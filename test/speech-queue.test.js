@@ -109,6 +109,39 @@ describe('SpeechQueue', () => {
     assert.deepEqual(player.played, ['good']);
   });
 
+  test('a muted queue plays nothing at all', () => {
+    // Music mode. The queue is the last door before the audio, so a filler
+    // clip, a line before a tool and the answer itself all have to hit this
+    // one check — there is no second place to add.
+    const player = new FakePlayer();
+    const queue = new SpeechQueue(player, () => true);
+
+    queue.push('one', 'uno');
+    queue.push('two', 'dos');
+
+    assert.deepEqual(player.played, [], 'nothing may reach the player');
+    assert.deepEqual(queue.spoken, [], 'and nothing may be reported as said');
+  });
+
+  test('unmuting mid-answer lets the next sentence through', async () => {
+    // How "espejo, hablá de nuevo" gets an answer out loud: the tool flips the
+    // flag, and the sentence rendered after it is spoken by the same turn.
+    const player = new FakePlayer();
+    let muted = true;
+    const queue = new SpeechQueue(player, () => muted);
+
+    queue.push('callado', 'Nada.');
+    assert.deepEqual(player.played, []);
+
+    muted = false;
+    queue.push('vuelta', 'Listo, vuelvo a hablar.');
+    queue.end();
+    player.finishCurrent();
+
+    assert.deepEqual(player.played, ['vuelta']);
+    assert.deepEqual((await queue.finished).spoken, ['Listo, vuelvo a hablar.']);
+  });
+
   test('stops listening to the player once finished', async () => {
     // Every answer builds a queue; leaking a listener each time would hit
     // Node's max-listeners warning after a dozen questions.

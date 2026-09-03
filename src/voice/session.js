@@ -151,6 +151,15 @@ export class VoiceSession extends EventEmitter {
       windowSeconds: config.get('bufferSeconds'),
     });
 
+    /**
+     * Music mode: the bot hears and acts as usual, and says nothing at all.
+     *
+     * A property of the session rather than of the configuration, because it
+     * is about this room and this song. Leaving the channel is the end of it,
+     * which is also the only way it can be forgotten by accident.
+     */
+    this.quiet = false;
+
     this.eager = null;
     this.lastWakeAt = 0;
     // Set when the bot ends a reply with a question: whose answer it is
@@ -490,10 +499,14 @@ export class VoiceSession extends EventEmitter {
 
     // Answering a question should not cost you the song. The track pauses
     // rather than stopping, so it picks up where it left off.
-    const wasPlaying = this.music.pauseForSpeech();
-    this.#handMouthTo('speech');
+    //
+    // In music mode neither happens: pausing to make room for a voice that
+    // will never arrive is the whole thing the mode exists to prevent, so the
+    // song keeps the connection and the queue below is born mute.
+    const wasPlaying = this.quiet ? false : this.music.pauseForSpeech();
+    if (!this.quiet) this.#handMouthTo('speech');
 
-    const speech = new SpeechQueue(this.player);
+    const speech = new SpeechQueue(this.player, () => this.quiet);
     this.speech = speech;
     speech.finished
       .catch(() => {})
@@ -510,6 +523,23 @@ export class VoiceSession extends EventEmitter {
         if (wasPlaying) this.music.resumeAfterSpeech();
       });
     return speech;
+  }
+
+  /**
+   * Turn music mode on or off, and report where it landed.
+   *
+   * Turning it on cancels whatever is being said. Somebody asking for quiet
+   * over a song wants the sentence they are hearing to stop, not the one
+   * after it — and the cancellation is also what hands the connection back to
+   * the music.
+   */
+  setQuiet(quiet) {
+    const wanted = Boolean(quiet);
+    if (wanted === this.quiet) return this.quiet;
+    this.quiet = wanted;
+    if (wanted) this.speech?.cancel();
+    this.emit('update');
+    return this.quiet;
   }
 
   /** Cut off playback immediately. Backs a "stop talking" control. */
@@ -566,6 +596,7 @@ export class VoiceSession extends EventEmitter {
       channelName: this.channelName,
       listeners: this.humansInChannel(),
       speaking: this.speaking,
+      quiet: this.quiet,
       agentEnabled: this.agentEnabled,
       listening: this.receiver.status(),
       eager: this.eager?.status() ?? null,

@@ -12,8 +12,15 @@
 import { AudioPlayerStatus } from '@discordjs/voice';
 
 export class SpeechQueue {
-  constructor(player) {
+  /**
+   * `muted` is asked, per piece, whether the room wants to hear anything at
+   * all — music mode. It is a function rather than a flag because the answer
+   * can change while a reply is being rendered: the turn that is told to talk
+   * again has to be able to say so out loud.
+   */
+  constructor(player, muted = () => false) {
     this.player = player;
+    this.muted = muted;
     this.pending = [];
     this.playing = false;
     this.ended = false; // no more pieces will be pushed
@@ -34,6 +41,11 @@ export class SpeechQueue {
   /** Queue a piece. `text` is kept only so callers can report what was said. */
   push(resource, text) {
     if (this.cancelled || this.ended) return;
+    // Music mode drops it here, the last place before the audio, because this
+    // is the one door every spoken thing goes through — an answer, a filler
+    // clip, a line before a tool. A check further up would only cover the
+    // paths that existed when it was written.
+    if (this.muted()) return;
     this.pending.push(resource);
     if (text) this.spoken.push(text);
     this.#advance();
