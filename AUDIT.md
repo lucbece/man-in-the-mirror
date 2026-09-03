@@ -213,6 +213,18 @@ Package: WP3
 
 ## Low
 
+### The transcription gate is set by reasoning, not yet by data
+
+`src/agent/energy.js` refuses clips whose peak stays under -40 dBFS, a value
+chosen to be safe rather than tight. Every clip is logged with its peak, RMS
+and active share, kept or discarded, precisely so the threshold and a possible
+second rule (active share, which a breath fails and a word passes) can be set
+from a week of real evenings. Until that is done the log carries one line per
+clip, which is the same volume of lines the discarded hallucinations produced.
+
+Package: WP2
+
+
 - **`docker compose up` on the server warns that the volumes "already exist
   but were not created by Docker Compose".** Cosmetic: cloud-init creates
   `mirror_data` and `mirror_runtime` before the first `up` so `config.json`
