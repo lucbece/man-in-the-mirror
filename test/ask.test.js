@@ -11,17 +11,28 @@ import { ask, AgentBusyError } from '../src/agent/index.js';
  * defects found by reading the code were living. These run the whole round
  * trip without a network, a Discord connection or an API key.
  */
-function deps({ sentences = [], failWith = null, search = false, tools = [] } = {}) {
+function deps({ sentences = [], failWith = null, search = false, tools = [], effect = null } = {}) {
   const rendered = [];
+  const notes = [];
+  const fillersTaken = [];
   return {
     rendered,
+    notes,
+    fillersTaken,
     toAudioResource: (audio) => audio,
+    noteInMusicChannel: async (_target, text) => {
+      notes.push(text);
+      return true;
+    },
     transcribeBuffer: async () => ({ transcribed: 0 }),
     formatTranscript: () => '',
-    takeFiller: (_lang, set) => ({
-      line: set === 'waiting' ? 'Sigo buscando.' : 'Dame un segundo.',
-      audio: { text: set === 'waiting' ? '<waiting>' : '<filler>' },
-    }),
+    takeFiller: (_lang, set) => {
+      fillersTaken.push(set ?? 'thinking');
+      return {
+        line: set === 'waiting' ? 'Sigo buscando.' : 'Dame un segundo.',
+        audio: { text: set === 'waiting' ? '<waiting>' : '<filler>' },
+      };
+    },
     createTts: () => ({
       label: 'fake voice',
       async synthesizeStream(text) {
@@ -35,6 +46,10 @@ function deps({ sentences = [], failWith = null, search = false, tools = [] } = 
         // Order matters, and matches the real brains: the name is recorded
         // before anything decides whether to cover the wait with a filler.
         for (const name of tools) onToolUse?.(name);
+        // What a tool actually did, before a word of the reply exists. This
+        // is the order that lets enter/leave_music_mode change whether the
+        // sentences behind them are spoken.
+        effect?.();
         if (search) onSearchStart?.();
         for (const s of sentences) onSentence(s);
         if (failWith) throw new Error(failWith);
@@ -50,6 +65,10 @@ function fakeSession(guildId = 'g1') {
   return {
     guildId,
     agentEnabled: false,
+    quiet: false,
+    setQuiet(quiet) {
+      this.quiet = quiet;
+    },
     played,
     receiver: { buffer: { recent: () => [] } },
     startSpeech() {
@@ -287,5 +306,96 @@ describe('an aside that opens a sentence', () => {
     const result = await ask(fakeSession(), { question: 'de quién es' }, d);
 
     assert.match(result.spoken, /\(el uruguayo\)/);
+  });
+});
+
+describe('music mode: it hears, it acts, it says nothing', () => {
+  const quietSession = (guildId = 'quiet') => {
+    const session = fakeSession(guildId);
+    session.quiet = true;
+    return session;
+  };
+
+  test('the answer is written to the music channel instead of spoken', async () => {
+    const session = quietSession();
+    const d = deps({ sentences: ['Es de Rubén Rada.', 'Del setenta y siete.'] });
+    const result = await ask(session, { question: 'de quién es', askedBy: 'Vero' }, d);
+
+    assert.deepEqual(d.rendered, [], 'nothing may be synthesised');
+    assert.deepEqual(session.played, [], 'and nothing may be played');
+    assert.equal(result.spoken, '', 'nobody heard a word of it');
+    assert.deepEqual(d.notes, ['🤫  Es de Rubén Rada. Del setenta y siete.']);
+    assert.equal(result.written, 'Es de Rubén Rada. Del setenta y siete.');
+  });
+
+  test('one message per turn, not one per sentence', async () => {
+    // Three lines in the channel read as three answers to three questions.
+    const d = deps({ sentences: ['Una.', 'Dos.', 'Tres.'] });
+    await ask(quietSession(), { question: 'contá', askedBy: 'Fede' }, d);
+    assert.equal(d.notes.length, 1);
+  });
+
+  test('the mouth is never taken, so the song does not pause', async () => {
+    // Taking it is what pauses the track, and pausing it to say nothing is
+    // the exact failure music mode exists to prevent.
+    const session = quietSession();
+    let tookTheMouth = false;
+    const realStart = session.startSpeech.bind(session);
+    session.startSpeech = () => {
+      tookTheMouth = true;
+      return realStart();
+    };
+
+    await ask(session, { question: 'qué hora es', askedBy: 'Pato' }, deps({ sentences: ['Las tres.'] }));
+    assert.equal(tookTheMouth, false);
+  });
+
+  test('no filler clip is even fetched', async () => {
+    const d = deps({ sentences: ['Listo.'], search: true, tools: ['mcp__bot__search_web'] });
+    const result = await ask(quietSession(), { question: 'buscá algo', askedBy: 'Vero' }, d);
+
+    assert.deepEqual(d.fillersTaken, [], 'a clip nobody can hear is a request for nothing');
+    assert.equal(result.timings.filler, undefined);
+  });
+
+  test('the tools still run, and their turn writes nothing on its own', async () => {
+    // "espejo, saltá" while a song is on: the track changes and the channel
+    // hears the result rather than a sentence about it.
+    const d = deps({ tools: ['mcp__bot__skip_song'] });
+    const result = await ask(quietSession(), { question: 'saltá' }, d);
+
+    assert.equal(result.spoken, '');
+    assert.equal(result.written, '');
+    assert.deepEqual(d.notes, [], 'skip_song writes its own note; ask must not add one');
+  });
+
+  test('being asked to talk again is answered out loud, by that same turn', async () => {
+    // The whole reason the flag is read per sentence rather than once at the
+    // top of the turn. leave_music_mode flips it, and the reply behind it is
+    // heard — otherwise the only way back would be the keyboard.
+    const session = quietSession('talks-again');
+    const d = deps({
+      tools: ['mcp__bot__leave_music_mode'],
+      effect: () => session.setQuiet(false),
+      sentences: ['Listo, vuelvo a hablar.'],
+    });
+    const result = await ask(session, { question: 'espejo, hablá de nuevo' }, d);
+
+    assert.equal(result.spoken, 'Listo, vuelvo a hablar.');
+    assert.deepEqual(session.played, ['Listo, vuelvo a hablar.']);
+    assert.deepEqual(d.notes, [], 'it was heard, so there is nothing to write');
+  });
+
+  test('and being asked for quiet is confirmed in writing, by that same turn', async () => {
+    const session = fakeSession('goes-quiet');
+    const d = deps({
+      tools: ['mcp__bot__enter_music_mode'],
+      effect: () => session.setQuiet(true),
+      sentences: ['Dale, me callo.'],
+    });
+    const result = await ask(session, { question: 'espejo, mutéate' }, d);
+
+    assert.equal(result.spoken, '');
+    assert.deepEqual(d.notes, ['🤫  Dale, me callo.']);
   });
 });
