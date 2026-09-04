@@ -147,7 +147,7 @@ export default {
   'thinking.web.help': 'Suma unos segundos a las respuestas que la usan.',
   'thinking.noKey': 'No hay clave de {provider}, así que todavía no puede responder. Cargá una en Claves.',
 
-  'tools.intro': 'Lo que el agente puede usar más allá de sus propias respuestas. Corre sobre el Claude Agent SDK; estos son los servidores MCP que le conectás.',
+  'tools.intro': 'Lo que el agente puede usar más allá de sus propias respuestas: los servidores MCP que le conectás, corra sobre el modelo que corra.',
   'tools.intro.idle': 'Estas herramientas están inactivas en modo Chat; cambiá a Agente o Modelo rápido adelante en Pensamiento para usarlas.',
   'tools.mcp.empty': 'No hay servidores conectados. El agente puede buscar en la web y manejar la llamada sin ninguno.',
   'tools.mcp.remove': 'Quitar {name}',

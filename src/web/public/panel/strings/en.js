@@ -147,7 +147,7 @@ export default {
   'thinking.web.help': 'Adds a few seconds to the answers that use it.',
   'thinking.noKey': 'No {provider} key set, so it cannot answer yet. Add one under Keys.',
 
-  'tools.intro': 'What the agent can use beyond its own answers. It runs on the Claude Agent SDK; these are the MCP servers you connect to it.',
+  'tools.intro': 'What the agent can use beyond its own answers: the MCP servers you connect to it, whichever model it runs on.',
   'tools.intro.idle': 'These tools are idle in Chat mode; switch to Agent or Fast model in front under Thinking to use them.',
   'tools.mcp.empty': 'No servers connected. The agent can search the web and control the call without any.',
   'tools.mcp.remove': 'Remove {name}',
