@@ -1,6 +1,8 @@
 # Control panel redesign
 
-Status: plan, 2026-09-04. Nothing below is built yet.
+Status, 2026-09-04: P0, P1, P2, P3 and P4 done on `wp/panel` (harness,
+design spec, shell, Now, Thinking, server additions). P5 and P6 in
+progress, delegated in three groups. P7 and P8 pending.
 
 The panel at `src/web/public/` does its job and reads like a manual. This
 plan replaces it with a panel that shows what the bot is doing and asks for
