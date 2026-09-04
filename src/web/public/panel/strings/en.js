@@ -201,4 +201,28 @@ export default {
   'speaking.voice.local': 'Local voice',
   'speaking.hearIt': 'Hear it',
   'speaking.callout': "Loudness is per listener: right-click the bot in the Discord member list to change it for yourself.",
+
+  'discord.intro': 'Where the bot connects, and the link that invites it.',
+  'discord.token': 'Bot token',
+  'discord.token.set': 'Set · {preview}',
+  'discord.token.missing': 'Missing',
+  'discord.token.placeholder': 'New token',
+  'discord.token.replace': 'Replace',
+  'discord.token.replaced': 'Token replaced.',
+  'discord.token.help': 'Reset it from the Discord Developer Portal, under Bot → Reset Token.',
+  'discord.token.more.summary': 'Where to get it',
+  'discord.token.more.text': 'Open your application, then Bot → Reset Token, in the',
+  'discord.token.more.link': 'Discord Developer Portal',
+  'discord.guildId': 'Server ID',
+  'discord.guildId.help': 'Right-click the server in Discord and copy its ID.',
+  'discord.guildId.more.summary': 'Why it matters',
+  'discord.guildId.more.text':
+    'With it, slash commands appear on this server at once instead of up to an hour later. You need Developer Mode on in Discord’s settings to see "Copy Server ID" in the right-click menu.',
+  'discord.invite': 'Invite link',
+  'discord.invite.help': 'Opens Discord with the scopes and permissions it needs.',
+  'discord.invite.copy': 'Copy',
+  'discord.invite.copied': 'Copied.',
+  'discord.invite.copyFailed': 'Could not copy.',
+  'discord.callout':
+    'It needs Connect and Speak to join and talk in the channel; Move Members and Mute Members to manage the call. No privileged intents.',
 };

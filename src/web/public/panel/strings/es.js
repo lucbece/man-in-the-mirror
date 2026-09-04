@@ -201,4 +201,28 @@ export default {
   'speaking.voice.local': 'Voz local',
   'speaking.hearIt': 'Escuchar',
   'speaking.callout': 'El volumen es por oyente: hacé clic derecho sobre el bot en la lista de miembros de Discord para cambiarlo.',
+
+  'discord.intro': 'Dónde se conecta el bot, y el link para invitarlo.',
+  'discord.token': 'Token del bot',
+  'discord.token.set': 'Cargado · {preview}',
+  'discord.token.missing': 'Falta',
+  'discord.token.placeholder': 'Token nuevo',
+  'discord.token.replace': 'Reemplazar',
+  'discord.token.replaced': 'Token reemplazado.',
+  'discord.token.help': 'Reinicialo desde el Developer Portal de Discord, en Bot → Reset Token.',
+  'discord.token.more.summary': 'Dónde conseguirlo',
+  'discord.token.more.text': 'Abrí tu aplicación y andá a Bot → Reset Token, en el',
+  'discord.token.more.link': 'Developer Portal de Discord',
+  'discord.guildId': 'ID del servidor',
+  'discord.guildId.help': 'Hacé clic derecho sobre el servidor en Discord y copiá su ID.',
+  'discord.guildId.more.summary': 'Por qué importa',
+  'discord.guildId.more.text':
+    'Con él, los comandos de barra aparecen en este servidor al instante en vez de tardar hasta una hora. Necesitás activar el Modo desarrollador en los ajustes de Discord para ver "Copiar ID del servidor" en el menú contextual.',
+  'discord.invite': 'Link de invitación',
+  'discord.invite.help': 'Abre Discord con los scopes y permisos que necesita.',
+  'discord.invite.copy': 'Copiar',
+  'discord.invite.copied': 'Copiado.',
+  'discord.invite.copyFailed': 'No se pudo copiar.',
+  'discord.callout':
+    'Necesita Connect y Speak para entrar y hablar en el canal; Move Members y Mute Members para gestionar la llamada. Sin intents privilegiados.',
 };
