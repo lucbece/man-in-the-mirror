@@ -156,4 +156,13 @@ export default {
   'tools.maxTurns.label': 'Rondas de herramientas por respuesta',
   'tools.maxTurns.help': 'Cada ronda es un viaje de ida y vuelta al modelo. Ocho alcanza para la mayoría de las tareas.',
   'tools.warn': 'Cualquiera en la llamada puede usar lo que conectés acá: el bot le responde a toda la sala, y un servidor MCP no tiene forma de comprobar quién pregunta.',
+
+  'instructions.intro': 'Lo que debería saber o hacer en tu canal. Cualquiera en la llamada puede agregar una por voz; es la misma lista.',
+  'instructions.remove': 'Quitar',
+  'instructions.add.placeholder': 'Agregar una instrucción',
+  'instructions.add.button': 'Agregar',
+  'instructions.empty': 'Todavía no hay ninguna. Agregá lo que debería saber, o decíselo en la llamada.',
+  'instructions.help': '{n} de {max}. Los nombres en un chip resaltado siguen a la persona si cambia su nombre de usuario. Las reglas incorporadas quedan siempre por encima de estas.',
+  'instructions.help.overChars': 'Una instrucción supera los {max} caracteres; acortala antes de guardar.',
+  'instructions.help.overCount': '{n} de {max}; quitá una antes de agregar otra.',
 };

@@ -156,4 +156,13 @@ export default {
   'tools.maxTurns.label': 'Tool rounds per answer',
   'tools.maxTurns.help': 'Each round is a model round trip. Eight is enough for most tasks.',
   'tools.warn': 'Anyone in the call can use what you connect here: the bot answers the room, and an MCP server has no permission model for it to check.',
+
+  'instructions.intro': 'Things it should know or do in your channel. Anyone in the call can add one by voice; this is the same list.',
+  'instructions.remove': 'Remove',
+  'instructions.add.placeholder': 'Add an instruction',
+  'instructions.add.button': 'Add',
+  'instructions.empty': 'Nothing yet. Add what it should know, or say it in the call.',
+  'instructions.help': '{n} of {max}. Names in a highlighted chip follow the person if they change their display name. The built-in rules stay above these.',
+  'instructions.help.overChars': 'One instruction is over {max} characters; shorten it before saving.',
+  'instructions.help.overCount': '{n} of {max}; remove one before adding another.',
 };
