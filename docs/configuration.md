@@ -32,7 +32,7 @@ ssh tunnel (see [running.md](running.md)), never a public port.
 | `brainKind` | — | `agent` | `chat`, `agent` or `cascade`. See [Modes](#modes) |
 | `brainProvider` | — | `anthropic` | `anthropic` or `openai`. Chat mode only |
 | `brainModel` | — | *(blank)* | Model for the chosen provider. Blank uses its default |
-| `fastModel` | — | *(blank)* | The model in front of the agent in cascade mode. Blank uses `claude-haiku-4-5` |
+| `fastModel` | — | *(blank)* | The model in front of the agent in cascade mode. An Anthropic or an OpenAI id, chosen by the id itself; needs the matching key. Blank uses `claude-haiku-4-5`. The agent behind it is always Claude |
 | `agentMaxTurns` | — | `8` | Tool rounds per agent answer, 1–25 |
 | `webSearch` | — | `true` | Give the agent web search |
 | `mcpServers` | — | *(blank)* | MCP servers as JSON. See [MCP servers](#mcp-servers) |
@@ -75,7 +75,9 @@ nothing to wake it with. Recovery is the panel's Listening section.
   questions. A session ends when the bot leaves the channel or after 30
   minutes idle.
 - **`cascade`**: a small fast model in front of the agent. It answers what
-  needs no tool and hands the rest over. The reasoning is in
+  needs no tool and hands the rest over. The fast model may be an Anthropic
+  or an OpenAI id, picked by `fastModel`'s own id — the agent it hands over
+  to is always the Claude agent above. The reasoning is in
   [design/cascade.md](design/cascade.md).
 
 ## Hearing and speaking: API or local
