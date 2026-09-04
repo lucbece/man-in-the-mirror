@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { describe } from 'node:test';
 
-import { MODELS } from '../src/agent/models.js';
+import { MODELS, providerFor } from '../src/agent/models.js';
 
 /**
  * The known set the panel's selects are built from. Free-typed model ids stay
@@ -34,8 +34,8 @@ describe('the known models', () => {
     assert.deepEqual(byId['claude-haiku-4-5'].role.sort(), ['chat', 'fast']);
     assert.deepEqual(byId['claude-sonnet-5'].role.sort(), ['agent', 'chat', 'fast']);
     assert.deepEqual(byId['claude-opus-5'].role.sort(), ['agent', 'chat']);
-    assert.deepEqual(byId['gpt-4.1'].role, ['chat']);
-    assert.deepEqual(byId['gpt-4.1-mini'].role, ['chat']);
+    assert.deepEqual(byId['gpt-4.1'].role.sort(), ['chat', 'fast']);
+    assert.deepEqual(byId['gpt-4.1-mini'].role.sort(), ['chat', 'fast']);
 
     assert.equal(byId['claude-haiku-4-5'].provider, 'anthropic');
     assert.equal(byId['claude-sonnet-5'].provider, 'anthropic');
@@ -48,5 +48,32 @@ describe('the known models', () => {
     const byId = Object.fromEntries(MODELS.map((m) => [m.id, m]));
     assert.match(byId['claude-haiku-4-5'].note, /2\.4s/);
     assert.match(byId['claude-sonnet-5'].note, /4\.9s/);
+  });
+});
+
+describe('providerFor', () => {
+  test('known ids come from the list rather than a guess', () => {
+    assert.equal(providerFor('claude-sonnet-5'), 'anthropic');
+    assert.equal(providerFor('claude-haiku-4-5'), 'anthropic');
+    assert.equal(providerFor('gpt-4.1'), 'openai');
+    assert.equal(providerFor('gpt-4.1-mini'), 'openai');
+  });
+
+  test('an unlisted claude id still resolves by prefix', () => {
+    assert.equal(providerFor('claude-opus-6'), 'anthropic');
+  });
+
+  test('an unlisted OpenAI id resolves by prefix', () => {
+    assert.equal(providerFor('gpt-5-mini'), 'openai');
+    assert.equal(providerFor('o1-preview'), 'openai');
+    assert.equal(providerFor('o3-mini'), 'openai');
+    assert.equal(providerFor('o4-mini'), 'openai');
+    assert.equal(providerFor('chatgpt-4o-latest'), 'openai');
+  });
+
+  test('anything else is neither', () => {
+    assert.equal(providerFor('llama-3'), null);
+    assert.equal(providerFor(''), null);
+    assert.equal(providerFor(undefined), null);
   });
 });

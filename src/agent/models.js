@@ -39,14 +39,31 @@ export const MODELS = [
     id: 'gpt-4.1',
     provider: 'openai',
     label: 'GPT-4.1',
-    role: ['chat'],
+    role: ['fast', 'chat'],
     note: 'direct answers',
   },
   {
     id: 'gpt-4.1-mini',
     provider: 'openai',
     label: 'GPT-4.1 mini',
-    role: ['chat'],
+    role: ['fast', 'chat'],
     note: 'smaller and cheaper',
   },
 ];
+
+/**
+ * Which provider a model id belongs to, for dispatching the fast leg (or
+ * anything else providers differ on): an exact match in `MODELS` first, since
+ * that is the ground truth; otherwise a prefix guess for an id typed by hand,
+ * same as `brainProvider` already lets people do. `null` means neither —
+ * callers decide what an unknown model id is worth.
+ */
+export function providerFor(modelId) {
+  const known = MODELS.find((m) => m.id === modelId);
+  if (known) return known.provider;
+
+  const id = String(modelId ?? '');
+  if (id.startsWith('claude')) return 'anthropic';
+  if (/^(gpt-|o1|o3|o4|chatgpt)/.test(id)) return 'openai';
+  return null;
+}
