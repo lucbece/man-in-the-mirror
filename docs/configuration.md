@@ -167,8 +167,9 @@ those addresses without asking. The tool reports the real title either way,
 and the log says which source answered. A pasted URL is never redirected to
 another site: if YouTube refuses it, the error says so.
 
-To have YouTube answer from a server, give yt-dlp cookies from a signed-in
-browser: export them in Netscape format (a browser extension such as "Get
+yt-dlp solves YouTube's JavaScript challenge with the Node that runs the bot,
+so nothing else has to be installed for it. To have YouTube answer from a
+server, give yt-dlp cookies from a signed-in browser: export them in Netscape format (a browser extension such as "Get
 cookies.txt LOCALLY" does it) and place the file at
 `data/youtube-cookies.txt`. It is picked up on the next request, never enters
 the repository or the image, and expires the way browser sessions do, so it

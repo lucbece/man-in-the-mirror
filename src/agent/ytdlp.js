@@ -91,9 +91,19 @@ async function download(target) {
  */
 export const COOKIES_PATH = path.join(DATA_DIR, 'youtube-cookies.txt');
 
-/** The arguments every yt-dlp call shares, cookies included when present. */
-export function commonArgs({ cookiesPath = COOKIES_PATH } = {}) {
-  const args = ['--no-warnings', '--no-playlist'];
+/**
+ * The arguments every yt-dlp call shares.
+ *
+ * YouTube guards its stream URLs with a JavaScript challenge, and yt-dlp
+ * solves it by running that JavaScript in a runtime it finds on the machine.
+ * It does not look for Node unless told to, and a machine running this bot
+ * has exactly one JavaScript runtime guaranteed to be there: the one running
+ * it. Without this, every YouTube client answers "requested format is not
+ * available" (measured 2026-09-04) once the bot check is passed. Cookies are
+ * added when the file exists.
+ */
+export function commonArgs({ cookiesPath = COOKIES_PATH, node = process.execPath } = {}) {
+  const args = ['--no-warnings', '--no-playlist', '--js-runtimes', `node:${node}`];
   if (fs.existsSync(cookiesPath)) args.push('--cookies', cookiesPath);
   return args;
 }
