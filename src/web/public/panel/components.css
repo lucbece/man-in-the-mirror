@@ -203,6 +203,9 @@ kbd {
 
 .topbar .actions {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
   gap: var(--s-2);
 }
 
@@ -295,6 +298,7 @@ kbd {
 @media (max-width: 900px) {
   .shell {
     grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
   }
   .nav {
     position: sticky;
@@ -398,6 +402,12 @@ p.help {
   line-height: 1.5;
   color: var(--fg-2);
   text-wrap: pretty;
+}
+
+/* Controls stacked inside one field: a select and the input it reveals. */
+.stack {
+  display: grid;
+  gap: var(--s-2);
 }
 
 /* Two fields side by side, when both are short. */
@@ -837,7 +847,7 @@ p.help {
 
 .stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
   gap: var(--s-2);
 }
 

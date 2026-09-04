@@ -239,7 +239,7 @@ function renderIndex(tabParam) {
   if (!tab) return html;
 
   const inject = `<script>localStorage.setItem('mitm.tab', ${JSON.stringify(tab)})</script>\n    `;
-  return html.replace('<script src="app.js"></script>', `${inject}<script src="app.js"></script>`);
+  return html.replace('<script type="module" src="panel/app.js"></script>', `${inject}<script type="module" src="panel/app.js"></script>`);
 }
 
 function serveStatic(res, pathname) {
