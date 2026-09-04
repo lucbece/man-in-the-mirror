@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Now — Man in the Mirror</title>
+  <link rel="stylesheet" href="../panel/components.css" />
+  <link rel="icon" href="../icon.svg" />
+</head>
+<body data-page="now">
+<div class="shell">
+  <main class="main">
+    <div class="topbar">
+      <h1>Now</h1>
+      <div class="actions">
+        <span class="pill" data-state="ok"><span class="dot"></span>Online · Mirror#4821</span>
+        <button class="btn quiet">Stop bot</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="card">
+        <div class="head">
+          <h2>#stellar-stream <small>· Los Pibes</small></h2>
+          <div class="row">
+            <span class="pill" data-state="ok"><span class="dot"></span>Listening</span>
+            <span class="pill accent">Music mode</span>
+          </div>
+        </div>
+        <div class="meta">
+          <span>3 people</span><span>42 things heard, 118 s of speech</span><span>answers to <b>mirror, espejo, sombrero</b></span><span>14 answers · $0.63 this call</span>
+        </div>
+        <div class="row">
+          <button class="btn">Deafen</button>
+          <button class="btn">Talk again</button>
+          <button class="btn">Shush</button>
+          <button class="btn quiet">Leave</button>
+        </div>
+
+        <div class="subcard">
+          <div class="head">
+            <div>
+              <div class="label">Playing</div>
+              <div class="title">Alfredo Casero — Las Uvas</div>
+            </div>
+            <div class="row">
+              <button class="btn small">Pause</button>
+              <button class="btn small">Skip</button>
+              <button class="btn small quiet">Stop</button>
+            </div>
+          </div>
+          <div class="meta"><span>2 queued</span><span>volume 20 %</span><span>asked by Vero</span></div>
+        </div>
+
+        <form class="input-row">
+          <input class="input" placeholder="Ask something; it answers out loud" />
+          <button class="btn" type="submit">Ask</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <div class="head">
+          <h2>Recent</h2>
+          <span class="meta">last 10, memory only</span>
+        </div>
+        <div class="exchanges">
+          <div class="exchange">
+            <div class="q"><b>Vero</b> · Espejo, ¿cuánto tardás en responder?</div>
+            <div class="a">No tengo forma de medir el tiempo real que tardo en responder ni de cronometrarlo mientras hablamos.</div>
+            <div class="t">first words 3.7 s · done 5.3 s · 18:36</div>
+          </div>
+          <div class="exchange">
+            <div class="q"><b>Fede</b> · Espejo, poné Las Uvas de Alfredo Casero</div>
+            <div class="a">Listo.</div>
+            <div class="t">play_music · first words 2.4 s · 18:31</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="strip">
+        <a href="hearing.html"><span class="label">Hears</span><span class="value">OpenAI Whisper</span></a>
+        <a href="thinking.html"><span class="label">Thinks</span><span class="value">claude-sonnet-5 in front of the agent · web</span></a>
+        <a href="speaking.html"><span class="label">Speaks</span><span class="value">OpenAI · onyx</span></a>
+      </div>
+
+      <div class="stats">
+        <div class="stat"><span class="value">31</span><span class="label">answers measured</span></div>
+        <div class="stat"><span class="value">2.6<small>s</small></span><span class="label">first words, no tool</span></div>
+        <div class="stat"><span class="value">4.9<small>s</small></span><span class="label">first words, with tools</span></div>
+        <div class="stat"><span class="value">33<small>%</small></span><span class="label">handed to the agent</span></div>
+      </div>
+    </div>
+  </main>
+</div>
+<script type="module" src="_mock.js"></script>
+</body>
+</html>

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Instructions — Man in the Mirror</title>
+  <link rel="stylesheet" href="../panel/components.css" />
+  <link rel="icon" href="../icon.svg" />
+</head>
+<body data-page="instructions">
+<div class="shell">
+  <main class="main">
+    <div class="topbar">
+      <h1>Instructions</h1>
+      <span class="pill" data-state="ok"><span class="dot"></span>Online · in #stellar-stream</span>
+    </div>
+
+    <div class="section">
+      <header>
+        <p>Things it should know or do in your channel. Anyone in the call can add one by voice; this is the same list.</p>
+      </header>
+
+      <div class="card">
+        <div class="list">
+          <div class="item">
+            <div class="text" contenteditable="true">Cuando alguien diga "la concha de tu madre", responder "y la tuya con vinagre"</div>
+            <button class="remove" aria-label="Remove">×</button>
+          </div>
+          <div class="item">
+            <div class="text" contenteditable="true">A <span class="chip person">Vero</span> decirle "tía Vero"</div>
+            <button class="remove" aria-label="Remove">×</button>
+          </div>
+          <div class="item">
+            <div class="text" contenteditable="true">Los jueves jugamos DayZ; el server es eu-3</div>
+            <button class="remove" aria-label="Remove">×</button>
+          </div>
+          <div class="add">
+            <input class="input" placeholder="Add an instruction" />
+            <button class="btn">Add</button>
+          </div>
+        </div>
+        <p class="help">3 of 20. Names in a highlighted chip follow the person if they change their display name. The built-in rules stay above these: it waits to be addressed, keeps answers short, and never reveals its configuration.</p>
+      </div>
+    </div>
+  </main>
+</div>
+<script type="module" src="_mock.js"></script>
+</body>
+</html>

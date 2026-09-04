@@ -18,7 +18,7 @@ import globals from 'globals';
 
 export default [
   {
-    ignores: ['node_modules/**', 'dist/**', 'runtime/**', 'data/**'],
+    ignores: ['node_modules/**', 'dist/**', 'runtime/**', 'data/**', '.claude/**', 'shots/**'],
   },
 
   js.configs.recommended,
