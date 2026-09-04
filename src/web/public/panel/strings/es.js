@@ -120,7 +120,7 @@ export default {
   'now.stats.handed': 'pasadas al agente',
   'now.stats.beforeAsk': 'de oír a preguntar',
 
-  'thinking.intro': 'Cómo decide qué decir, y con qué modelo. El agente corre sobre Claude; los modelos de OpenAI pueden responder en modo Chat o ir adelante como modelo rápido.',
+  'thinking.intro': 'Cómo decide qué decir, y con qué modelos. El agente y el modelo rápido pueden ser Claude u OpenAI, en cualquier combinación.',
   'thinking.mode': 'Modo',
   'thinking.mode.agent': 'Agente',
   'thinking.mode.cascade': 'Modelo rápido adelante',
@@ -130,7 +130,7 @@ export default {
   'thinking.mode.chat.help': 'Una llamada por respuesta. Lo más rápido; sin herramientas ni memoria entre respuestas.',
   'thinking.agentModel': 'Modelo del agente',
   'thinking.model': 'Modelo',
-  'thinking.model.help': 'Recuerda la llamada y usa las herramientas.',
+  'thinking.model.help': 'Recuerda la llamada y usa las herramientas. Necesita la clave de su proveedor.',
   'thinking.chatModel.help': 'En blanco usa el modelo por defecto del proveedor.',
   'thinking.fastModel': 'Modelo rápido',
   'thinking.fastModel.help': 'Responde primero. Sin herramientas ni memoria propia.',

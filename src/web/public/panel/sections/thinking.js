@@ -12,7 +12,7 @@ import { SettingsForm, field, seg, selected, switchRow } from '../form.js';
 const FALLBACK_MODELS = [
   { id: 'claude-sonnet-5', provider: 'anthropic', role: ['agent', 'fast', 'chat'], note: '' },
   { id: 'claude-haiku-4-5', provider: 'anthropic', role: ['fast', 'chat'], note: '' },
-  { id: 'gpt-4.1', provider: 'openai', role: ['chat'], note: '' },
+  { id: 'gpt-4.1', provider: 'openai', role: ['agent', 'fast', 'chat'], note: '' },
 ];
 const DEFAULTS = { agent: 'claude-sonnet-5', fast: 'claude-haiku-4-5', anthropic: 'claude-sonnet-5', openai: 'gpt-4.1' };
 
@@ -106,7 +106,7 @@ export function mount(root) {
   function refill(values) {
     const kind = values.brainKind;
     const providerId = kind === 'chat' ? values.brainProvider : 'anthropic';
-    agentModel.fill(kind === 'chat' ? 'chat' : 'agent', [providerId], values.brainModel, DEFAULTS[kind === 'chat' ? providerId : 'agent']);
+    agentModel.fill(kind === 'chat' ? 'chat' : 'agent', kind === 'chat' ? [providerId] : ['anthropic', 'openai'], values.brainModel, DEFAULTS[kind === 'chat' ? providerId : 'agent']);
     fastModel.fill('fast', ['anthropic', 'openai'], values.fastModel, DEFAULTS.fast);
   }
 
