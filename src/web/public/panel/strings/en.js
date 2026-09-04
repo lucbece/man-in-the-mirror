@@ -177,4 +177,17 @@ export default {
   'hearing.localModel.more.summary': 'Which one',
   'hearing.localModel.more.text': 'large-v3-turbo with an NVIDIA card fetches the CUDA build, 646 MB; base runs on CPU and is slower than the API.',
   'hearing.noKey': 'No OpenAI key, transcription will fail. Add one under Keys.',
+
+  'listening.intro': 'What it listens for, and how much of the call it keeps.',
+  'listening.names': 'Names it answers to',
+  'listening.names.help': 'Matched anywhere in a sentence. Use a word from the language you speak.',
+  'listening.names.more.summary': 'Choosing a name',
+  'listening.names.more.text': '"hey mirror" said mid-Spanish came back as "Amy", while "espejo" lands every time. Avoid words that sound ordinary: "mirar" collided with "mirror".',
+  'listening.names.remove': 'Remove {name}',
+  'listening.wake': 'Answer when someone says its name',
+  'listening.buffer': 'How much conversation it keeps',
+  'listening.buffer.help': 'Held in memory only. 90 s covers the thread of a conversation.',
+  'listening.advanced': 'Advanced',
+  'listening.eager': 'Transcribe as people speak',
+  'listening.eager.help': 'Needed to notice its name. Pays for everything said in the channel.',
 };
