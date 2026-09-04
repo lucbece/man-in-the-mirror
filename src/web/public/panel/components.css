@@ -385,36 +385,54 @@ kbd {
   color: var(--danger);
 }
 
-.field .more {
+.more {
   max-width: var(--measure);
   font-size: var(--fs-0);
   color: var(--fg-2);
 }
 
-.field .more summary {
+.more summary {
   cursor: pointer;
   font-size: var(--fs-1);
   color: var(--fg-2);
   list-style: none;
 }
 
-.field .more summary:hover {
+.more summary:hover {
   color: var(--fg);
 }
 
-.field .more summary::before {
+.more summary::before {
   content: "›";
   display: inline-block;
   margin-right: var(--s-2);
   transition: transform var(--t-1) var(--ease);
 }
 
-.field .more[open] summary::before {
+.more[open] summary::before {
   transform: rotate(90deg);
 }
 
-.field .more p {
+.more p {
   margin: var(--s-2) 0 0;
+}
+
+/* A disclosure that is a card row of its own (Edit as JSON) opens to the
+   card's full width; only its prose keeps the measure. */
+.card > .more {
+  max-width: none;
+}
+
+.card > .more > .textarea,
+.card > .more > .field {
+  margin-top: var(--s-3);
+}
+
+/* Secondary text inside a list item: a command, a URL. */
+.list .item .text .help {
+  display: block;
+  font-size: var(--fs-0);
+  color: var(--fg-2);
 }
 
 /* The settings nobody needs on day one: a full-width disclosure at the end
