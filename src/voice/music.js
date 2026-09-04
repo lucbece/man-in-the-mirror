@@ -64,6 +64,17 @@ export class MusicPlayer extends EventEmitter {
       if (this.pausedForSpeech || this.pausedByUser) return;
       this.#playNext().catch((err) => console.warn(`[music] ${err.message}`));
     });
+    // A pause asked for while the next track is still loading is ignored by
+    // the player: pause() only acts on Playing, and a track spends its first
+    // seconds Buffering behind yt-dlp and ffmpeg. Heard in a call: "pausá" a
+    // moment after an album advanced, "paused" written back, the song playing
+    // on, and the next "pausá" told it was already paused. So the pause is
+    // a fact about this player, kept in the two flags, and enforced again the
+    // moment the player starts playing anything.
+    this.player.on('stateChange', (_was, now) => {
+      if (now.status !== AudioPlayerStatus.Playing) return;
+      if (this.pausedByUser || this.pausedForSpeech) this.player.pause(true);
+    });
   }
 
   get playing() {

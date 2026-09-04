@@ -241,6 +241,51 @@ describe('two kinds of pause', () => {
     return music;
   }
 
+  test('a pause asked for while the track is still loading holds once it plays', async () => {
+    // The player ignores pause() unless it is Playing, and the seconds after
+    // an album advances are spent Buffering behind yt-dlp. The pause is kept
+    // as a fact and applied the moment playback actually starts.
+    const music = player();
+    await music.add('a', 'Vero');
+    // The real setter wants a real resource; the transition is what matters.
+    const transition = (status) => {
+      const was = music.player.state;
+      music.player._state = { status };
+      music.player.emit('stateChange', was, music.player.state);
+    };
+    transition(AudioPlayerStatus.Buffering);
+    let pauses = 0;
+    music.player.pause = () => {
+      pauses += 1;
+      return music.player.state.status === AudioPlayerStatus.Playing;
+    };
+    assert.equal(music.pause(), true);
+    assert.equal(pauses, 1, 'tried, and was ignored by a buffering player');
+    transition(AudioPlayerStatus.Playing);
+    assert.equal(pauses, 2, 'paused again the moment it started playing');
+    assert.equal(music.pausedByUser, true);
+    assert.equal(music.resume(), true);
+  });
+
+  test('the same holds for a pause made for speech', async () => {
+    const music = player();
+    await music.add('a', 'Vero');
+    const transition = (status) => {
+      const was = music.player.state;
+      music.player._state = { status };
+      music.player.emit('stateChange', was, music.player.state);
+    };
+    transition(AudioPlayerStatus.Buffering);
+    let pauses = 0;
+    music.player.pause = () => {
+      pauses += 1;
+      return false;
+    };
+    music.pauseForSpeech();
+    transition(AudioPlayerStatus.Playing);
+    assert.equal(pauses, 2);
+  });
+
   test('a track paused on purpose is not resumed by finishing an answer', () => {
     // The bug this prevents: they pause the music, ask something, and the
     // answer ending starts the music again on its own.
