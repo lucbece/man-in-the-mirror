@@ -53,7 +53,14 @@ function fakeConfig(overrides = {}) {
     brainModel: '',
     brainKind: 'agent',
     fastModel: '',
-    mcpServers: '',
+    mcpServers: JSON.stringify(
+      {
+        filesystem: { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem'] },
+        search: { url: 'https://example.com/mcp' },
+      },
+      null,
+      2,
+    ),
     agentDirectories: '',
     agentMaxTurns: 8,
     customInstructions: [
@@ -241,6 +248,43 @@ export const scenarios = {
   },
 };
 
+/**
+ * A short sine-wave WAV, so the Speaking section's "Hear it" button has
+ * something to play without an OpenAI key or Piper installed. 16-bit PCM,
+ * mono, 16 kHz — the header is 44 bytes, written by hand rather than
+ * pulled in as a dependency this script otherwise has none of.
+ */
+function previewWav() {
+  const sampleRate = 16000;
+  const seconds = 0.6;
+  const frequency = 440;
+  const numSamples = Math.round(sampleRate * seconds);
+  const fadeSamples = Math.round(sampleRate * 0.01); // 10 ms fade in/out
+  const dataSize = numSamples * 2; // 16-bit mono
+
+  const buffer = Buffer.alloc(44 + dataSize);
+  buffer.write('RIFF', 0, 'ascii');
+  buffer.writeUInt32LE(36 + dataSize, 4);
+  buffer.write('WAVE', 8, 'ascii');
+  buffer.write('fmt ', 12, 'ascii');
+  buffer.writeUInt32LE(16, 16); // fmt chunk size
+  buffer.writeUInt16LE(1, 20); // PCM
+  buffer.writeUInt16LE(1, 22); // mono
+  buffer.writeUInt32LE(sampleRate, 24);
+  buffer.writeUInt32LE(sampleRate * 2, 28); // byte rate
+  buffer.writeUInt16LE(2, 32); // block align
+  buffer.writeUInt16LE(16, 34); // bits per sample
+  buffer.write('data', 36, 'ascii');
+  buffer.writeUInt32LE(dataSize, 40);
+
+  for (let i = 0; i < numSamples; i++) {
+    const fade = Math.min(1, i / fadeSamples, (numSamples - 1 - i) / fadeSamples);
+    const sample = Math.sin((2 * Math.PI * frequency * i) / sampleRate) * fade;
+    buffer.writeInt16LE(Math.round(sample * 32767 * 0.8), 44 + i * 2);
+  }
+  return buffer;
+}
+
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -307,6 +351,12 @@ export function createServer(scenarioName) {
     if (url.pathname === '/api/state') {
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify(state));
+      return;
+    }
+
+    if (url.pathname === '/api/tts/preview') {
+      res.writeHead(200, { 'content-type': 'audio/wav' });
+      res.end(previewWav());
       return;
     }
 
