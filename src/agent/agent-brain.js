@@ -271,7 +271,7 @@ export class AgentSession {
   ask(text, { onToolUse, onSentence } = {}) {
     if (this.closed) return Promise.reject(new AgentError('Agent session is closed.'));
     if (this.turn) return Promise.reject(new AgentError('Agent is mid-answer.'));
-    trace('INPUT', 'agent turn', text);
+    trace('INPUT', `agent turn (${this.model ?? 'agent'})`, text);
     this.lastUsedAt = Date.now();
 
     return new Promise((resolve, reject) => {
