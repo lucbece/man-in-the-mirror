@@ -152,7 +152,7 @@ export default {
   'tools.mcp.more.summary': 'Ejemplo y lista de permitidos',
   'tools.mcp.more.text': 'Un servidor que corre localmente, como {"github": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"]}}, convive con uno remoto, como {"search": {"url": "https://example.com/mcp", "headers": {"Authorization": "Bearer …"}}}. Agregá "allow": ["tool_name"] a la entrada de un servidor para otorgarle solo las herramientas nombradas ahí en vez de todas las que ofrece.',
   'tools.dirs.label': 'Carpetas a las que el agente puede acceder',
-  'tools.dirs.help': 'Rutas completas, una por línea. Es a esto que queda acotado un servidor de archivos.',
+  'tools.dirs.help': 'Rutas completas, una por línea. A esto queda acotado un servidor de archivos.',
   'tools.maxTurns.label': 'Rondas de herramientas por respuesta',
   'tools.maxTurns.help': 'Cada ronda es un viaje de ida y vuelta al modelo. Ocho alcanza para la mayoría de las tareas.',
   'tools.warn': 'Cualquiera en la llamada puede usar lo que conectés acá: el bot le responde a toda la sala, y un servidor MCP no tiene forma de comprobar quién pregunta.',
@@ -162,7 +162,7 @@ export default {
   'instructions.add.placeholder': 'Agregar una instrucción',
   'instructions.add.button': 'Agregar',
   'instructions.empty': 'Todavía no hay ninguna. Agregá lo que debería saber, o decíselo en la llamada.',
-  'instructions.help': '{n} de {max}. Los nombres en un chip resaltado siguen a la persona si cambia su nombre de usuario. Las reglas incorporadas quedan siempre por encima de estas.',
+  'instructions.help': '{n} de {max}. Los nombres en un chip resaltado siguen a la persona aunque cambie su nombre visible. Las reglas incorporadas quedan siempre por encima de estas.',
   'instructions.help.overChars': 'Una instrucción supera los {max} caracteres; acortala antes de guardar.',
   'instructions.help.overCount': '{n} de {max}; quitá una antes de agregar otra.',
 
@@ -251,5 +251,5 @@ export default {
   'keys.anthropic.more.text': 'Creala en la Console, en Settings → Keys, en',
   'keys.anthropic.more.link': 'platform.claude.com/settings/keys',
   'keys.anthropic.replaced': 'Clave de Anthropic reemplazada.',
-  'keys.callout': 'Se guarda en data/config.json en el servidor, legible solo por su dueño. Un campo en blanco deja lo que ya está cargado.',
+  'keys.callout': 'Se guarda en data/config.json, legible solo por su dueño. Un campo en blanco deja lo que ya está cargado.',
 };
