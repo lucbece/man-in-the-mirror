@@ -131,13 +131,19 @@ class LocalTts {
   }
 }
 
-export function createTts() {
-  if (config.get('ttsProvider') === 'local') {
-    return new LocalTts({ voice: config.get('ttsLocalVoice') });
+/**
+ * Build the synthesiser to speak with — the configured one by default, or a
+ * specific provider and voice when a caller needs to bypass the config, as
+ * the voice preview route does: it is always asked about one exact voice,
+ * whatever is currently configured for the running bot.
+ */
+export function createTts({ provider, voice } = {}) {
+  if ((provider ?? config.get('ttsProvider')) === 'local') {
+    return new LocalTts({ voice: voice ?? config.get('ttsLocalVoice') });
   }
   return new OpenAiTts({
     apiKey: config.get('openaiApiKey'),
-    voice: config.get('ttsVoice'),
+    voice: voice ?? config.get('ttsVoice'),
   });
 }
 

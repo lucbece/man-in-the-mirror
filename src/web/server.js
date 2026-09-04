@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 
-import { config } from '../config.js';
+import { config, VOICES, LOCAL_VOICE_INFO } from '../config.js';
 import { bot } from '../bot/index.js';
 import { sessionManager } from '../voice/manager.js';
 import { formatTranscript, transcribeBuffer } from '../agent/stt.js';
@@ -17,9 +17,18 @@ import {
 } from '../agent/instructions.js';
 import { agentSessionStatus } from '../agent/agent-brain.js';
 import { answerStats } from '../agent/answers.js';
+import { MODELS } from '../agent/models.js';
+import { createTts } from '../agent/tts.js';
+import { isPiperInstalled } from '../agent/piper.js';
 import { sameOriginOnly } from './same-origin.js';
 
 const HOST = process.env.WEB_HOST || '127.0.0.1';
+
+/** The one sentence every voice preview says, so voices are comparable. */
+const PREVIEW_TEXT = 'Hola, soy el espejo. This is how I sound.';
+
+/** Actions the panel's music strip can send straight to the session's player. */
+const MUSIC_ACTIONS = new Set(['play', 'skip', 'pause', 'resume', 'stop']);
 
 /**
  * The panel, as an express app that is not listening yet.
@@ -29,7 +38,15 @@ const HOST = process.env.WEB_HOST || '127.0.0.1';
  * this file before, and the CSRF hole below is exactly what a couple of
  * requests would have caught.
  */
-export function createApp() {
+export function createApp(deps = {}) {
+  // Injectable purely so the voice-preview route can be tested without a
+  // network call or a Piper binary — every other route here still uses the
+  // real collaborators, the same shape ask() takes its own deps in.
+  const {
+    createTts: makeTts = createTts,
+    isPiperInstalled: piperInstalled = isPiperInstalled,
+  } = deps;
+
   const app = express();
   app.use(express.json({ limit: '1mb' }));
 
@@ -51,6 +68,7 @@ export function createApp() {
         .status()
         .map((session) => ({ ...session, agent: agentSessionStatus(session.guildId) })),
       answers: answerStats(),
+      models: MODELS,
     });
   });
 
@@ -232,6 +250,86 @@ export function createApp() {
     } catch (err) {
       const code = err instanceof AgentBusyError ? 409 : 502;
       res.status(code).json({ error: err.message });
+    }
+  });
+
+  // The same player the /mj music slash commands drive (see bot/commands.js),
+  // reached from the panel's music strip instead of a Discord command.
+  app.post('/api/voice/music/:action', async (req, res) => {
+    const { action } = req.params;
+    if (!MUSIC_ACTIONS.has(action)) {
+      return res.status(400).json({ error: `Unknown action: ${action}` });
+    }
+    const { guildId, query } = req.body ?? {};
+    const session = sessionManager.get(guildId);
+    if (!session) return res.status(404).json({ error: 'Not connected in that guild' });
+
+    try {
+      if (action === 'play') {
+        if (!query?.trim()) return res.status(400).json({ error: 'query is required' });
+        // "the control panel" rather than a person's name: nobody in
+        // particular asked for this, the same reasoning /api/voice/ask uses.
+        await session.music.add(query.trim(), 'the control panel');
+      } else {
+        // skip, pause, resume, stop — MUSIC_ACTIONS is exactly the set of
+        // MusicPlayer method names that take no argument, so this is the
+        // whole dispatch.
+        session.music[action]();
+      }
+      res.json({ music: session.music.status() });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- speaking --------------------------------------------------------------
+
+  /**
+   * One clip per provider+voice, kept for the life of the process — a "Hear
+   * it" button clicked twice should not pay for synthesis twice, and nothing
+   * about a voice's sample changes while the bot is running.
+   */
+  const previewCache = new Map();
+
+  app.get('/api/tts/preview', async (req, res) => {
+    const provider = String(req.query.provider ?? '');
+    const voice = String(req.query.voice ?? '');
+    if (!['openai', 'local'].includes(provider)) {
+      return res.status(400).json({ error: 'provider must be "openai" or "local"' });
+    }
+    const knownVoice =
+      provider === 'openai' ? VOICES.includes(voice) : LOCAL_VOICE_INFO.some((v) => v.id === voice);
+    if (!knownVoice) return res.status(400).json({ error: `Unknown voice: ${voice}` });
+
+    const cacheKey = `${provider}:${voice}`;
+    const cached = previewCache.get(cacheKey);
+    if (cached) {
+      res.set('Content-Type', cached.contentType);
+      return res.send(cached.buffer);
+    }
+
+    // Checked before synthesising rather than left to fail inside it: Piper's
+    // binary is a multi-megabyte download, and a "Hear it" click should never
+    // quietly start one — that download already happens the first time the
+    // bot actually speaks locally.
+    if (provider === 'local' && !piperInstalled()) {
+      return res.status(503).json({ error: 'Piper is not installed on this machine.' });
+    }
+
+    try {
+      const tts = makeTts({ provider, voice });
+      const buffer = await tts.synthesize(PREVIEW_TEXT);
+      // Both providers hand back Ogg Opus for this call — OpenAI's `opus`
+      // response format, Piper re-encoded the same way in agent/piper.js —
+      // so this is exactly what the synthesiser produced, untranscoded.
+      const contentType = 'audio/ogg';
+      previewCache.set(cacheKey, { buffer, contentType });
+      res.set('Content-Type', contentType);
+      res.send(buffer);
+    } catch (err) {
+      // Missing OpenAI key throws here, from OpenAiTts's constructor — same
+      // "unavailable" story as Piper missing, so it gets the same status.
+      res.status(503).json({ error: err.message });
     }
   });
 

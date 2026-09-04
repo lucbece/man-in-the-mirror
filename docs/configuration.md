@@ -262,6 +262,44 @@ use Discord's own integration settings for the bot (Server Settings →
 Integrations). Playback volume is per listener in Discord; audio is sent as
 Opus and played without re-encoding, so the bot cannot adjust its own level.
 
+## Panel API
+
+Not a documented public API — it is what the control panel itself calls,
+same-origin only (see [running.md](running.md)) — but a few fields and routes
+are worth naming here because nothing else does.
+
+`GET /api/state` includes:
+
+- `bot.applicationId` and `bot.inviteUrl`: the Discord application id and an
+  invite link built from it, with the scopes and permissions the bot actually
+  needs (Connect, Speak, Move Members, Mute Members). Both are `null` until
+  the bot has logged in once.
+- `sessions[].music`: `{ playing, paused, title, queued, volume }` for the
+  guild's music player, read live off `MusicPlayer`.
+- `sessions[].recent`: the last ten questions and answers in that call,
+  newest last, each `{ askedBy, question, answer, firstAudioMs, totalMs, at }`.
+  Kept in memory only, for the life of the call — dropped the moment the bot
+  leaves the channel. Unlike the per-answer statistics below, this keeps the
+  actual text, so it exists only here, never in a file.
+- `models`: the known Anthropic and OpenAI model ids, each
+  `{ id, provider, label, role, note }`, for the panel's model selects. A
+  model id typed by hand is still accepted everywhere it is today — this list
+  only supplies the known set, it does not narrow what's valid.
+
+`POST /api/voice/music/:action`, `action` one of `play`, `skip`, `pause`,
+`resume`, `stop` — body `{ guildId, query }` (`query` required for `play`).
+Reaches the same `MusicPlayer` the `/mj` music commands do, and answers with
+the new `music` status. A guild the bot is not in is a 404; an action outside
+the five is a 400.
+
+`GET /api/tts/preview?provider=openai|local&voice=<id>` synthesises one fixed
+sentence ("Hola, soy el espejo. This is how I sound.") with the given voice
+and returns the audio, for a "Hear it" button next to the voice select. Cached
+in memory per provider and voice for the life of the process — the same
+sentence is never resynthesised. An unknown provider or voice is a 400; a
+provider that cannot currently speak (no OpenAI key, Piper not installed) is
+a 503.
+
 ## What touches the disk
 
 - `data/config.json`: the settings above, keys included.
