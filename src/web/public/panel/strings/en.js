@@ -165,4 +165,16 @@ export default {
   'instructions.help': '{n} of {max}. Names in a highlighted chip follow the person if they change their display name. The built-in rules stay above these.',
   'instructions.help.overChars': 'One instruction is over {max} characters; shorten it before saving.',
   'instructions.help.overCount': '{n} of {max}; remove one before adding another.',
+
+  'hearing.intro': 'How it turns speech into text.',
+  'hearing.provider': 'Transcription',
+  'hearing.provider.openai': 'OpenAI API',
+  'hearing.provider.local': 'On this machine',
+  'hearing.provider.openai.help': 'Works anywhere. About 2 to 4 cents per question.',
+  'hearing.provider.local.help': 'Free and private. Fast with a GPU, slow without.',
+  'hearing.localModel': 'Local model',
+  'hearing.localModel.help': 'Downloaded on first use into runtime/.',
+  'hearing.localModel.more.summary': 'Which one',
+  'hearing.localModel.more.text': 'large-v3-turbo with an NVIDIA card fetches the CUDA build, 646 MB; base runs on CPU and is slower than the API.',
+  'hearing.noKey': 'No OpenAI key, transcription will fail. Add one under Keys.',
 };
