@@ -68,6 +68,23 @@ describe('resolving a query', () => {
 });
 
 describe('cookies', () => {
+  test('a refusal despite cookies says they expired, so the one manual step is never guessed at', async (t) => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'mitm-cookies-')), 'youtube-cookies.txt');
+    fs.writeFileSync(file, '# Netscape HTTP Cookie File\n');
+    const warned = [];
+    const original = console.warn;
+    console.warn = (line) => warned.push(String(line));
+    t.after(() => {
+      console.warn = original;
+    });
+    const { exec } = fakeExec({
+      ytsearch1: new Error(BLOCKED),
+      scsearch1: { title: 'Beat It', seconds: 258, url: 'https://soundcloud.com/x' },
+    });
+    await resolveTrack('beat it', { exec, binary: 'yt-dlp', cookiesPath: file });
+    assert.match(warned.join('\n'), /cookies have expired/);
+  });
+
   test('are passed only when the file exists', () => {
     assert.deepEqual(commonArgs({ cookiesPath: none }), ['--no-warnings', '--no-playlist']);
     const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'mitm-cookies-')), 'youtube-cookies.txt');
