@@ -15,6 +15,7 @@
  * Pibes"; channels "General" and "stellar-stream") and ids are short
  * ("1", "2") — never anything that could pass for a real Discord handle.
  */
+import { MODELS } from '../src/agent/models.js';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -96,6 +97,9 @@ const BOT_READY = {
   error: null,
   user: { id: '9', tag: 'man-in-the-mirror' },
   guildCount: 1,
+  applicationId: '9',
+  inviteUrl:
+    'https://discord.com/oauth2/authorize?client_id=9&scope=bot%20applications.commands&permissions=21496832',
 };
 
 /** One voice session, shaped like `session.status()` plus the `agent` field the server adds. */
@@ -122,7 +126,8 @@ function fakeSession({ quiet = false, music = null } = {}) {
     eager: { queued: 0, running: false, completed: 14, failures: 0, error: null },
     agentNames: 'mirror, espejo',
     wakeEnabled: true,
-    music: music ?? { current: null, queue: [], volume: 1, paused: false, live: false },
+    music: music ?? { playing: false, paused: false, title: null, queued: 0, volume: 1 },
+    recent: RECENT,
     agent: {
       model: 'claude-sonnet-4-5',
       ageMs: 340000,
@@ -154,12 +159,32 @@ const ANSWER_STATS = {
 };
 
 const MUSIC_PLAYING = {
-  current: { title: 'A song Fede queued', requestedBy: 'Fede' },
-  queue: [{ title: 'Up next, from Pato', requestedBy: 'Pato' }],
-  volume: 0.6,
+  playing: true,
   paused: false,
-  live: true,
+  title: 'Alfredo Casero - Las Uvas',
+  queued: 2,
+  volume: 0.2,
 };
+
+/** The last exchanges of the call, newest last, as `session.recordExchange` keeps them. */
+const RECENT = [
+  {
+    askedBy: 'Fede',
+    question: 'Espejo, poné Las Uvas de Alfredo Casero',
+    answer: 'Listo.',
+    firstAudioMs: 2400,
+    totalMs: 5100,
+    at: '2026-09-04T18:31:12.000Z',
+  },
+  {
+    askedBy: 'Vero',
+    question: 'Espejo, ¿cuánto tardás en responder?',
+    answer: 'No tengo forma de medir el tiempo real que tardo en responder ni de cronometrarlo mientras hablamos.',
+    firstAudioMs: 3700,
+    totalMs: 5300,
+    at: '2026-09-04T18:36:05.000Z',
+  },
+];
 
 /** The four scenarios `--scenario=` picks between. Exported for the test. */
 export const scenarios = {
@@ -178,6 +203,7 @@ export const scenarios = {
     guilds: [],
     sessions: [],
     answers: NO_ANSWERS,
+    models: MODELS,
   },
 
   // Bot online, nobody in a call yet.
@@ -187,6 +213,7 @@ export const scenarios = {
     guilds: [GUILD],
     sessions: [],
     answers: NO_ANSWERS,
+    models: MODELS,
   },
 
   // One session, three people, the agent has been answering.
@@ -196,6 +223,7 @@ export const scenarios = {
     guilds: [GUILD],
     sessions: [fakeSession()],
     answers: ANSWER_STATS,
+    models: MODELS,
   },
 
   // Same call, plus music mode.
@@ -205,6 +233,7 @@ export const scenarios = {
     guilds: [GUILD],
     sessions: [fakeSession({ quiet: true, music: MUSIC_PLAYING })],
     answers: ANSWER_STATS,
+    models: MODELS,
   },
 };
 

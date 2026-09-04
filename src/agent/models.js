@@ -9,10 +9,9 @@
  *
  * `role` says where an id makes sense: `agent` (the persistent Claude session
  * with tools), `fast` (the small model cascade mode puts in front of it),
- * `chat` (one API call, no memory, no tools but web search). The notes carry
- * only numbers actually measured elsewhere in this codebase — see the hints
- * in `src/web/public/index.html` for the first-spoken-word timings — rather
- * than invented ones.
+ * `chat` (one API call, no memory, no tools but web search). A note is a few
+ * words that fit beside the id in a select; the numbers in them were measured
+ * (see docs/design/cascade.md), not invented.
  */
 export const MODELS = [
   {
@@ -20,34 +19,34 @@ export const MODELS = [
     provider: 'anthropic',
     label: 'Claude Opus 5',
     role: ['agent', 'chat'],
-    note: "Anthropic's most capable model — slower and pricier than Sonnet, worth it when depth matters more than a quick reply.",
+    note: 'slower, deeper',
   },
   {
     id: 'claude-sonnet-5',
     provider: 'anthropic',
     label: 'Claude Sonnet 5',
     role: ['agent', 'fast', 'chat'],
-    note: 'The agent\'s default: measured at 4.9s to first spoken word in agent mode, and the steadiest choice for every role.',
+    note: '4.9s to first word as the agent',
   },
   {
     id: 'claude-haiku-4-5',
     provider: 'anthropic',
     label: 'Claude Haiku 4.5',
     role: ['fast', 'chat'],
-    note: 'Fast and cheap: measured at 2.4s to first spoken word, which is why cascade mode puts it in front of the agent.',
+    note: '2.4s to first word',
   },
   {
     id: 'gpt-4.1',
     provider: 'openai',
     label: 'GPT-4.1',
     role: ['chat'],
-    note: "OpenAI's general-purpose model — a direct-answer choice for a room already using an OpenAI key.",
+    note: 'direct answers',
   },
   {
     id: 'gpt-4.1-mini',
     provider: 'openai',
     label: 'GPT-4.1 mini',
     role: ['chat'],
-    note: 'Smaller and cheaper than 4.1, for direct answers where cost matters more than depth.',
+    note: 'smaller and cheaper',
   },
 ];
