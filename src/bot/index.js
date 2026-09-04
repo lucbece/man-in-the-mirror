@@ -1,9 +1,26 @@
 import { EventEmitter } from 'node:events';
-import { Client, Events, GatewayIntentBits } from 'discord.js';
+import { Client, Events, GatewayIntentBits, PermissionFlagsBits, PermissionsBitField } from 'discord.js';
 
 import { config } from '../config.js';
 import { sessionManager } from '../voice/manager.js';
 import { commandData, handleInteraction } from './commands.js';
+
+/**
+ * What the invite has to ask for: joining and talking (Connect, Speak), and
+ * the two the voice tools actually use once it's in the call (moving people
+ * between channels, muting them). Summed with PermissionsBitField rather than
+ * hardcoded, so a permission added to a tool later shows up here too.
+ */
+const INVITE_PERMISSIONS = new PermissionsBitField([
+  PermissionFlagsBits.Connect,
+  PermissionFlagsBits.Speak,
+  PermissionFlagsBits.MoveMembers,
+  PermissionFlagsBits.MuteMembers,
+]).bitfield.toString();
+
+function inviteUrlFor(applicationId) {
+  return `https://discord.com/oauth2/authorize?client_id=${applicationId}&scope=bot%20applications.commands&permissions=${INVITE_PERMISSIONS}`;
+}
 
 /**
  * Owns the Discord client lifecycle so the web UI can start, stop and restart
@@ -150,11 +167,17 @@ class BotRunner extends EventEmitter {
   }
 
   status() {
+    // Only present once the client has logged in — Discord hands it out on
+    // ready, not on construction — so the invite link exists exactly when
+    // there's an application to invite.
+    const applicationId = this.client?.application?.id ?? null;
     return {
       state: this.state,
       error: this.error,
       user: this.user,
       guildCount: this.client?.guilds?.cache?.size ?? 0,
+      applicationId,
+      inviteUrl: applicationId ? inviteUrlFor(applicationId) : null,
     };
   }
 }
@@ -172,3 +195,4 @@ async function registerCommands(client) {
 }
 
 export const bot = new BotRunner();
+export { BotRunner };
