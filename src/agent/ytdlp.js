@@ -149,7 +149,11 @@ export async function resolveTrack(
     return { ...(await lookup(bin, `ytsearch1:${wanted}`, opts)), source: 'youtube' };
   } catch (err) {
     if (!blockedByYouTube(err.message)) throw err;
-    console.warn('[music] YouTube refused this server; searching SoundCloud instead');
+    console.warn(
+      fs.existsSync(cookiesPath)
+        ? `[music] YouTube refused this server even with ${path.basename(cookiesPath)}: the cookies have expired, export them again (docs/configuration.md); searching SoundCloud instead`
+        : '[music] YouTube refused this server; searching SoundCloud instead',
+    );
     return { ...(await lookup(bin, `scsearch1:${wanted}`, opts)), source: 'soundcloud' };
   }
 }
