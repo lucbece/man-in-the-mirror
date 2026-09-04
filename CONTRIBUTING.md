@@ -54,6 +54,18 @@ Every behaviour change comes with a test, and a refactor comes with a test
 that proves nothing changed. Fixtures that quote speech keep the real sentences
 that exposed a bug, with placeholder names for the people who said them.
 
+## Previewing the panel
+
+`scripts/panel-preview.mjs` serves the panel's static files against a fake
+`/api/state`, so it can be looked at — and screenshotted — without a Discord
+token or a real voice session. Run it with `node scripts/panel-preview.mjs
+--scenario=call` (also `setup`, `idle`, `music`; `call` is the default) and
+open the URL it prints, or add `?tab=hearing` to land on a given tab.
+`scripts/panel-shots.sh [scenario]` starts that server on a free port,
+screenshots every tab at 1280, 900 and 400 px with headless Chrome, stops the
+server, and leaves the PNGs under the git-ignored `shots/<scenario>/`;
+`scripts/panel-shots.sh all` runs every scenario.
+
 ## The launcher
 
 `launcher/main.go` is the double-click launcher shipped in the platform
