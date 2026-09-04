@@ -61,9 +61,16 @@ shoot_scenario() {
 
   for tab in "${TABS[@]}"; do
     for width in "${WIDTHS[@]}"; do
-      "$CHROME" --headless=new --no-sandbox --disable-gpu --hide-scrollbars \
-        --window-size="$width",2400 --virtual-time-budget=4000 \
-        --screenshot="$out_dir/$tab-$width.png" "$base/?tab=$tab"
+      # Headless Chrome occasionally hangs under load; a shot that takes more
+      # than a minute is retried once rather than holding the whole run.
+      for attempt in 1 2; do
+        if timeout 60 "$CHROME" --headless=new --no-sandbox --disable-gpu --hide-scrollbars \
+          --window-size="$width",2400 --virtual-time-budget=4000 \
+          --screenshot="$out_dir/$tab-$width.png" "$base/?tab=$tab" >/dev/null 2>&1; then
+          break
+        fi
+        echo "panel-shots.sh: $tab at $width px timed out (attempt $attempt)" >&2
+      done
     done
   done
 
