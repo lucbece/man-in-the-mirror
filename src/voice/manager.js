@@ -215,7 +215,10 @@ export class SessionManager extends EventEmitter {
   }
 
   status() {
-    return this.list().map((s) => ({ ...s.status(), music: s.musicStatus() }));
+    // session.status() already carries the panel's compact `music` summary —
+    // musicStatus() is the richer shape the voice tools and /mj queue read,
+    // kept on the session itself rather than duplicated here.
+    return this.list().map((s) => s.status());
   }
 }
 

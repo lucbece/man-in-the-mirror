@@ -17,6 +17,9 @@ import { detectAddress, normalise, splitNames } from '../agent/wake.js';
 
 const READY_TIMEOUT_MS = 20_000;
 
+/** How many recent exchanges the panel keeps per call — enough to scroll, small enough to be free. */
+const MAX_RECENT_EXCHANGES = 10;
+
 /** Ignore a repeat wake this soon after the last one. */
 const WAKE_COOLDOWN_MS = 4_000;
 
@@ -168,6 +171,34 @@ export class VoiceSession extends EventEmitter {
     /** Set while we're still hearing out someone's question. */
     this.pendingWake = null;
     this.receiver.on('utterance', (utterance) => this.onUtterance(utterance));
+
+    /**
+     * The last few questions and answers, for the panel's "Now" card.
+     *
+     * Memory only, newest last, and gone the moment the bot leaves the call —
+     * nothing here ever touches disk, which is the same rule the answers
+     * register keeps for the same reason.
+     */
+    this.recentExchanges = [];
+  }
+
+  /**
+   * Note one finished exchange for the panel. Called from wherever an answer
+   * completes with its timings (see agent/index.js), not from the answers
+   * register — that file deliberately keeps no text.
+   */
+  recordExchange({ askedBy, question, answer, firstAudioMs, totalMs }) {
+    this.recentExchanges.push({
+      askedBy,
+      question,
+      answer,
+      firstAudioMs: firstAudioMs ?? null,
+      totalMs: totalMs ?? null,
+      at: new Date().toISOString(),
+    });
+    if (this.recentExchanges.length > MAX_RECENT_EXCHANGES) {
+      this.recentExchanges.splice(0, this.recentExchanges.length - MAX_RECENT_EXCHANGES);
+    }
   }
 
   // --- eager transcription and waking ---------------------------------------
@@ -605,6 +636,8 @@ export class VoiceSession extends EventEmitter {
       eager: this.eager?.status() ?? null,
       agentNames: config.get('agentNames'),
       wakeEnabled: config.get('wakeEnabled'),
+      music: this.music.status(),
+      recent: this.recentExchanges,
     };
   }
 }
