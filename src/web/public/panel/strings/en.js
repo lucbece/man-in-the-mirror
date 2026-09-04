@@ -120,7 +120,7 @@ export default {
   'now.stats.handed': 'handed to the agent',
   'now.stats.beforeAsk': 'heard to asked',
 
-  'thinking.intro': 'How it decides what to say, and with which model. The agent runs on Claude; OpenAI models can answer in Chat mode or go in front as the fast model.',
+  'thinking.intro': 'How it decides what to say, and with which models. The agent and the fast model can each be Claude or OpenAI, in any combination.',
   'thinking.mode': 'Mode',
   'thinking.mode.agent': 'Agent',
   'thinking.mode.cascade': 'Fast model in front',
@@ -130,7 +130,7 @@ export default {
   'thinking.mode.chat.help': 'One call per answer. Fastest; no tools and no memory between answers.',
   'thinking.agentModel': 'Agent model',
   'thinking.model': 'Model',
-  'thinking.model.help': 'Remembers the call and uses the tools.',
+  'thinking.model.help': 'Remembers the call and uses the tools. Needs the key of its provider.',
   'thinking.chatModel.help': 'Blank uses the provider default.',
   'thinking.fastModel': 'Fast model',
   'thinking.fastModel.help': 'Answers first. No tools, no memory of its own.',
