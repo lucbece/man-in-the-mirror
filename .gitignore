@@ -21,3 +21,6 @@ runtime/
 # Compiled launcher binaries — rebuild with launcher/build.sh
 dist/
 .gstack/
+
+# Screenshots from scripts/panel-shots.sh
+shots/
