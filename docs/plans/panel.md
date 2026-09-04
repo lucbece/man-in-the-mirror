@@ -199,8 +199,10 @@ Answered by Luc on 2026-09-04:
   call are kept in memory, with their timings, and dropped when the bot
   leaves the call. Nothing is written to disk; the answers register keeps
   not recording text.
-- **Dark only.** No light scheme. The tokens still carry no literal colours
-  outside `tokens.css`, so a light scheme stays a one-file change later.
+- **Dark and light.** Decided dark only at first; a light scheme was asked
+  for on 2026-09-04 after the preview, and since no colour lives outside
+  `tokens.css` it is a second block of tokens. Auto, Dark or Light in the
+  sidebar foot, remembered in the browser.
 - **Voice preview: yes.** A "Hear it" button next to the voice select.
   `GET /api/tts/preview?provider=&voice=` synthesises one fixed short
   sentence with the chosen voice and returns the audio, cached in memory per

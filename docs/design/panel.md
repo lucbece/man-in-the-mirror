@@ -28,6 +28,7 @@ first.
 | Component | Class | Used for |
 | --- | --- | --- |
 | Frame | `.shell`, `.nav`, `.main`, `.topbar`, `.section`, `.card`, `.subcard` | The page, the sidebar, one section, a group of related settings, a card inside a card |
+| Advanced | `details.advanced` with a `summary` | The settings nobody needs on day one, as a disclosure row at the end of a card; its contents are ordinary rows |
 | Field | `.field` with `.label`, the control, `.help`, optional `.more` | One setting: a label, a control, at most one sentence under it, and a disclosure for anything longer |
 | Free value | `.input`, `.input.mono`, `.select`, `.textarea`, `.input-row` | Text, an id, a choice from a list, JSON; an input with a button glued on |
 | Segmented | `.seg` | Two or three choices. The sentence under it describes the selected one |
@@ -133,9 +134,9 @@ the input and its Replace button are the control.
 | Control | Key | Label | Help | Shown |
 | --- | --- | --- | --- | --- |
 | `.chips` | `agentNames` (comma-joined) | Names it answers to | Matched anywhere in a sentence. Use a word from the language you speak. More: the "Amy" and "mirar" notes | always |
-| `.switch` | `wakeEnabled` | Answer when someone says its name | — | always |
+| `.switch` | `wakeEnabled` | Answer when called by name | Off, it keeps listening but answers only /mj ask and the Ask box on Now | always |
 | `.select` | `bufferSeconds` (30, 60, 90, 120, 300, 600) | How much conversation it keeps | Held in memory only. 90 s covers the thread of a conversation | always |
-| `.switch` | `eagerTranscription` | Transcribe as people speak | Needed to notice its name. Pays for everything said in the channel | always, inside `.more` "Advanced" |
+| `.switch` | `eagerTranscription` | Transcribe as people speak | Needed to notice its name. Pays for everything said in the channel | always, inside `details.advanced` |
 
 ### Thinking
 
@@ -143,7 +144,7 @@ the input and its Replace button are the control.
 | --- | --- | --- | --- | --- |
 | `.seg` | `brainKind` (`agent`, `cascade`, `chat`) | Mode | Agent: Remembers the call and can use tools. Fast model in front: A fast model answers what needs no tool and hands the rest to the agent. Chat: One call per answer, fastest, no tools or memory | always |
 | `.select` + Custom | `brainModel` from `models` with role `agent` (`chat` in chat mode) | Agent model / Model | Blank uses the default. The note from `models` | always |
-| `.select` + Custom | `fastModel` from `models` with role `fast` | Fast model | Answers first. No tools, no memory of its own | `brainKind = cascade` |
+| `.select` + Custom, grouped by provider | `fastModel` from `models` with role `fast`, Anthropic and OpenAI | Fast model | Answers first. No tools, no memory of its own | `brainKind = cascade` |
 | `.seg` | `brainProvider` (`anthropic`, `openai`) | Provider | Claude: Needs the Anthropic key. OpenAI: Reuses the transcription key | `brainKind = chat` |
 | `.switch` | `webSearch` | Look things up on the web | Adds a few seconds to the answers that use it | always |
 
@@ -164,13 +165,14 @@ characters shows `.help.error` and is not saved.
 
 | Control | Key | Label | Help | Shown |
 | --- | --- | --- | --- | --- |
-| `.textarea` | `mcpServers` | MCP servers | The same object Claude Desktop uses. JSON errors shown in place; More: the example and the `allow` note | always |
-| `.textarea` | `agentDirectories` | Folders the agent may reach | Full paths, one per line. What a filesystem server is scoped to | always |
-| `.input` number | `agentMaxTurns` | Tool rounds per answer | Each round is a model round trip. Eight is enough for most tasks | always |
+| `.list` of servers, from the JSON | `mcpServers` | MCP servers | One row per server: name, then command or URL; a remove button; an empty row when none | always |
+| Add from file (`input type=file`) and Edit as JSON (a `.more` holding the `.textarea`) | `mcpServers` | — | A whole Claude Desktop config is accepted; its `mcpServers` object is merged in. JSON errors shown in place; More: the example and the `allow` note | always |
+| `.textarea` | `agentDirectories` | Folders the agent may reach | Only a filesystem-style server uses this: the agent has no file access of its own. Full paths, one per line | when at least one server is configured |
 | `.callout.warn` | — | — | Anyone in the call can use what you connect here | always |
+| `.input` number, inside `details.advanced` | `agentMaxTurns` | Steps per answer | How many times it may call a tool before it has to answer. Each step is a model round trip; eight covers most requests | always |
 
-The section header says the tools apply in Agent and Fast-model modes; in
-Chat mode the section renders the same and the header notes they are idle.
+The section header says the agent runs on the Claude Agent SDK and these are
+the MCP servers connected to it; in Chat mode it adds that they are idle.
 
 ### Speaking
 
