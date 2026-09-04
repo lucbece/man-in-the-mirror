@@ -157,6 +157,24 @@ Changing `thinking`, `model`, `fast model`, `web search`, `tool rounds` or
 the tool says so in its reply. Turning `listening` off self-deafens the bot,
 which then cannot hear itself being turned back on: the panel undoes it.
 
+## Music sources
+
+A song is looked up on YouTube first. When YouTube refuses the machine
+rather than failing to find the song, which is what it does to any datacenter
+address ("Sign in to confirm you're not a bot", whichever client yt-dlp
+presents, PO tokens or not), the same search goes to SoundCloud, which serves
+those addresses without asking. The tool reports the real title either way,
+and the log says which source answered. A pasted URL is never redirected to
+another site: if YouTube refuses it, the error says so.
+
+To have YouTube answer from a server, give yt-dlp cookies from a signed-in
+browser: export them in Netscape format (a browser extension such as "Get
+cookies.txt LOCALLY" does it) and place the file at
+`data/youtube-cookies.txt`. It is picked up on the next request, never enters
+the repository or the image, and expires the way browser sessions do, so it
+needs refreshing now and then. Use an account created for the bot, not a
+personal one: YouTube may flag it.
+
 ## Standing instructions
 
 The prompt has a fixed half and a mutable half. The fixed half (answer only

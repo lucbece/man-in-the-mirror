@@ -17,7 +17,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
-import { ROOT_DIR } from '../paths.js';
+import { DATA_DIR, ROOT_DIR } from '../paths.js';
 
 const run = promisify(execFile);
 const RUNTIME_DIR = path.join(ROOT_DIR, 'runtime');
@@ -79,25 +79,77 @@ async function download(target) {
  * becomes a YouTube search; a link is used as given, which is what makes a
  * playlist link work.
  */
-export async function resolveTrack(query, { timeoutMs = 25_000 } = {}) {
-  const bin = await ensureYtDlp();
-  const target = /^https?:\/\//i.test(query.trim()) ? query.trim() : `ytsearch1:${query}`;
+/**
+ * Where a cookies file would be, if the host needs one.
+ *
+ * YouTube answers a datacenter address with "Sign in to confirm you're not a
+ * bot" no matter which client yt-dlp pretends to be, and PO tokens alone do
+ * not change that (measured 2026-09-04 from a Hetzner server). Cookies from a
+ * signed-in browser do. They are personal and expire, so they are never in
+ * the repository or the image: a Netscape-format file dropped into data/ is
+ * picked up on the next request, and its absence changes nothing.
+ */
+export const COOKIES_PATH = path.join(DATA_DIR, 'youtube-cookies.txt');
 
-  const { stdout } = await run(
+/** The arguments every yt-dlp call shares, cookies included when present. */
+export function commonArgs({ cookiesPath = COOKIES_PATH } = {}) {
+  const args = ['--no-warnings', '--no-playlist'];
+  if (fs.existsSync(cookiesPath)) args.push('--cookies', cookiesPath);
+  return args;
+}
+
+/** YouTube refusing to serve this address, as opposed to nothing matching. */
+export const blockedByYouTube = (message) =>
+  /sign in to confirm|not a bot|cookies-from-browser/i.test(String(message ?? ''));
+
+const PRINT = '%(title)s\n%(duration)s\n%(webpage_url)s';
+
+async function lookup(bin, target, { timeoutMs, exec, cookiesPath }) {
+  const { stdout } = await exec(
     bin,
-    [
-      '--no-warnings',
-      '--no-playlist',
-      '-f',
-      'bestaudio',
-      '--print',
-      '%(title)s\n%(duration)s\n%(webpage_url)s',
-      target,
-    ],
+    [...commonArgs({ cookiesPath }), '-f', 'bestaudio', '--print', PRINT, target],
     { timeout: timeoutMs, maxBuffer: 1024 * 1024 },
   );
-
   const [title, duration, url] = stdout.trim().split('\n');
   if (!title || !url) throw new Error('Nothing found for that.');
   return { title, seconds: Number(duration) || 0, url };
+}
+
+/**
+ * A query becomes a track: a URL as it is, anything else as a search.
+ *
+ * YouTube first, because that is where the music is. When YouTube refuses
+ * the address rather than failing to find the song, the same search goes to
+ * SoundCloud, which serves datacenter addresses without asking who is
+ * asking. The caller learns which source answered, and the model is told the
+ * real title either way. A URL is never retried elsewhere: the person named a
+ * page, and a different page is not what they asked for.
+ */
+export async function resolveTrack(
+  query,
+  { timeoutMs = 25_000, exec = run, cookiesPath = COOKIES_PATH, binary } = {},
+) {
+  const bin = binary ?? (await ensureYtDlp());
+  const wanted = query.trim();
+  const opts = { timeoutMs, exec, cookiesPath };
+  if (/^https?:\/\//i.test(wanted)) {
+    try {
+      return { ...(await lookup(bin, wanted, opts)), source: 'url' };
+    } catch (err) {
+      if (blockedByYouTube(err.message)) {
+        throw new Error(
+          'YouTube is refusing this server. A cookies file in data/ fixes that; see docs/configuration.md.',
+          { cause: err },
+        );
+      }
+      throw err;
+    }
+  }
+  try {
+    return { ...(await lookup(bin, `ytsearch1:${wanted}`, opts)), source: 'youtube' };
+  } catch (err) {
+    if (!blockedByYouTube(err.message)) throw err;
+    console.warn('[music] YouTube refused this server; searching SoundCloud instead');
+    return { ...(await lookup(bin, `scsearch1:${wanted}`, opts)), source: 'soundcloud' };
+  }
 }
