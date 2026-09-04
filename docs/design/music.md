@@ -106,3 +106,15 @@ What would have been said is written into the music channel, one message per
 turn. A reminder that comes due while quiet is written there too, never said
 late. The switch is reachable by voice, by `/mj mute` and `/mj unmute`, and
 from the session card in the panel.
+
+## Where the music comes from
+
+YouTube refuses datacenter addresses: measured 2026-09-04 from a Hetzner
+server with the current yt-dlp, every client variant and a PO-token provider
+answered "Sign in to confirm you're not a bot", and only cookies from a
+signed-in browser get through. SoundCloud serves the same address without
+asking. So a search goes to YouTube and, on that refusal specifically, to
+SoundCloud; a miss is a miss and is not retried, and a URL is never sent to a
+site the person did not name. The cookies file, when someone chooses to
+provide one, lives in `data/` with the other things that never enter the
+repository.
