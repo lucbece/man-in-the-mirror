@@ -393,3 +393,39 @@ describe('a volume change that lands on nothing', () => {
     assert.equal(result.applied, false, 'but nothing heard it');
   });
 });
+
+describe('the compact status the panel reads', () => {
+  test('nothing playing', () => {
+    const music = new MusicPlayer();
+    assert.deepEqual(music.status(), {
+      playing: false,
+      paused: false,
+      title: null,
+      queued: 0,
+      volume: 100,
+    });
+  });
+
+  test('a track playing, one queued behind it, at a changed volume', async () => {
+    const music = player();
+    await music.add('beat it', 'Vero');
+    await music.add('thriller', 'Marco');
+    music.setVolume({ level: 60 });
+
+    const status = music.status();
+    assert.equal(status.playing, true);
+    assert.equal(status.paused, false);
+    assert.equal(status.title, music.current.title);
+    assert.equal(status.queued, 1);
+    assert.equal(status.volume, 60);
+  });
+
+  test('paused by the person listening, not by a speech handover', async () => {
+    const music = player();
+    await music.add('beat it', 'Vero');
+    music.pause();
+
+    assert.equal(music.status().playing, true, 'the track is still current, just not moving');
+    assert.equal(music.status().paused, true);
+  });
+});
