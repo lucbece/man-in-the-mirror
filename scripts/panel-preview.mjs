@@ -56,7 +56,11 @@ function fakeConfig(overrides = {}) {
     mcpServers: '',
     agentDirectories: '',
     agentMaxTurns: 8,
-    customInstructions: '',
+    customInstructions: [
+      'Cuando alguien diga "la concha de tu madre", responder "y la tuya con vinagre"',
+      'A <@111|Vero> decirle "tía Vero"',
+      'Los jueves jugamos DayZ; el server es eu-3',
+    ].join('\n'),
     webSearch: true,
     ttsProvider: 'openai',
     ttsVoice: 'onyx',
