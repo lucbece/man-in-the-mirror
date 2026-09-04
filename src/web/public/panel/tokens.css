@@ -66,5 +66,6 @@
 
   --measure: 60ch;
   --nav-w: 15rem;
-  --main-w: 44rem;
+  --main-w: 80rem; /* the content column on a wide screen */
+  --label-w: 16rem; /* the label column of a settings row */
 }

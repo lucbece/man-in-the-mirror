@@ -183,6 +183,9 @@ kbd {
 .main {
   width: 100%;
   max-width: calc(var(--main-w) + 2 * var(--s-7));
+  /* Centred in whatever is left beside the sidebar, so a wide screen shows
+     margins on both sides rather than a column pinned left. */
+  margin-inline: auto;
   padding: var(--s-6) var(--s-7) var(--s-7);
 }
 
@@ -436,6 +439,103 @@ p.help.error {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
   gap: var(--s-4);
+}
+
+/* On a wide screen a setting is a row: label and help on the left, the
+   control on the right, a rule between rows. The same markup, a different
+   grid; the phone layout above is what remains when the grid goes. */
+@media (min-width: 900px) {
+  .card > .field,
+  .card > .fields-2 > .field {
+    grid-template-columns: var(--label-w) minmax(0, 1fr);
+    /* The last row takes the slack, so a tall control (a textarea) does not
+       push the help away from its label. */
+    grid-template-rows: auto auto 1fr;
+    column-gap: var(--s-6);
+    row-gap: var(--s-1);
+    align-items: start;
+  }
+  .card > .field > label:not(.switch),
+  .card > .field > .label,
+  .card > .fields-2 > .field > label:not(.switch),
+  .card > .fields-2 > .field > .label {
+    grid-column: 1;
+    grid-row: 1;
+    padding-top: 0.45rem;
+  }
+  .card > .field > .help,
+  .card > .fields-2 > .field > .help {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .card > .field > .more,
+  .card > .fields-2 > .field > .more {
+    grid-column: 1;
+    grid-row: 3;
+  }
+  .card > .field > :not(label):not(.label):not(.help):not(.more),
+  .card > .fields-2 > .field > :not(label):not(.label):not(.help):not(.more) {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+  }
+  /* Help that belongs to a control choice (under a seg) stays with the
+     control column when the field has no label column content. */
+  .card > .field > .help.under,
+  .card > .fields-2 > .field > .help.under {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .card > .fields-2 {
+    display: contents;
+  }
+  .card > .field + .field,
+  .card > .fields-2 > .field + .field,
+  .card > .field + .fields-2 > .field:first-child,
+  .card > .fields-2 + .field,
+  .card > .field + .switch,
+  .card > .switch + .field,
+  .card > .switch + .switch,
+  .card > .fields-2 + .switch {
+    padding-top: var(--s-5);
+    border-top: 1px solid var(--line);
+  }
+  .card > .switch {
+    display: grid;
+    grid-template-columns: var(--label-w) minmax(0, 1fr);
+    column-gap: var(--s-6);
+    justify-content: start;
+  }
+  .card > .switch > span {
+    grid-column: 1;
+  }
+  .card > .switch > input {
+    grid-column: 2;
+    justify-self: start;
+    margin-top: 0.15rem;
+  }
+}
+
+/* The Now page on a wide screen: the call on the left, the record on the right. */
+.dash {
+  display: grid;
+  gap: var(--s-6);
+  align-content: start;
+}
+
+.dash .col {
+  display: grid;
+  gap: var(--s-6);
+  align-content: start;
+  min-width: 0;
+}
+
+@media (min-width: 1100px) {
+  .dash {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  }
+  .dash .col:last-child .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 /* --- free values ---------------------------------------------------------------- */
