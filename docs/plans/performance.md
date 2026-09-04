@@ -94,6 +94,42 @@ Two more measurements the same evening:
 | When does Discord say a person stopped? | `@discordjs/voice` marks a speaker as stopped 100 ms after their last packet (`SpeakingMap.DELAY`); the receiver's `AfterSilence` end waits 500 ms after the last non-silence packet (`src/voice/receiver.js:105`, `SILENCE_MS`). Both count from the same last packet | Ending the utterance at 150 to 250 ms instead of 500 ms takes 250 to 350 ms off every answer, at the cost of more fragments (more STT calls, merged by the existing grace logic when the same person continues). To be measured against fragment count; a new L2 item below |
 | What does "before the model was asked" in the log include? | `stoppedAt` is stamped when the receive stream ends, which is after the 500 ms silence (`src/voice/receiver.js:113`) | The logged 2.8 s median excludes the silence; from the last word the wait is 3.3 s, and the total to the first word about 6.1 s, not 5.6 s. The targets below are restated from the last word |
 
+And four things read off the week's trace with timestamps:
+
+- **The escalation is two waits, not one.** In all three escalations the
+  fast leg (Sonnet) took 3 to 4 s to decide to hand over, then the agent
+  took 4 to 5 s to its first output: about 8 s in all. The fast leg writes
+  its holding text before it calls `escalate`; a deterministic matcher for
+  the unmistakable commands (item 13) removes both waits for them, and
+  telling the fast leg to call the tool before it writes anything would
+  halve the first wait for the rest.
+- **The 43 s outlier was the agent, not a tool.** The agent received its
+  turn at 15:23:53 and called `pause_music` at 15:24:27: 34 s between input
+  and first action, with no tool in between. A model or SDK stall, under
+  the 120 s turn timeout. Item 2 gains a case: the agent's first token
+  gets a timeout of its own (15 s), after which the turn is abandoned and
+  the fast leg answers that it could not.
+- **`play_music` takes 9 s** (15:22:22 to 15:22:31): yt-dlp resolution
+  and stream start, during which the agent waits and the room hears
+  nothing. Resolution can start the moment the utterance contains a
+  request to play, before the model has finished deciding, and the tool
+  can return as soon as the track is queued rather than started.
+- **First sentences are short**: median 47 characters, p75 73. Cutting the
+  first chunk at a clause saves little model time (a few tenths of a
+  second at most); the gain of item 10 is the 300 ms tts-1 needs less for
+  a short input, not generation.
+- **The 50 s wait was one hung request**: 54 clips in the two minutes
+  before it, no music, every other clip transcribed normally; one
+  whisper-1 call never returned and the on-demand pool waited on it.
+  Timeouts fix it; the queue priority of item 9 addresses a different case
+  (music) that the week does not show.
+- **Music commands as people say them** (17 in the week): "Espejo, pausa
+  la música", "Espejo, reanudada música" (the transcriber's version of
+  "reanudá"), "Espejo, ¿podés poner tu canción preferida?". The matcher of
+  item 13 has to accept the transcriber's near-misses of the verbs and
+  leave anything with a judgement in it ("tu canción preferida") to the
+  model.
+
 Three items of the first plan change: connection reuse and a server region
 change are dropped (measured to be worth nothing); prompt caching moves up
 (430 ms on Sonnet, measured); streaming transcription stays out of scope
@@ -132,9 +168,11 @@ expected saving on the median path, and the risk.
    done. Today only three of these exist. Without this, every change below
    is a guess again.
 2. **Timeouts and one retry on the answer path.** STT 4 s, TTS first byte
-   3 s, the fast leg's first token 5 s, each with `AbortController`; on
-   timeout, retry once, then fail loudly. Removes the 50 s tail entirely.
-   Expected: p90 down by seconds, median unchanged.
+   3 s, the fast leg's first token 5 s, the agent's first token 15 s, each
+   with `AbortController`; on timeout, retry once (the agent: abandon the
+   turn and let the fast leg say it could not), then fail loudly. Removes
+   the 50 s and 43 s tails entirely. Expected: p90 down by seconds, median
+   unchanged.
 3. **`scripts/latency-bench.mjs`** in the repo: the three benchmark scripts
    used here folded into one, runnable from the container with the real
    keys, so a provider change is measured before it is chosen.
@@ -179,10 +217,12 @@ Together: ≈ 2.3 s off the median, 5.6 → 3.3 s.
    twenty half-second noises; raise concurrency from 3 to 6 while music
    plays. Removes the case where the clip with the name waits behind noise.
 10. **Speak the first clause, not the first sentence.** The splitter waits
-    for a full sentence (minimum 24 characters, but Spanish answers often
-    open with a 60-character sentence). Let the first chunk cut at the first
-    comma or 40 characters, later chunks as today. Saves ≈ 0.3 to 0.5 s
-    of model generation time before TTS starts.
+    for a full sentence (minimum 24 characters; first sentences run 47
+    characters at the median, 73 at p75). Let the first chunk cut at the
+    first comma or 40 characters, later chunks as today. Saves ≈ 0.3 to
+    0.4 s, nearly all of it in TTS: tts-1 answers a short input 300 ms
+    sooner (measured), and the model reaches the cut a tenth or two
+    earlier.
 11. **Speculative model start during the grace window.** When the name is
     detected, ask the model immediately; if the speaker continues (the
     grace timer restarts), abort the request and ask again with the full
