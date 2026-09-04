@@ -43,6 +43,27 @@ should close it, so a package's brief can be its goal plus its entries.
 
 ## Medium
 
+### A deploy drops the bot from the call
+
+Every deploy restarts the container, the voice session lives in the process,
+and nobody is told: the bot is simply gone from the channel until someone
+runs `/mj join` again. With deploy-on-push that is once per merge. The
+session knows its guild and channel; writing them to `data/` on join and
+rejoining on start, if the channel still has people in it, would make a
+deploy a few seconds of absence rather than an absence.
+
+Package: WP3
+
+### Transcription can lag by tens of seconds during music
+
+Seen 2026-09-04 while an album played: `heard 27.0s` on a turn, against the
+usual 1–3 s. Whether the eager queue was starved by the resolve of the next
+track, by the API, or by the clip gate's decode is not known; the `[stt]
+clip` lines carry the timings needed to tell.
+
+Package: WP2
+
+
 ### Running the tests rewrites the developer's real configuration
 
 `config` is one object built at import time, and every `update()` persists to
