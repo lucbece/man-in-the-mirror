@@ -1,8 +1,9 @@
 # Latency: where the time goes, and the plan to take it back
 
-Status: investigation and plan, 2026-09-04. Measured on the production
-server (Hetzner Falkenstein) with a week of its logs and a benchmark run
-inside the container against the real APIs. Nothing below is built yet.
+Status: investigation and plan, 2026-09-04, second pass the same evening.
+Measured on the production server (Hetzner Falkenstein) with a week of its
+logs and three benchmark runs inside the container against the real APIs.
+Nothing below is built yet.
 
 ## The number that matters
 
@@ -69,6 +70,27 @@ Findings that are not about speed but shape the plan:
   rounds are: each is a full round trip, and music resolution (yt-dlp) can
   take ten seconds on its own.
 
+## Second pass: what the extra measurements changed
+
+A second round of benchmarks from the container, three runs each unless
+noted, to test the assumptions the first plan rested on.
+
+| Question | Measured | Consequence |
+| --- | --- | --- |
+| Is the network from Falkenstein a cost? | TCP connect 8 ms, TLS handshake 15 to 22 ms to both APIs; a request 30 s after the previous one is no slower than one right after it | No. Connection reuse and region are not levers; a US server would not help the API legs |
+| Does Anthropic prompt caching cut time to first token? | claude-sonnet-5 with the 1.8 k-token prefix cached: 1141 and 1170 ms against 1602 and 1581 ms uncached, a 430 ms saving on every turn after the first. claude-haiku-4-5: the prefix (1414 tokens) is under its 2048-token minimum, so nothing was cached and nothing changed | Cache the fast leg's prompt when it runs on Sonnet; for Haiku the prompt would have to grow to qualify, which is not worth it |
+| Does the audio format sent to STT matter? | gpt-4o-transcribe on the same 4 s clip: WAV 16 kHz 754 ms, WAV 8 kHz 711 ms, Ogg Opus 16 kbps 724 ms, MP3 796 ms; transcripts identical | No. Keep WAV |
+| Does OpenAI's priority tier help? | gpt-4.1 first token 555, 1182, 525 ms default against 598, 1734, 567 ms priority | No |
+| Is there a faster small OpenAI model? | gpt-4.1-nano first token 1358, 1965, 578 ms | No; gpt-4.1 itself is as fast to first token and better |
+| Does a shorter first chunk reach TTS sooner? | tts-1 first byte for 29 characters: 810 to 1347 ms; for 129 characters: 1097 to 1439 ms. gpt-4o-mini-tts: 488 to 1112 ms and 388 to 1019 ms, high variance either way | About 300 ms on tts-1 from a short first chunk; gpt-4o-mini-tts is a little faster and much less predictable |
+| Is streaming transcription faster than sending the clip? | OpenAI Realtime transcription (GA protocol): session open 1.0 s, ready at 1.17 s; after the last frame of speech the first partial arrived at 1.78 s and the final transcript at 2.05 s, 500 ms of server VAD included | Not on this evidence: the clip path lands the transcript about 1.2 s after the last word (500 ms silence plus 700 ms gpt-4o-transcribe). Streaming keeps a socket per speaker open for a result that arrives later. Parked |
+| What is the floor of a model round trip? | claude-haiku-4-5, five output tokens, no system prompt: 685 to 860 ms | Any answer path pays at least 0.7 s to Anthropic before the first token; the fast leg cannot go under about 1.2 s to a first sentence with any current model |
+
+Three items of the first plan change: connection reuse and a server region
+change are dropped (measured to be worth nothing); prompt caching moves up
+(430 ms on Sonnet, measured); streaming transcription stays out of scope
+with a number attached instead of a hunch.
+
 ## Targets
 
 | | Today | After the quick wins | After the structural work |
@@ -96,9 +118,9 @@ expected saving on the median path, and the risk.
    3 s, the fast leg's first token 5 s, each with `AbortController`; on
    timeout, retry once, then fail loudly. Removes the 50 s tail entirely.
    Expected: p90 down by seconds, median unchanged.
-3. **`scripts/latency-bench.mjs`** in the repo: the benchmark used here,
-   runnable from the container with the real keys, so a provider change is
-   measured before it is chosen.
+3. **`scripts/latency-bench.mjs`** in the repo: the three benchmark scripts
+   used here folded into one, runnable from the container with the real
+   keys, so a provider change is measured before it is chosen.
 
 ### Package L1: the slowest option at each step, replaced
 
@@ -163,18 +185,22 @@ Together with L1: ≈ 2.2 s median.
     both at once, cancel the agent if the fast leg answers. Halves the
     escalated case; doubles its token cost. Measure how often it happens
     (3 of 28 answers this week) before paying for it.
-15. **Prompt caching on the Anthropic side.** The system prompt and the tool
-    definitions are the same every turn; `cache_control` on them cuts the
-    time to first token on a 2 to 4 k-token prefix by a measurable margin
-    and the cost by most of it. Small change in the fast leg; for the agent
-    it depends on what the SDK exposes.
+15. **Prompt caching on the Anthropic side.** Measured: 430 ms off the
+    time to first token on claude-sonnet-5 with the bot's prompt cached,
+    on every turn after the first. `cache_control` on the system prompt in
+    the fast leg is a few lines; whether the Agent SDK already caches its
+    prefix is not visible in its result messages and needs checking
+    against the API's usage fields. Not applicable to Haiku at this prompt
+    size.
 
 ### Out of scope, considered
 
-- **Streaming transcription** (OpenAI Realtime, partial transcripts while
-  the person speaks) would remove the STT stage from the critical path
-  entirely, about 0.7 s after L1. It is a different transport (WebSocket per
-  speaker) and a different cost model; worth a spike after L2, not before.
+- **Streaming transcription** was measured (second pass): OpenAI's
+  Realtime transcription returned the final transcript 2.05 s after the last
+  frame of speech, against about 1.2 s for the clip path once STT moves to
+  gpt-4o-transcribe. It also holds a WebSocket per speaker. Not worth a
+  spike until a vendor shows a final transcript under a second after the
+  last word; Deepgram and AssemblyAI claim that and were not measured.
 - **Local Piper TTS** was measured at 0.3 s on a laptop, against 1.5 s for
   tts-1 from the server; on the CX23 without a GPU it would need measuring,
   and the voice is the trade.
@@ -191,3 +217,15 @@ data. L3 after a week of L1 and L2 in production.
 
 Every package is measured the same way: `mirror logs latency 7` before and
 after, and the benchmark script for any provider change.
+
+## What a wider second pass would still add
+
+A multi-agent pass was started on 2026-09-04 and cut short by the account's
+usage limit; its measurement half was done by hand and is the section
+above. The half not done is outside research, and it is worth a leaner
+rerun: low-latency TTS vendors (ElevenLabs Flash, Cartesia) and Piper on the
+CX23 itself, both against the 0.8 s first byte of OpenAI TTS; streaming
+STT vendors that promise a final transcript under a second after the last
+word; and the turn-taking practice of voice-agent frameworks, in
+particular semantic endpointing as a replacement for the fixed 500 ms
+silence. None of it changes the order of L0 to L2.
