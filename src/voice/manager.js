@@ -7,6 +7,7 @@ import { AudioPlayerStatus, entersState } from '@discordjs/voice';
 import { ask, AgentBusyError } from '../agent/index.js';
 import { endAgentSession, warmAgentSession } from '../agent/agent-brain.js';
 import { forgetCascade } from '../agent/cascade.js';
+import { providerFor } from '../agent/models.js';
 import { reminders } from '../agent/reminders.js';
 import { noteInMusicChannel } from '../agent/tools/music.js';
 import { createTts, toAudioResource } from '../agent/tts.js';
@@ -253,8 +254,12 @@ function describeChanges(values, previous) {
         const names = Object.keys(JSON.parse(values.mcpServers || '{}'));
         if (names.length) mcp = `MCP: ${names.join(', ')}`;
       } catch { mcp = 'MCP config has a JSON error'; }
+      // The agent runs on whichever provider the model id belongs to, so the
+      // line has to name the one it will actually start rather than assume.
+      const model = values.brainModel || 'claude-sonnet-5';
+      const provider = providerFor(model) === 'openai' ? 'OpenAI' : 'Claude';
       console.log(
-        `[config] thinking → Claude agent ${values.brainModel || 'claude-sonnet-5'} (${mcp})${values.webSearch ? ' + web search' : ''}`,
+        `[config] thinking → ${provider} agent ${model} (${mcp})${values.webSearch ? ' + web search' : ''}`,
       );
     } else {
       const model = values.brainModel || (values.brainProvider === 'openai' ? 'gpt-4.1' : 'claude-sonnet-5');

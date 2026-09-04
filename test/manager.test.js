@@ -195,6 +195,63 @@ describe('settings reaching a session already in a channel', () => {
   });
 });
 
+describe('what the log says the bot is thinking with', () => {
+  /**
+   * The `[config] thinking` lines printed while the config changed.
+   *
+   * Deduplicated: the module's own `sessionManager` is subscribed to config
+   * changes for the life of the process, so every manager a test builds
+   * prints the same line beside it. What is being asserted is the wording,
+   * not how many listeners heard it.
+   */
+  function thinkingLines(t, seed) {
+    const lines = [];
+    const log = console.log;
+    console.log = (line) => lines.push(String(line));
+    // Leave the config as it was found, whatever the assertion does next.
+    t.after(() => config.update({ brainKind: 'agent', brainModel: '' }));
+    try {
+      config.update(seed);
+    } finally {
+      console.log = log;
+    }
+    return [...new Set(lines.filter((line) => line.startsWith('[config] thinking')))];
+  }
+
+  test('an OpenAI agent model is named as an OpenAI agent', (t) => {
+    assert.deepEqual(
+      thinkingLines(t, { brainKind: 'agent', brainModel: 'gpt-4.1', webSearch: false }),
+      ['[config] thinking → OpenAI agent gpt-4.1 (no MCP servers)'],
+    );
+  });
+
+  test('a Claude agent model still reads Claude', (t) => {
+    assert.deepEqual(
+      thinkingLines(t, { brainKind: 'agent', brainModel: 'claude-opus-5', webSearch: false }),
+      ['[config] thinking → Claude agent claude-opus-5 (no MCP servers)'],
+    );
+  });
+
+  test('a blank model is the Claude default', (t) => {
+    assert.deepEqual(
+      thinkingLines(t, { brainKind: 'agent', brainModel: '', webSearch: true }),
+      ['[config] thinking → Claude agent claude-sonnet-5 (no MCP servers) + web search'],
+    );
+  });
+
+  test('chat mode is unchanged: the provider switch, not the model id', (t) => {
+    assert.deepEqual(
+      thinkingLines(t, {
+        brainKind: 'chat',
+        brainProvider: 'anthropic',
+        brainModel: 'claude-haiku-4-5',
+        webSearch: false,
+      }),
+      ['[config] thinking → anthropic claude-haiku-4-5'],
+    );
+  });
+});
+
 describe('a reminder with nowhere to go', () => {
   test('is dropped rather than thrown', async (t) => {
     // Nothing awaits this handler, so anything it throws is an unhandled

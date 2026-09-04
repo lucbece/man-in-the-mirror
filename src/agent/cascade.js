@@ -227,7 +227,10 @@ export class CascadeBrain {
   }
 
   get label() {
-    return `${this.fastModel} in front of Claude agent ${this.agentModel}`;
+    // The agent behind the fast leg is whichever provider its model id names,
+    // so the label has to read it rather than assume Claude.
+    const provider = providerFor(this.agentModel) === 'openai' ? 'OpenAI' : 'Claude';
+    return `${this.fastModel} in front of ${provider} agent ${this.agentModel}`;
   }
 
   get agent() {

@@ -40,8 +40,8 @@ what it needs:
 | Value | Purpose | Where to get it |
 | --- | --- | --- |
 | Discord bot token | Required | [Developer Portal](https://discord.com/developers/applications) → Bot → Reset Token |
-| OpenAI API key | Transcription and speech | [platform.openai.com](https://platform.openai.com/api-keys) |
-| Anthropic API key | Agent and cascade modes; Claude in chat mode | [Console](https://platform.claude.com/settings/keys), scoped to a workspace |
+| OpenAI API key | Transcription and speech; a GPT model in any thinking mode | [platform.openai.com](https://platform.openai.com/api-keys) |
+| Anthropic API key | A Claude model in any thinking mode | [Console](https://platform.claude.com/settings/keys), scoped to a workspace |
 | Server ID | Optional; registers the slash commands immediately | Right-click the server → Copy Server ID |
 
 The same values can go in `.env`; copy `.env.example`. Values saved through
@@ -88,7 +88,7 @@ talking before it reads the window. Both are explained in
 | `brainKind` | What answers | When to use it |
 | --- | --- | --- |
 | `chat` | One model call through Anthropic or OpenAI | Fastest; no tools, no memory between answers |
-| `agent` | A persistent Claude Agent SDK session per channel, with tools and MCP servers | Actions: reminders, moving people, music, changing its own settings |
+| `agent` | A persistent session per channel, with tools and MCP servers, on the Anthropic or OpenAI model named by `brainModel` | Actions: reminders, moving people, music, changing its own settings |
 | `cascade` | A fast model that answers what needs no tool and hands the rest to the agent | The default for a channel that mostly asks questions and sometimes asks for things |
 
 ## What it can do
@@ -145,7 +145,9 @@ src/
     buffer.js, eager.js   the rolling window and its background transcription
     stt.js, tts.js        hearing and speaking, API or local
     brain.js              chat mode
-    agent-brain.js        agent mode: the Claude Agent SDK session
+    agent-brain.js        agent mode: the session, and which provider runs it
+    openai-agent.js       the agent on an OpenAI model, tool loop and all
+    mcp-client.js         the MCP tool surface that agent reaches them through
     cascade.js            cascade mode: a fast model in front, deferring by tool
     tools/                the bot's own tools, by what they act on
     settings.js           the settings reachable by voice, and only those
