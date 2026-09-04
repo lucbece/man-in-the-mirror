@@ -61,8 +61,15 @@ Rules that follow from the vocabulary:
 Three text sizes with a job each: 20 px semibold for the section title,
 14 px medium in the full text colour for labels and body, 13 px in the dim
 colour for help and meta. 28 px semibold for a stat value. Cards have 24 px
-padding and 24 px between fields; the content column is 44 rem at most and
-the measure for prose is 60 characters.
+padding and 24 px between fields; the measure for prose is 60 characters.
+
+The content column is 80 rem at most and centred in the space beside the
+sidebar, so a wide screen shows margins on both sides rather than a column
+pinned left. From 900 px up a setting is a row: label and help in a 16 rem
+column on the left, the control on the right, a rule between rows; on a
+phone the same markup stacks. Now is two columns from 1100 px up: the call,
+the join picker and the setup strip on the left, the recent exchanges and
+the numbers on the right.
 
 ## Strings
 

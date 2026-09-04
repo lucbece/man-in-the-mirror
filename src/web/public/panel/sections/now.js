@@ -16,7 +16,10 @@ export function mount(root, ctx) {
   const recent = h('div.card');
   const strip = h('div.strip');
   const stats = h('div.stats');
-  root.append(setup, join, calls, recent, strip, stats);
+  // Two columns on a wide screen: what is happening, then the record of it.
+  root.append(
+    h('div.dash', h('div.col', setup, join, calls, strip), h('div.col', recent, stats)),
+  );
 
   const askOutputs = new Map(); // guildId → <pre> under the ask row
 
