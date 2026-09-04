@@ -404,6 +404,14 @@ p.help {
   text-wrap: pretty;
 }
 
+p.help.warn {
+  color: var(--warn);
+}
+
+p.help.error {
+  color: var(--danger);
+}
+
 /* Controls stacked inside one field: a select and the input it reveals. */
 .stack {
   display: grid;
@@ -715,6 +723,11 @@ p.help {
 .list .item .text[contenteditable]:focus {
   outline: none;
   color: var(--fg);
+}
+
+/* An item over the limit: the line itself says so, not only the help. */
+.list .item:has(.text[aria-invalid="true"]) {
+  box-shadow: inset 2px 0 0 var(--danger);
 }
 
 .list .item .text .chip {
