@@ -177,4 +177,17 @@ export default {
   'hearing.localModel.more.summary': 'Cuál elegir',
   'hearing.localModel.more.text': 'large-v3-turbo con una placa NVIDIA baja la build de CUDA, 646 MB; base corre en CPU y es más lenta que la API.',
   'hearing.noKey': 'No hay clave de OpenAI, así que la transcripción va a fallar. Cargá una en Claves.',
+
+  'listening.intro': 'Qué escucha, y cuánto de la llamada recuerda.',
+  'listening.names': 'Nombres a los que responde',
+  'listening.names.help': 'Se detecta en cualquier parte de la frase. Usá una palabra del idioma que hablás.',
+  'listening.names.more.summary': 'Cómo elegir un nombre',
+  'listening.names.more.text': '"hey mirror" dicho en medio de una frase en español volvió como "Amy", mientras que "espejo" siempre funciona. Evitá palabras comunes: "mirar" chocaba con "mirror".',
+  'listening.names.remove': 'Quitar {name}',
+  'listening.wake': 'Responder cuando alguien dice su nombre',
+  'listening.buffer': 'Cuánta conversación recuerda',
+  'listening.buffer.help': 'Se guarda solo en memoria. 90 s alcanza para seguir el hilo de una charla.',
+  'listening.advanced': 'Avanzado',
+  'listening.eager': 'Transcribir mientras la gente habla',
+  'listening.eager.help': 'Hace falta para notar su nombre. Cuesta transcribir todo lo que se dice en el canal.',
 };

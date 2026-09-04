@@ -132,3 +132,81 @@ export function switchRow({ name, label, help = null, checked = false, live = fa
 export function callout(text, kind = '') {
   return h(`div.callout${kind ? `.${kind}` : ''}`, h('p', text));
 }
+
+/**
+ * A short list of words: Enter or comma commits the typed text as a chip,
+ * Backspace on an empty input drops the last one, and each chip carries a
+ * `×` button to remove it directly. `removeLabel` is the button's
+ * aria-label, either a fixed string or a `(value) => string` for one that
+ * names the chip.
+ *
+ * A change to the set fires a bubbling `input` event on the container, the
+ * same event a real `<input>` would fire, so `SettingsForm`'s dirty guard
+ * picks it up without knowing chips exist.
+ */
+export function chips({ name, values = [], removeLabel = 'Remove' }) {
+  const list = [...values];
+  const typed = h('input', { type: 'text', name, autocomplete: 'off', spellcheck: 'false' });
+  const container = h('div.chips');
+
+  const labelFor = (value) => (typeof removeLabel === 'function' ? removeLabel(value) : removeLabel);
+
+  function render() {
+    container.replaceChildren(
+      ...list.map((value, i) =>
+        h(
+          'span.chip',
+          value,
+          h('button', { type: 'button', 'aria-label': labelFor(value), onclick: () => removeAt(i) }, '×'),
+        ),
+      ),
+      typed,
+    );
+  }
+
+  function notify() {
+    container.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  function removeAt(i) {
+    list.splice(i, 1);
+    render();
+    typed.focus();
+    notify();
+  }
+
+  function commit(raw) {
+    const value = raw.trim();
+    typed.value = '';
+    if (!value || list.includes(value)) return;
+    list.push(value);
+    render();
+    notify();
+  }
+
+  typed.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ',') {
+      event.preventDefault();
+      commit(typed.value);
+    } else if (event.key === 'Backspace' && !typed.value && list.length) {
+      list.pop();
+      render();
+      notify();
+    }
+  });
+  container.addEventListener('click', (event) => {
+    if (event.target === container) typed.focus();
+  });
+
+  render();
+
+  return {
+    el: container,
+    read: () => [...list],
+    write(next) {
+      list.length = 0;
+      list.push(...(next ?? []));
+      render();
+    },
+  };
+}
