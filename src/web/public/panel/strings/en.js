@@ -190,4 +190,15 @@ export default {
   'listening.advanced': 'Advanced',
   'listening.eager': 'Transcribe as people speak',
   'listening.eager.help': 'Needed to notice its name. Pays for everything said in the channel.',
+
+  'speaking.intro': 'Replies are spoken sentence by sentence, so the voice starts before the answer is finished.',
+  'speaking.provider': 'Voice',
+  'speaking.provider.openai': 'OpenAI',
+  'speaking.provider.local': 'On this machine',
+  'speaking.provider.openai.help': 'More natural. First audio about 0.9 s.',
+  'speaking.provider.local.help': 'About 0.3 s, free, more synthetic. 65 MB on first use.',
+  'speaking.voice.openai': 'OpenAI voice',
+  'speaking.voice.local': 'Local voice',
+  'speaking.hearIt': 'Hear it',
+  'speaking.callout': "Loudness is per listener: right-click the bot in the Discord member list to change it for yourself.",
 };

@@ -190,4 +190,15 @@ export default {
   'listening.advanced': 'Avanzado',
   'listening.eager': 'Transcribir mientras la gente habla',
   'listening.eager.help': 'Hace falta para notar su nombre. Cuesta transcribir todo lo que se dice en el canal.',
+
+  'speaking.intro': 'Las respuestas se hablan frase por frase, así la voz arranca antes de que termine la respuesta.',
+  'speaking.provider': 'Voz',
+  'speaking.provider.openai': 'OpenAI',
+  'speaking.provider.local': 'En esta máquina',
+  'speaking.provider.openai.help': 'Más natural. El primer audio tarda unos 0,9 s.',
+  'speaking.provider.local.help': 'Unos 0,3 s, gratis, más sintética. 65 MB la primera vez que se usa.',
+  'speaking.voice.openai': 'Voz de OpenAI',
+  'speaking.voice.local': 'Voz local',
+  'speaking.hearIt': 'Escuchar',
+  'speaking.callout': 'El volumen es por oyente: hacé clic derecho sobre el bot en la lista de miembros de Discord para cambiarlo.',
 };
