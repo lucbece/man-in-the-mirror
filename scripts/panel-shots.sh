@@ -14,7 +14,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 
-TABS=(discord keys hearing thinking speaking)
+TABS=(now discord keys hearing listening thinking instructions tools speaking)
 WIDTHS=(1280 900 400)
 ALL_SCENARIOS=(setup idle call music)
 
