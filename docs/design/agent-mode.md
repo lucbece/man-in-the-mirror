@@ -2,8 +2,11 @@
 
 `brainKind` selects one of three brains. `chat` issues one stateless API call
 per answer through Anthropic or OpenAI: the fastest option, with no memory
-between answers. `agent` runs a persistent Claude Agent SDK session per voice
-channel, with tools. `cascade` puts a small fast model in front of the agent
+between answers. `agent` runs a persistent session per voice channel, with
+tools, on whichever model `brainModel` names — a Claude Agent SDK session for
+an Anthropic id, the session described under
+[The agent on an OpenAI model](#the-agent-on-an-openai-model) for an OpenAI
+one. `cascade` puts a small fast model in front of the agent
 and is described in [cascade.md](cascade.md). This is why the agent exists,
 what it costs, and the traps found while wiring it up; the settings and the
 tool list are in [../configuration.md](../configuration.md).
@@ -47,6 +50,9 @@ clip. A silence longer than 7 seconds gets a second line, emitted once the
 delay is real rather than in advance of it.
 
 ## How the session works
+
+Everything in this section is the Claude session; the OpenAI one is under
+[The agent on an OpenAI model](#the-agent-on-an-openai-model).
 
 - **One `query()` per voice channel, in streaming-input mode.** The subprocess
   stays alive between utterances and the conversation accumulates inside it.
@@ -123,7 +129,9 @@ arguments, so the folder in a server's `args` is ignored. Measured 2026-08:
 
 Hence the panel's folders setting, passed as `additionalDirectories`, with
 `cwd` left pointing at the data directory: it has to point somewhere harmless
-because it leaks into every root-aware server. The related lever is `allow` on
+because it leaks into every root-aware server. There is no roots handshake in
+the OpenAI path, so there the same folders travel as
+`MIRROR_AGENT_DIRECTORIES`. The related lever is `allow` on
 a server entry: without it the filesystem server is granted its writers as well
 as its readers, which is write access driven by imperfect speech recognition in
 a room where anyone can talk.
@@ -173,6 +181,59 @@ time, when the person is demonstrably in the call and the name demonstrably
 refers to them, rather than guessed later from a sentence nobody is around to
 explain. The mechanics are in [../configuration.md](../configuration.md).
 
+## The agent on an OpenAI model
+
+`brainModel` decides the provider, the same way `fastModel` already decides
+the cascade's fast leg: a room has one box to type an id into, and the id
+already says which account it needs a key for. So every combination works —
+an OpenAI fast model in front of a Claude agent, a Claude fast model in front
+of an OpenAI one, both of either. `currentSignature` already includes the
+model, so switching provider recycles the session like any other change.
+
+From the outside the two are one thing. Both stream sentences as they are
+written, both keep the memory of the call, both carry the bot's own tools plus
+the user's MCP servers under the same allow-lists, both report what they have
+spent, and both are ended by the same reaper. `AgentBrain`, the panel's
+session status and the cascade never learn which they are holding.
+
+What differs is under it:
+
+- **No subprocess.** The Claude session is an Agent SDK process holding about
+  a gigabyte; this is an object holding a response id. That is most of the
+  cost of agent mode gone, and with it the pre-connect warm-up's main reason
+  for existing — connecting the MCP servers is still worth doing early, and
+  still happens as the bot joins.
+- **The memory lives at OpenAI.** Turns are chained with
+  `previous_response_id` on a stored Responses API conversation rather than
+  accumulating in a process. Cheaper and simpler; also less ours. A turn that
+  fails leaves the last good id in place rather than advancing to a broken
+  one, because losing the head of the chain loses the call.
+- **The tool loop is ours.** The SDK runs the loop for Claude. Here a response
+  that ends in `function_call` items means running each through the MCP
+  client, in order, and asking again with `function_call_output` items on the
+  same chain. A tool that throws becomes `Error: …` as its output rather than
+  an exception, matching how the bot's own tools already turn a refusal into
+  something the model can say out loud. `agentMaxTurns` caps the rounds;
+  hitting it answers with whatever was said, as `error_max_turns` does.
+- **Cost is arithmetic.** The SDK reports dollars per session; the Responses
+  API reports tokens, so `models.js` carries list prices per million and the
+  session multiplies. A model id with no entry costs zero — a wrong number
+  presented as spend is worse than an obvious blank.
+- **Tools are named `server__tool`.** OpenAI accepts `[a-zA-Z0-9_-]{1,64}` in
+  a function name, so the SDK's `mcp__server__tool` convention does not
+  survive; a name that still does not fit is sanitised and truncated, with a
+  map back to the real pair.
+- **Folders reach servers through the environment.** The Agent SDK advertises
+  `additionalDirectories` to its servers as MCP roots. There is no equivalent
+  handshake in this path and no argument to invent, so `agentDirectories` is
+  passed to local servers as `MIRROR_AGENT_DIRECTORIES`, colon-separated. A
+  server that reads it gets the folders; one that does not is unaffected.
+
+The one thing genuinely lost is the SDK's own machinery — context compaction,
+subagents, its permission system. None of it was in use here: the fence is
+the allow-list, the context is one voice call, and there is nothing to
+delegate to.
+
 ## Known limits
 
 Audio from a shared screen reaches the transcript as speech, so a video playing
@@ -187,3 +248,12 @@ mitigation is implemented.
   each is chosen independently.
 - **The Messages API with the MCP connector, no SDK.** Less machinery, but the
   loop, session state and tool wiring land back here, rebuilding the SDK badly.
+  Which is exactly what the OpenAI agent does, and it is the price of that
+  path rather than an argument against it: there is no Agent SDK on the other
+  provider, so the loop has to live somewhere. It stays worth avoiding where
+  the SDK exists.
+- **A second setting for the agent's provider.** `brainProvider` already
+  exists for chat mode, and extending it would have made three switches
+  (`brainKind`, `brainProvider`, `brainModel`) that can disagree — a Claude id
+  under `provider: openai` has no sensible reading. The id decides, as it does
+  for the fast model.

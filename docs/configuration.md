@@ -31,12 +31,12 @@ ssh tunnel (see [running.md](running.md)), never a public port.
 | `sttLocalModel` | — | `ggml-base` | `ggml-base`, `ggml-small`, `ggml-large-v3-turbo` |
 | `brainKind` | — | `agent` | `chat`, `agent` or `cascade`. See [Modes](#modes) |
 | `brainProvider` | — | `anthropic` | `anthropic` or `openai`. Chat mode only |
-| `brainModel` | — | *(blank)* | Model for the chosen provider. Blank uses its default |
+| `brainModel` | — | *(blank)* | An Anthropic or an OpenAI model id. In agent and cascade modes the agent runs on whichever it is, with the same tools and the same memory of the call, and needs that provider's key; in chat mode it is the model for `brainProvider`. Blank uses `claude-sonnet-5` |
 | `fastModel` | — | *(blank)* | The model in front of the agent in cascade mode. An Anthropic or an OpenAI id, chosen by the id itself; needs the matching key. Blank uses `claude-haiku-4-5`. The agent behind it is always Claude |
 | `agentMaxTurns` | — | `8` | Tool rounds per agent answer, 1–25 |
 | `webSearch` | — | `true` | Give the agent web search |
 | `mcpServers` | — | *(blank)* | MCP servers as JSON. See [MCP servers](#mcp-servers) |
-| `agentDirectories` | — | *(blank)* | Directories root-aware MCP servers may read, one absolute path per line |
+| `agentDirectories` | — | *(blank)* | Directories root-aware MCP servers may read, one absolute path per line. On a Claude agent they are the session's additional directories; on an OpenAI agent they reach local MCP servers as `MIRROR_AGENT_DIRECTORIES`, colon-separated |
 | `customInstructions` | — | *(blank)* | Standing instructions, one per line. See [Standing instructions](#standing-instructions) |
 | `ttsProvider` | — | `openai` | `openai` or `local` (Piper) |
 | `ttsVoice` | — | `onyx` | OpenAI voice: `alloy`, `echo`, `fable`, `onyx`, `nova`, `shimmer` |
@@ -242,6 +242,13 @@ and logs who made the change.
 standard filesystem server included, read the directories from
 `agentDirectories`, not from their own arguments. The name `bot` is reserved
 for the bot's own tool server.
+
+An OpenAI agent connects to the same servers itself rather than through the
+Agent SDK, and there is no roots handshake in that path. The directories are
+passed to local (`command`) servers in the environment instead, as
+`MIRROR_AGENT_DIRECTORIES`, colon-separated like `PATH`. A server that reads
+that variable gets the same folders; one that does not is unaffected, and
+nothing is silently widened.
 
 The agent receives only the configured MCP servers, the built-in tools and
 web search. The SDK's file and shell tools are denied.
