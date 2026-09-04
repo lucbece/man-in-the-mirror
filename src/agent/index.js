@@ -226,7 +226,7 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, vi
       // Judged one at a time, only the first is clearly English; the rest are
       // too short, or half Spanish, and were spoken. A model that has begun
       // deliberating does not switch back into an answer mid-turn.
-      if (leaking || looksLikeLeakedReasoning(text, question)) {
+      if (leaking || looksLikeLeakedReasoning(text, question, { room: guessLanguage(transcript) })) {
         if (!leaking) {
           console.warn(`[agent] dropped what looks like reasoning: "${String(text).slice(0, 70)}"`);
         }

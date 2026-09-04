@@ -57,6 +57,28 @@ describe('reasoning read out loud', () => {
     assert.equal(looksLikeLeakedReasoning(said, 'Espejo, la concha de tu madre.'), true);
   });
 
+  test('the fifth, on a one-word answer in the reply window', () => {
+    // "¡No!" is a word in both languages, so the question alone said nothing
+    // about the room; the guard has to be told what the room speaks. And the
+    // paragraph is deliberation from its first words, which is caught on its
+    // own before any language is weighed.
+    const said =
+      'I\'m only hearing "¡No!" without a question directed at me. ' +
+      'That\'s vero reacting to something in the conversation, not asking me anything. ' +
+      'I\'ll stay quiet and let the chat continue.';
+    assert.equal(looksLikeLeakedReasoning(said, '¡No!', { room: 'es' }), true);
+    assert.equal(looksLikeLeakedReasoning(said, '¡No!'), true, 'the words give it away on their own');
+    assert.equal(looksLikeLeakedReasoning("I'll stay quiet and let the chat continue.", 'ok'), true);
+    assert.equal(looksLikeLeakedReasoning('Me quedo callado, no me están preguntando nada.', 'no'), true);
+  });
+
+  test('a short question in a Spanish room still gets the language check', () => {
+    const said = 'That is vero reacting to the previous message, so there is nothing for me here.';
+    assert.equal(looksLikeLeakedReasoning(said, 'Sí.', { room: 'es' }), true);
+    assert.equal(looksLikeLeakedReasoning(said, 'Sí.', { room: 'en' }), false);
+    assert.equal(looksLikeLeakedReasoning('No, I don\'t think so, the servers were down all weekend.', 'No?', { room: 'en' }), false);
+  });
+
   test('an answer in the language it was asked in survives', () => {
     for (const fine of [
       'Jaja, dale. Que entren nomás.',
