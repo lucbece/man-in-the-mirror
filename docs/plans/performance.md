@@ -86,18 +86,35 @@ noted, to test the assumptions the first plan rested on.
 | Is streaming transcription faster than sending the clip? | OpenAI Realtime transcription (GA protocol): session open 1.0 s, ready at 1.17 s; after the last frame of speech the first partial arrived at 1.78 s and the final transcript at 2.05 s, 500 ms of server VAD included | Not on this evidence: the clip path lands the transcript about 1.2 s after the last word (500 ms silence plus 700 ms gpt-4o-transcribe). Streaming keeps a socket per speaker open for a result that arrives later. Parked |
 | What is the floor of a model round trip? | claude-haiku-4-5, five output tokens, no system prompt: 685 to 860 ms | Any answer path pays at least 0.7 s to Anthropic before the first token; the fast leg cannot go under about 1.2 s to a first sentence with any current model |
 
+Two more measurements the same evening:
+
+| Question | Measured | Consequence |
+| --- | --- | --- |
+| Is local Piper TTS the 0.3 s option on the server? | On the CX23 (2 vCPUs, no GPU), inside the container: es_ES-davefx-medium first byte 1.03 s for a short sentence and 1.9 s for a long one; es_AR-daniela-high 3.0 s and 7.1 s. First byte equals total: Piper does not stream, it synthesises the whole sentence first | No. The 0.3 s figure in docs/design/hearing.md was a laptop; on this server Piper is slower than the API, and the Argentine voice is unusable. Local TTS is off the plan unless the server grows a GPU |
+| When does Discord say a person stopped? | `@discordjs/voice` marks a speaker as stopped 100 ms after their last packet (`SpeakingMap.DELAY`); the receiver's `AfterSilence` end waits 500 ms after the last non-silence packet (`src/voice/receiver.js:105`, `SILENCE_MS`). Both count from the same last packet | Ending the utterance at 150 to 250 ms instead of 500 ms takes 250 to 350 ms off every answer, at the cost of more fragments (more STT calls, merged by the existing grace logic when the same person continues). To be measured against fragment count; a new L2 item below |
+| What does "before the model was asked" in the log include? | `stoppedAt` is stamped when the receive stream ends, which is after the 500 ms silence (`src/voice/receiver.js:113`) | The logged 2.8 s median excludes the silence; from the last word the wait is 3.3 s, and the total to the first word about 6.1 s, not 5.6 s. The targets below are restated from the last word |
+
 Three items of the first plan change: connection reuse and a server region
 change are dropped (measured to be worth nothing); prompt caching moves up
 (430 ms on Sonnet, measured); streaming transcription stays out of scope
-with a number attached instead of a hunch.
+with a number attached instead of a hunch. Local Piper is dropped for the
+server. The utterance boundary joins the plan as a lever of its own.
 
 ## Targets
 
 | | Today | After the quick wins | After the structural work |
 | --- | --- | --- | --- |
-| Stopped talking → first word, median | 5.6 s | ≈ 3.3 s | ≈ 2.2 s |
-| p90 | 10 s | ≈ 5 s | ≈ 3.5 s |
+| Last word → first word, median | ≈ 6.1 s | ≈ 3.6 s | ≈ 2.4 s |
+| p90 | ≈ 10.5 s | ≈ 5.5 s | ≈ 3.8 s |
 | Hung request | up to 50 s | 4 s, then retried | same |
+
+Counted from the last word, which the log does not: the logged "before the
+model was asked" starts after Discord's 500 ms silence (second pass). The
+structural floor is set by three things that stay serial: the utterance
+boundary (150 to 250 ms after the last packet), transcription of the last
+clip (0.7 s), and the model's first clause plus the TTS first byte (about
+1.5 s together). Below about 2.2 s needs transcription that starts before
+the person has finished, which no measured vendor delivers yet.
 
 The quick wins are each a config or a constant; the structural ones change
 the order in which stages run.
@@ -145,6 +162,12 @@ Together: ≈ 2.3 s off the median, 5.6 → 3.3 s.
 
 ### Package L2: run stages in parallel instead of in sequence
 
+8a. **End the utterance sooner.** `SILENCE_MS` from 500 to 200 ms (the
+   Discord library's own speaking-end fires at 100). Saves 300 ms on every
+   answer. Measured risk: the number of fragments per question in the
+   `[latency]` line; the grace logic already merges a speaker who
+   continues, and a fragment that is not a question costs one small STT
+   call. Try 250 first.
 8. **Start the grace timer at end of utterance, not at end of
    transcription.** Today: silence → transcribe (1.7 s) → detect the name →
    wait 900 ms → ask. The 900 ms wait only exists to see whether the speaker
