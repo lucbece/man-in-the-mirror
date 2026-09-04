@@ -31,6 +31,10 @@ export default {
 
   'section.soon': 'This section is being built.',
 
+  'theme.auto': 'Auto',
+  'theme.dark': 'Dark',
+  'theme.light': 'Light',
+
   'now.setup.title': 'First run',
   'now.setup.intro': 'Three keys and it is ready. Each can be changed later under Keys.',
   'now.setup.token': 'Discord bot token',
@@ -116,7 +120,7 @@ export default {
   'now.stats.handed': 'handed to the agent',
   'now.stats.beforeAsk': 'heard to asked',
 
-  'thinking.intro': 'How it decides what to say, and with which model.',
+  'thinking.intro': 'How it decides what to say, and with which model. The agent runs on Claude; OpenAI models can answer in Chat mode or go in front as the fast model.',
   'thinking.mode': 'Mode',
   'thinking.mode.agent': 'Agent',
   'thinking.mode.cascade': 'Fast model in front',
@@ -184,7 +188,8 @@ export default {
   'listening.names.more.summary': 'Choosing a name',
   'listening.names.more.text': '"hey mirror" said mid-Spanish came back as "Amy", while "espejo" lands every time. Avoid words that sound ordinary: "mirar" collided with "mirror".',
   'listening.names.remove': 'Remove {name}',
-  'listening.wake': 'Answer when someone says its name',
+  'listening.wake': 'Answer when called by name',
+  'listening.wake.help': 'Off, it keeps listening but answers only /mj ask and the Ask box on Now.',
   'listening.buffer': 'How much conversation it keeps',
   'listening.buffer.help': 'Held in memory only. 90 s covers the thread of a conversation.',
   'listening.advanced': 'Advanced',

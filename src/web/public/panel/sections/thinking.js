@@ -59,13 +59,21 @@ export function mount(root) {
     const el = h('div.stack', sel, custom);
     return {
       el,
-      fill(role, providerId, value, defaultId) {
-        const list = models.filter((m) => m.role.includes(role) && m.provider === providerId);
-        sel.replaceChildren(
-          new Option(t('thinking.default', { id: defaultId }), ''),
-          ...list.map((m) => new Option(m.note ? `${m.id} · ${m.note}` : m.id, m.id)),
-          new Option(t('thinking.custom'), '__custom'),
-        );
+      fill(role, providers, value, defaultId) {
+        const list = models.filter((m) => m.role.includes(role) && providers.includes(m.provider));
+        const option = (m) => new Option(m.note ? `${m.id} · ${m.note}` : m.id, m.id);
+        sel.replaceChildren(new Option(t('thinking.default', { id: defaultId }), ''));
+        if (providers.length > 1) {
+          // One group per provider, so the choice reads as "which company" first.
+          for (const p of providers) {
+            const group = h('optgroup', { label: t(`thinking.provider.${p}`) });
+            for (const m of list.filter((m) => m.provider === p)) group.append(option(m));
+            if (group.childElementCount) sel.append(group);
+          }
+        } else {
+          for (const m of list) sel.append(option(m));
+        }
+        sel.append(new Option(t('thinking.custom'), '__custom'));
         const known = !value || list.some((m) => m.id === value);
         sel.value = known ? value : '__custom';
         custom.hidden = known;
@@ -98,8 +106,8 @@ export function mount(root) {
   function refill(values) {
     const kind = values.brainKind;
     const providerId = kind === 'chat' ? values.brainProvider : 'anthropic';
-    agentModel.fill(kind === 'chat' ? 'chat' : 'agent', providerId, values.brainModel, DEFAULTS[kind === 'chat' ? providerId : 'agent']);
-    fastModel.fill('fast', 'anthropic', values.fastModel, DEFAULTS.fast);
+    agentModel.fill(kind === 'chat' ? 'chat' : 'agent', [providerId], values.brainModel, DEFAULTS[kind === 'chat' ? providerId : 'agent']);
+    fastModel.fill('fast', ['anthropic', 'openai'], values.fastModel, DEFAULTS.fast);
   }
 
   function read() {

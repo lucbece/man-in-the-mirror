@@ -31,6 +31,10 @@ export default {
 
   'section.soon': 'Esta sección está en construcción.',
 
+  'theme.auto': 'Auto',
+  'theme.dark': 'Oscuro',
+  'theme.light': 'Claro',
+
   'now.setup.title': 'Primer arranque',
   'now.setup.intro': 'Tres claves y queda listo. Cada una se puede cambiar después en Claves.',
   'now.setup.token': 'Token del bot de Discord',
@@ -116,7 +120,7 @@ export default {
   'now.stats.handed': 'pasadas al agente',
   'now.stats.beforeAsk': 'de oír a preguntar',
 
-  'thinking.intro': 'Cómo decide qué decir, y con qué modelo.',
+  'thinking.intro': 'Cómo decide qué decir, y con qué modelo. El agente corre sobre Claude; los modelos de OpenAI pueden responder en modo Chat o ir adelante como modelo rápido.',
   'thinking.mode': 'Modo',
   'thinking.mode.agent': 'Agente',
   'thinking.mode.cascade': 'Modelo rápido adelante',
@@ -184,7 +188,8 @@ export default {
   'listening.names.more.summary': 'Cómo elegir un nombre',
   'listening.names.more.text': '"hey mirror" dicho en medio de una frase en español volvió como "Amy", mientras que "espejo" siempre funciona. Evitá palabras comunes: "mirar" chocaba con "mirror".',
   'listening.names.remove': 'Quitar {name}',
-  'listening.wake': 'Responder cuando alguien dice su nombre',
+  'listening.wake': 'Responder cuando lo llaman por su nombre',
+  'listening.wake.help': 'Apagado, sigue escuchando pero solo responde a /mj ask y al cuadro Preguntar de Ahora.',
   'listening.buffer': 'Cuánta conversación recuerda',
   'listening.buffer.help': 'Se guarda solo en memoria. 90 s alcanza para seguir el hilo de una charla.',
   'listening.advanced': 'Avanzado',

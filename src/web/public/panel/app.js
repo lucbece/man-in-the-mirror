@@ -31,6 +31,49 @@ const els = {
 let state = null;
 let current = null; // { id, view }
 
+// --- theme -----------------------------------------------------------------------
+
+const THEME_KEY = 'mitm.theme';
+const THEMES = ['auto', 'dark', 'light'];
+
+function currentTheme() {
+  try {
+    const stored = localStorage.getItem(THEME_KEY);
+    if (THEMES.includes(stored)) return stored;
+  } catch {
+    // No storage: the system decides.
+  }
+  return 'auto';
+}
+
+function applyTheme(theme) {
+  if (theme === 'auto') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = theme;
+}
+
+function setTheme(theme) {
+  applyTheme(theme);
+  try {
+    localStorage.setItem(THEME_KEY, theme);
+  } catch {
+    // Applied, not remembered.
+  }
+  for (const input of document.querySelectorAll('input[name^="theme-"]')) input.checked = input.value === theme;
+}
+
+function themeToggle(container) {
+  const name = `theme-${container.id}`;
+  for (const theme of THEMES) {
+    const input = h('input', { type: 'radio', name, value: theme, checked: theme === currentTheme() });
+    input.addEventListener('change', () => input.checked && setTheme(theme));
+    container.append(h('label', input, h('span', { data: { t: `theme.${theme}` } }, t(`theme.${theme}`))));
+  }
+}
+applyTheme(currentTheme());
+themeToggle(document.getElementById('themeNav'));
+const themeTop = document.getElementById('themeTop');
+themeToggle(themeTop);
+
 // --- language -----------------------------------------------------------------
 
 function langToggle(container) {
@@ -47,6 +90,7 @@ langToggle(langTop);
 const narrow = matchMedia('(max-width: 900px)');
 const placeLang = () => {
   langTop.hidden = !narrow.matches;
+  themeTop.hidden = !narrow.matches;
 };
 narrow.addEventListener('change', placeLang);
 placeLang();

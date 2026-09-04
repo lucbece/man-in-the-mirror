@@ -172,12 +172,14 @@ kbd {
 .nav .foot {
   margin-top: auto;
   padding: var(--s-3) var(--s-2) 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
   gap: var(--s-2);
   font-size: var(--fs-0);
   color: var(--fg-3);
+}
+
+.nav .foot .seg {
+  justify-self: stretch;
 }
 
 .main {
@@ -391,8 +393,13 @@ kbd {
 
 .field .more summary {
   cursor: pointer;
-  color: var(--fg-3);
+  font-size: var(--fs-1);
+  color: var(--fg-2);
   list-style: none;
+}
+
+.field .more summary:hover {
+  color: var(--fg);
 }
 
 .field .more summary::before {
@@ -408,6 +415,50 @@ kbd {
 
 .field .more p {
   margin: var(--s-2) 0 0;
+}
+
+/* The settings nobody needs on day one: a full-width disclosure at the end
+   of a card, its summary a row of its own, its contents ordinary rows. */
+.advanced {
+  display: grid;
+  gap: var(--s-5);
+}
+
+.advanced > summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: var(--fs-1);
+  font-weight: 500;
+  color: var(--fg-2);
+}
+
+.advanced > summary::before {
+  content: "›";
+  display: inline-block;
+  margin-right: var(--s-2);
+  transition: transform var(--t-1) var(--ease);
+}
+
+.advanced[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.advanced > summary:hover {
+  color: var(--fg);
+}
+
+.advanced > summary::-webkit-details-marker {
+  display: none;
+}
+
+.card > .advanced {
+  padding-top: var(--s-5);
+  border-top: 1px solid var(--line);
+}
+
+.card > .advanced:first-child {
+  padding-top: 0;
+  border-top: 0;
 }
 
 /* A standalone help line, outside a field: under a list, under a card. */
@@ -446,6 +497,7 @@ p.help.error {
    grid; the phone layout above is what remains when the grid goes. */
 @media (min-width: 900px) {
   .card > .field,
+  .card > .advanced > .field,
   .card > .fields-2 > .field {
     grid-template-columns: var(--label-w) minmax(0, 1fr);
     /* The last row takes the slack, so a tall control (a textarea) does not
@@ -457,6 +509,8 @@ p.help.error {
   }
   .card > .field > label:not(.switch),
   .card > .field > .label,
+  .card > .advanced > .field > label:not(.switch),
+  .card > .advanced > .field > .label,
   .card > .fields-2 > .field > label:not(.switch),
   .card > .fields-2 > .field > .label {
     grid-column: 1;
@@ -464,16 +518,19 @@ p.help.error {
     padding-top: 0.45rem;
   }
   .card > .field > .help,
+  .card > .advanced > .field > .help,
   .card > .fields-2 > .field > .help {
     grid-column: 1;
     grid-row: 2;
   }
   .card > .field > .more,
+  .card > .advanced > .field > .more,
   .card > .fields-2 > .field > .more {
     grid-column: 1;
     grid-row: 3;
   }
   .card > .field > :not(label):not(.label):not(.help):not(.more),
+  .card > .advanced > .field > :not(label):not(.label):not(.help):not(.more),
   .card > .fields-2 > .field > :not(label):not(.label):not(.help):not(.more) {
     grid-column: 2;
     grid-row: 1 / span 3;
@@ -499,16 +556,26 @@ p.help.error {
     padding-top: var(--s-5);
     border-top: 1px solid var(--line);
   }
-  .card > .switch {
+  .card > .advanced > .field + .field,
+  .card > .advanced > .field + .switch,
+  .card > .advanced > .switch + .field,
+  .card > .advanced > .switch + .switch {
+    padding-top: var(--s-5);
+    border-top: 1px solid var(--line);
+  }
+  .card > .switch,
+  .card > .advanced > .switch {
     display: grid;
     grid-template-columns: var(--label-w) minmax(0, 1fr);
     column-gap: var(--s-6);
     justify-content: start;
   }
-  .card > .switch > span {
+  .card > .switch > span,
+  .card > .advanced > .switch > span {
     grid-column: 1;
   }
-  .card > .switch > input {
+  .card > .switch > input,
+  .card > .advanced > .switch > input {
     grid-column: 2;
     justify-self: start;
     margin-top: 0.15rem;
