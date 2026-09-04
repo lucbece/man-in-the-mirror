@@ -140,8 +140,11 @@ Small and testable, and each usable before the new UI lands:
   the same list.
 - `/api/voice/music/:action` for play, skip, pause, resume, stop from the
   panel, reusing the command handlers.
-- Stretch: `/api/tts/preview?voice=` returning a short clip, for a "Hear it"
-  button next to the voice select.
+- `/api/tts/preview?provider=&voice=` returning a short clip, for a "Hear
+  it" button next to the voice select.
+- `session.status()` gains `recent`: the last ten exchanges in the call,
+  each `{ askedBy, question, answer, firstAudioMs, totalMs, at }`, memory
+  only, cleared when the session ends.
 
 ## Work packages
 
@@ -154,14 +157,14 @@ one-line rule, and cannot merge without the screenshots.
 
 | # | Package | Owner | Output |
 | --- | --- | --- | --- |
-| P0 | Preview harness: `scripts/panel-preview.mjs` serves the panel with a fake state (bot online, one call, music playing, stats) and `scripts/panel-shots.sh` screenshots each section at three widths with headless Chrome | delegable | The two scripts; before-screenshots in `docs/design/panel/before/` |
+| P0 | Preview harness: `scripts/panel-preview.mjs` serves the panel with a fake state (first run, bot online, one call, music playing, stats) and `scripts/panel-shots.sh` screenshots each section at three widths with headless Chrome into a git-ignored `shots/` | delegable | The two scripts, documented in `CONTRIBUTING.md` |
 | P1 | Design spec: the component vocabulary rendered as one static HTML page, the Now page and every settings section as HTML mockups on the preview harness, copy for every label and help line | Fable | `docs/design/panel.md`, mockups under `src/web/public/` behind a `?mock=1` flag until P2 replaces them |
 | P2 | Foundation: `tokens.css`, `components.css`, the shell (header, sidebar, section routing with view transitions), the sticky save bar, the `state.js` poller and unsaved-edit guard carried over from `app.js` | Fable | Empty sections that route and save |
 | P3 | Now page: status, first-run checklist, call card, music, setup strip, numbers | Fable | Now complete against the mock state |
-| P4 | Server additions from the section above, with tests in `test/web-server.test.js` and `test/manager.test.js` | delegable | Endpoints and fields, no UI |
+| P4 | Server additions from the section above, the recent-exchanges ring and the voice preview included, with tests in `test/web-server.test.js` and `test/manager.test.js` | delegable | Endpoints and fields, no UI |
 | P5 | Settings sections, one commit each, using only the P2 components: Discord, Keys, Hearing, Listening, Thinking, Speaking | delegable, one subagent per section | Six sections that read, edit and save the same keys as today |
 | P6 | Instructions list editor and Tools section: the two with real interaction (rows, chips, JSON validation with the error shown in place) | Fable designs the interaction; execution delegable | The two sections |
-| P7 | Copy pass: every visible sentence read once against the one-line rule; anything longer moved to `docs/configuration.md` with an anchor and linked | Fable | Final copy |
+| P7 | Copy pass, in English and Spanish: every visible sentence read once against the one-line rule; anything longer moved to `docs/configuration.md` with an anchor and linked | Fable | `strings/en.js` and `strings/es.js` final |
 | P8 | QA: keyboard navigation through every section, reduced-motion, light scheme, 400 px width, the same-origin tests still green; delete `app.js`, `style.css`, `index.html` of the old panel; update `README.md` and `docs/configuration.md` where they show the panel | delegable, reviewed by Fable | The old panel gone, docs current |
 
 Sequence: P0 and P4 first, in parallel, because both are independent of the
@@ -185,17 +188,28 @@ Given to every subagent verbatim:
   passes, and the section reads and saves its keys against the fake state.
 - Commit message: what changed for the person using the panel, then why.
 
-## Decisions for Luc
+## Decisions taken
 
-- **Recent exchanges on Now.** The answers register keeps timings and
-  deliberately not the text. Showing the last few questions and answers on
-  Now means keeping them in memory (last 10, cleared when the bot leaves the
-  call). It is the most useful thing the page could show. Yes or no.
-- **Light scheme**: follow the OS, or dark only.
-- **Voice preview button** (the stretch endpoint): worth an API call per
-  click, or not.
-- **Language of the panel**: English only, as now, or a Spanish toggle. The
-  copy pass is the moment to decide; two languages double P7.
+Answered by Luc on 2026-09-04:
+
+- **Recent exchanges on Now: yes.** The last ten questions and answers per
+  call are kept in memory, with their timings, and dropped when the bot
+  leaves the call. Nothing is written to disk; the answers register keeps
+  not recording text.
+- **Dark only.** No light scheme. The tokens still carry no literal colours
+  outside `tokens.css`, so a light scheme stays a one-file change later.
+- **Voice preview: yes.** A "Hear it" button next to the voice select.
+  `GET /api/tts/preview?provider=&voice=` synthesises one fixed short
+  sentence with the chosen voice and returns the audio, cached in memory per
+  voice for the life of the process. With the API that is one short `tts-1`
+  call per new voice, about a thousandth of a dollar; local voices cost
+  nothing after the first download.
+- **Language toggle: yes.** English and Spanish, one toggle in the header,
+  remembered in the browser, defaulting to the browser's language. Every
+  visible string lives in `src/web/public/strings/en.js` and `es.js` and
+  components render through one `t(key)` function; no string in markup or
+  script. P7 writes both languages, and a test asserts the two files have
+  the same keys.
 
 ## Out of scope
 
