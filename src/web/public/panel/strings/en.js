@@ -142,4 +142,18 @@ export default {
   'thinking.web': 'Look things up on the web',
   'thinking.web.help': 'Adds a few seconds to the answers that use it.',
   'thinking.noKey': 'No {provider} key set, so it cannot answer yet. Add one under Keys.',
+
+  'tools.intro': 'What the agent can reach beyond its own answers: connected tools, and how many rounds it can spend using them.',
+  'tools.intro.idle': 'These tools are idle in Chat mode; switch to Agent or Fast model in front under Thinking to use them.',
+  'tools.mcp.label': 'MCP servers',
+  'tools.mcp.help': 'The same object Claude Desktop and Claude Code use; paste it as is.',
+  'tools.mcp.error': 'Not valid JSON: {message}',
+  'tools.mcp.notObject': 'That has to be a JSON object, one entry per server.',
+  'tools.mcp.more.summary': 'Example and allow-list',
+  'tools.mcp.more.text': 'A server run locally, like {"github": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"]}}, sits next to one reached remotely, like {"search": {"url": "https://example.com/mcp", "headers": {"Authorization": "Bearer …"}}}. Add "allow": ["tool_name"] to a server’s entry to grant it only the tools named there instead of everything it offers.',
+  'tools.dirs.label': 'Folders the agent may reach',
+  'tools.dirs.help': 'Full paths, one per line. This is what a filesystem server is scoped to.',
+  'tools.maxTurns.label': 'Tool rounds per answer',
+  'tools.maxTurns.help': 'Each round is a model round trip. Eight is enough for most tasks.',
+  'tools.warn': 'Anyone in the call can use what you connect here: the bot answers the room, and an MCP server has no permission model for it to check.',
 };

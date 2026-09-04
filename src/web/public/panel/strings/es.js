@@ -142,4 +142,18 @@ export default {
   'thinking.web': 'Buscar en la web',
   'thinking.web.help': 'Suma unos segundos a las respuestas que la usan.',
   'thinking.noKey': 'No hay clave de {provider}, así que todavía no puede responder. Cargá una en Claves.',
+
+  'tools.intro': 'Lo que el agente puede alcanzar más allá de sus propias respuestas: las herramientas conectadas y cuántas rondas puede usar para llegar a la respuesta.',
+  'tools.intro.idle': 'Estas herramientas están inactivas en modo Chat; cambiá a Agente o Modelo rápido adelante en Pensamiento para usarlas.',
+  'tools.mcp.label': 'Servidores MCP',
+  'tools.mcp.help': 'El mismo objeto que usan Claude Desktop y Claude Code; pegalo tal cual.',
+  'tools.mcp.error': 'No es JSON válido: {message}',
+  'tools.mcp.notObject': 'Tiene que ser un objeto JSON, una entrada por servidor.',
+  'tools.mcp.more.summary': 'Ejemplo y lista de permitidos',
+  'tools.mcp.more.text': 'Un servidor que corre localmente, como {"github": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"]}}, convive con uno remoto, como {"search": {"url": "https://example.com/mcp", "headers": {"Authorization": "Bearer …"}}}. Agregá "allow": ["tool_name"] a la entrada de un servidor para otorgarle solo las herramientas nombradas ahí en vez de todas las que ofrece.',
+  'tools.dirs.label': 'Carpetas a las que el agente puede acceder',
+  'tools.dirs.help': 'Rutas completas, una por línea. Es a esto que queda acotado un servidor de archivos.',
+  'tools.maxTurns.label': 'Rondas de herramientas por respuesta',
+  'tools.maxTurns.help': 'Cada ronda es un viaje de ida y vuelta al modelo. Ocho alcanza para la mayoría de las tareas.',
+  'tools.warn': 'Cualquiera en la llamada puede usar lo que conectés acá: el bot le responde a toda la sala, y un servidor MCP no tiene forma de comprobar quién pregunta.',
 };
