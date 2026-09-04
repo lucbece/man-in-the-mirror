@@ -94,6 +94,38 @@ Two more measurements the same evening:
 | When does Discord say a person stopped? | `@discordjs/voice` marks a speaker as stopped 100 ms after their last packet (`SpeakingMap.DELAY`); the receiver's `AfterSilence` end waits 500 ms after the last non-silence packet (`src/voice/receiver.js:105`, `SILENCE_MS`). Both count from the same last packet | Ending the utterance at 150 to 250 ms instead of 500 ms takes 250 to 350 ms off every answer, at the cost of more fragments (more STT calls, merged by the existing grace logic when the same person continues). To be measured against fragment count; a new L2 item below |
 | What does "before the model was asked" in the log include? | `stoppedAt` is stamped when the receive stream ends, which is after the 500 ms silence (`src/voice/receiver.js:113`) | The logged 2.8 s median excludes the silence; from the last word the wait is 3.3 s, and the total to the first word about 6.1 s, not 5.6 s. The targets below are restated from the last word |
 
+The transcription switch (item 4) has a catch, measured on synthetic noise
+(a breath at -34 dBFS, a louder one at -28, a keyboard-like burst at -20)
+and on three sentences that carry the bot's name:
+
+| Model | On noise, with the name prompt | On noise, without it | "che mirror" / "hey mirror" / "espejo" mid-sentence |
+| --- | --- | --- | --- |
+| whisper-1 | the Amara.org subtitle line (the known boilerplate) | "", "ssss", "You" | all three names right, with or without the prompt |
+| gpt-4o-transcribe | **"espejo"** or "mirror, espejo": the prompt itself | Japanese, Arabic, Korean fragments | with the prompt all three right; without it "Mirrur", "Mira", "No seas espejo" |
+| gpt-4o-mini-transcribe | "espejo" | **empty**, all three | with the prompt "Che Mirror" right but "Hey Mira"; without it "Chemirror" and "Mira" |
+
+So gpt-4o-transcribe needs the prompt to hear the name, and with the prompt
+it answers noise with the name. The existing echo guard
+(`echoesPrompt`, `src/agent/stt.js:236`) only catches the whole prompt
+coming back; a single name is treated as a call on purpose. The guard has
+to change before the model does: a transcript made only of prompt words is
+an echo when the clip's active share (already measured by the energy gate)
+is under about 10 percent; a real "espejo" said alone has voiced windows,
+a breath has none. The week's data agrees: clips paid for and discarded
+had a median active share of 0 percent, kept clips 45 percent. The wake
+detector's fuzzy match takes "Chemirror" and "Mirrur" but not "Mira", so
+the prompt stays. A week of logging the text of kept clips under one
+second (L0) sets the threshold from evidence.
+
+Also measured: gpt-4o-transcribe on a one-word clip ("Espejo.", 0.75 s)
+takes 372 to 585 ms against whisper-1's 590 to 1612; the bot's 28 tools
+come to 13.8 k characters of JSON schema, about 3.8 k tokens, on top of a
+1.3 k-token system prompt, so the agent's prefix is about 6 k tokens and
+prompt caching matters more there than in the fast leg (whether the Agent
+SDK already caches it is visible in the result message's usage fields,
+which L0 logs); opus decoding, downmixing and the energy measure cost
+10 ms for a 5 s clip on a desktop, nothing on the critical path.
+
 And four things read off the week's trace with timestamps:
 
 - **The escalation is two waits, not one.** In all three escalations the
@@ -180,10 +212,12 @@ expected saving on the median path, and the risk.
 ### Package L1: the slowest option at each step, replaced
 
 4. **STT model: gpt-4o-transcribe** instead of whisper-1, configurable.
-   Saves ≈ 1.0 s on the median path. Same API, same prompt bias. Risk: the
-   two tail latencies seen (8.8 s and 41 s) make item 2 a precondition, and
-   its hallucination profile on near-silence must be re-checked against the
-   132 discarded clips.
+   Saves ≈ 1.0 s on the median path, more on one-word clips. Same API,
+   same prompt bias. Two preconditions: item 2 (its tail latencies of
+   8.8 s and 41 s were seen), and the echo guard rewritten to use the
+   clip's active share, since with the prompt this model answers noise
+   with the bot's name (second pass, measured). Ship the guard first, with
+   the week of kept-clip texts from L0 behind the threshold.
 5. **TTS model: gpt-4o-mini-tts** instead of tts-1, configurable. Saves
    ≈ 0.6 s. Risk: voice character differs slightly; the "Hear it" button in
    the panel lets the person choose.
