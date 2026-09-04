@@ -25,7 +25,7 @@ import { spawn } from 'node:child_process';
 import ffmpegPath from 'ffmpeg-static';
 import { AudioPlayerStatus, StreamType, createAudioPlayer, createAudioResource } from '@discordjs/voice';
 
-import { ensureYtDlp, resolveTrack } from '../agent/ytdlp.js';
+import { commonArgs, ensureYtDlp, resolveTrack } from '../agent/ytdlp.js';
 import { normalise } from '../agent/wake.js';
 
 /** Nobody queues more than this on purpose, and an agent in a loop might. */
@@ -257,7 +257,7 @@ export class MusicPlayer extends EventEmitter {
   #resourceFor(track) {
     const ytdlp = spawn(
       this.ytDlpBin,
-      ['--no-warnings', '--no-playlist', '-f', 'bestaudio', '-o', '-', track.url],
+      [...commonArgs(), '-f', 'bestaudio', '-o', '-', track.url],
       { stdio: ['ignore', 'pipe', 'ignore'] },
     );
     const ffmpeg = spawn(
