@@ -226,7 +226,7 @@ export class SessionManager extends EventEmitter {
  * from the console whether a setting had taken, whether a model was loading, or
  * whether it had quietly fallen back.
  */
-function describeChanges(values, previous) {
+export function describeChanges(values, previous) {
   if (values.sttProvider !== previous.sttProvider || values.sttLocalModel !== previous.sttLocalModel) {
     console.log(
       `[config] hearing → ${values.sttProvider === 'local' ? `whisper.cpp ${values.sttLocalModel} (this machine)` : 'OpenAI whisper-1 (API)'}`,
@@ -241,10 +241,15 @@ function describeChanges(values, previous) {
     values.brainKind !== previous.brainKind ||
     values.brainProvider !== previous.brainProvider ||
     values.brainModel !== previous.brainModel ||
+    values.fastModel !== previous.fastModel ||
     values.webSearch !== previous.webSearch ||
     values.mcpServers !== previous.mcpServers
   ) {
-    if (values.brainKind === 'agent') {
+    if (values.brainKind === 'cascade') {
+      console.log(
+        `[config] thinking → ${values.fastModel || 'claude-haiku-4-5'} in front of Claude agent ${values.brainModel || 'claude-sonnet-5'}${values.webSearch ? ' + web search' : ''}`,
+      );
+    } else if (values.brainKind === 'agent') {
       let mcp = 'no MCP servers';
       try {
         const names = Object.keys(JSON.parse(values.mcpServers || '{}'));
