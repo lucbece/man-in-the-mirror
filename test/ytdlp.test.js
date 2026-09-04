@@ -85,10 +85,11 @@ describe('cookies', () => {
     assert.match(warned.join('\n'), /cookies have expired/);
   });
 
-  test('are passed only when the file exists', () => {
-    assert.deepEqual(commonArgs({ cookiesPath: none }), ['--no-warnings', '--no-playlist']);
+  test('are passed only when the file exists, and the bot lends yt-dlp its own Node', () => {
+    const base = ['--no-warnings', '--no-playlist', '--js-runtimes', 'node:/usr/bin/node'];
+    assert.deepEqual(commonArgs({ cookiesPath: none, node: '/usr/bin/node' }), base);
     const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'mitm-cookies-')), 'youtube-cookies.txt');
     fs.writeFileSync(file, '# Netscape HTTP Cookie File\n');
-    assert.deepEqual(commonArgs({ cookiesPath: file }), ['--no-warnings', '--no-playlist', '--cookies', file]);
+    assert.deepEqual(commonArgs({ cookiesPath: file, node: '/usr/bin/node' }), [...base, '--cookies', file]);
   });
 });
