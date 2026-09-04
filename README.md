@@ -34,7 +34,8 @@ npm install
 npm start          # control panel on http://localhost:3000
 ```
 
-**First run.** The panel's **Start here** card asks for what it needs:
+**First run.** The panel opens on **Now**, whose first-run steps ask for
+what it needs:
 
 | Value | Purpose | Where to get it |
 | --- | --- | --- |
@@ -52,6 +53,10 @@ Move Members and Mute Members to enable the call management tools. No
 privileged intents are required.
 
 Then `/mj join` in your server and say its name.
+
+The panel is Now, the call and what the bot is doing, plus eight settings
+sections, in English or Spanish. It is described in
+[docs/design/panel.md](docs/design/panel.md).
 
 ## How it works
 

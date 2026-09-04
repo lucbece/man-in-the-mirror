@@ -1,8 +1,9 @@
 # Control panel redesign
 
-Status, 2026-09-04: P0, P1, P2, P3 and P4 done on `wp/panel` (harness,
-design spec, shell, Now, Thinking, server additions). P5 and P6 in
-progress, delegated in three groups. P7 and P8 pending.
+Status, 2026-09-04: P0 to P8 done on `wp/panel`. The old panel is gone from
+that branch; the mock pages under `src/web/public/mock/` stay as the
+reference renderings. Left for the merge: a pull request from `wp/panel`
+into `main`, and a look at the real panel over the tunnel.
 
 The panel at `src/web/public/` does its job and reads like a manual. This
 plan replaces it with a panel that shows what the bot is doing and asks for

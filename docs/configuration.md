@@ -61,7 +61,7 @@ Two consequences:
 
 Renaming the bot is open to the room by voice through `set_names`, and it is
 the one setting that can lock the channel out: a name nobody says leaves
-nothing to wake it with. Recovery is the panel's Listening tab.
+nothing to wake it with. Recovery is the panel's Listening section.
 
 ## Modes
 
@@ -182,7 +182,7 @@ The prompt has a fixed half and a mutable half. The fixed half (answer only
 when addressed, keep replies short and speakable, do not disclose the
 configuration) is not reachable from the channel. The mutable half is
 `customInstructions`: up to 20 lines of 300 characters, edited from the
-panel's Thinking tab or by voice, and applied in every mode.
+panel's Instructions section or by voice, and applied in every mode.
 
 Custom lines are appended below the fixed rules, numbered, under a paragraph
 stating that they do not override what precedes them. Adding one does not
@@ -197,8 +197,9 @@ the model can say who it meant when two people answer to the same name. The
 prompt, `list_instructions` and `forget_instruction` all use the name the
 server shows today, so the model reads the same name that labels that person's
 lines in the transcript. The limits above are measured on that rendered text.
-The panel's Thinking tab shows the stored form, tokens included; a line
-without a token behaves as it always did.
+The panel's Instructions section shows each token as a chip with the
+person's name and keeps the stored form underneath; a line without a token
+behaves as it always did.
 
 ## MCP servers
 

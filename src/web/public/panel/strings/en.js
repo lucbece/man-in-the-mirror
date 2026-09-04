@@ -176,7 +176,7 @@ export default {
   'hearing.localModel.help': 'Downloaded on first use into runtime/.',
   'hearing.localModel.more.summary': 'Which one',
   'hearing.localModel.more.text': 'large-v3-turbo with an NVIDIA card fetches the CUDA build, 646 MB; base runs on CPU and is slower than the API.',
-  'hearing.noKey': 'No OpenAI key, transcription will fail. Add one under Keys.',
+  'hearing.noKey': 'No OpenAI key, so transcription will fail. Add one under Keys.',
 
   'listening.intro': 'What it listens for, and how much of the call it keeps.',
   'listening.names': 'Names it answers to',
@@ -251,5 +251,5 @@ export default {
   'keys.anthropic.more.text': 'Create one in the Console, under Settings → Keys, at',
   'keys.anthropic.more.link': 'platform.claude.com/settings/keys',
   'keys.anthropic.replaced': 'Anthropic key replaced.',
-  'keys.callout': 'Saved to data/config.json on the server, readable only by its owner. A blank field keeps what is stored.',
+  'keys.callout': 'Saved to data/config.json, readable only by its owner. A blank field keeps what is stored.',
 };

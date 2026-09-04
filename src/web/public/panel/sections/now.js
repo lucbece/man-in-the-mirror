@@ -1,6 +1,6 @@
 import { h, toast, ms, describeSeconds } from '../dom.js';
 import { post } from '../api.js';
-import { t } from '../i18n.js';
+import { t, currentLang } from '../i18n.js';
 import { field } from '../form.js';
 
 /**
@@ -290,7 +290,7 @@ export function mount(root, ctx) {
 
   const clock = (iso) => {
     const d = new Date(iso);
-    return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString(currentLang() === 'es' ? 'es-AR' : 'en-GB', { hour: '2-digit', minute: '2-digit' });
   };
 
   // --- how it is set up -----------------------------------------------------------
