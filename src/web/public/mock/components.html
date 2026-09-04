@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Components — Man in the Mirror</title>
+  <link rel="stylesheet" href="../panel/components.css" />
+</head>
+<body data-page="">
+<div class="shell">
+  <main class="main">
+    <div class="topbar"><h1>Components</h1><span class="pill"><span class="dot"></span>Offline</span></div>
+    <div class="section">
+      <div class="card">
+        <h2>Pills</h2>
+        <div class="row">
+          <span class="pill" data-state="ok"><span class="dot"></span>Online</span>
+          <span class="pill" data-state="busy"><span class="dot"></span>Starting</span>
+          <span class="pill" data-state="warn"><span class="dot"></span>No key</span>
+          <span class="pill" data-state="error"><span class="dot"></span>Error</span>
+          <span class="pill accent">Music mode</span>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Buttons</h2>
+        <div class="row">
+          <button class="btn primary">Save</button>
+          <button class="btn">Join</button>
+          <button class="btn quiet">Discard</button>
+          <button class="btn danger">Stop bot</button>
+          <button class="btn small">Skip</button>
+          <button class="btn" disabled>Disabled</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Fields</h2>
+        <div class="field">
+          <label for="a">Server ID</label>
+          <input class="input mono" id="a" value="716778355835273259" />
+          <p class="help">Right-click the server in Discord and copy its ID.</p>
+          <details class="more"><summary>Why it matters</summary><p>With it, slash commands appear at once. Without it Discord registers them globally, which can take an hour.</p></details>
+        </div>
+        <div class="field">
+          <label for="b">Voice</label>
+          <div class="input-row"><select class="select" id="b"><option>onyx</option></select><button class="btn">Hear it</button></div>
+        </div>
+        <div class="field">
+          <label for="c">Names it answers to</label>
+          <div class="chips"><span class="chip">mirror<button aria-label="Remove">×</button></span><span class="chip">espejo<button aria-label="Remove">×</button></span><input id="c" placeholder="Add a name" /></div>
+          <p class="help">Matched anywhere in a sentence. Use a word from the language you speak.</p>
+        </div>
+        <div class="field">
+          <label for="d">MCP servers</label>
+          <textarea class="textarea" id="d" rows="4" aria-invalid="true">{ "github": { "command": "npx" </textarea>
+          <p class="help error">Unexpected end of JSON at line 1.</p>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Choices</h2>
+        <div class="field">
+          <span class="label">Transcription</span>
+          <div class="seg"><label><input type="radio" name="s" checked />OpenAI API</label><label><input type="radio" name="s" />On this machine</label></div>
+          <p class="help">Works anywhere. About 2 to 4 cents per question.</p>
+        </div>
+        <label class="switch"><span>Answer when someone says its name</span><input type="checkbox" checked /></label>
+        <label class="switch"><span>Transcribe as people speak<span class="help">Needed to notice its name. Pays for everything said.</span></span><input type="checkbox" /></label>
+      </div>
+      <div class="card">
+        <h2>Callouts</h2>
+        <div class="callout"><p>Saved to <code>data/config.json</code>, owner-only. A blank field keeps what is stored.</p></div>
+        <div class="callout warn"><p><strong>Anyone in the call can use what you connect here.</strong> The bot answers the room; an MCP server has no permission model for it to check.</p></div>
+      </div>
+      <div class="card">
+        <h2>First run</h2>
+        <div class="steps">
+          <div class="step done"><span class="num">✓</span><div class="body"><span class="title">Discord bot token</span><span class="help">Set · MTIz…abcd</span></div></div>
+          <div class="step"><span class="num">2</span><div class="body"><span class="title">OpenAI API key</span><div class="input-row"><input class="input" type="password" placeholder="sk-…" /><button class="btn primary">Save</button></div><span class="help">Hearing and speaking. <a href="#">platform.openai.com</a></span></div></div>
+          <div class="step"><span class="num">3</span><div class="body"><span class="title">Anthropic API key</span><span class="help">Thinking. Scoped to a workspace. <a href="#">Console</a></span></div></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<script type="module" src="_mock.js"></script>
+</body>
+</html>
