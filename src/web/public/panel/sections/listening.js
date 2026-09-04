@@ -22,13 +22,13 @@ export function mount(root) {
     more: { summary: t('listening.names.more.summary'), text: t('listening.names.more.text') },
   });
 
-  const wake = switchRow({ name: 'wakeEnabled', label: t('listening.wake') });
+  const wake = switchRow({ name: 'wakeEnabled', label: t('listening.wake'), help: t('listening.wake.help') });
 
   const buffer = h('select.select', { name: 'bufferSeconds' });
   const bufferField = field({ label: t('listening.buffer'), control: buffer, help: t('listening.buffer.help') });
 
   const eager = switchRow({ name: 'eagerTranscription', label: t('listening.eager'), help: t('listening.eager.help') });
-  const advanced = h('div.field', h('details.more', h('summary', t('listening.advanced')), eager));
+  const advanced = h('details.advanced', h('summary', t('listening.advanced')), eager);
 
   const card = h('div.card', namesField, wake, bufferField, advanced);
   root.append(h('header', h('p', t('listening.intro'))), card);

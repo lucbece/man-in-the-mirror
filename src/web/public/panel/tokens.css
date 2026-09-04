@@ -1,8 +1,9 @@
 /*
  * Every literal colour, size and duration the panel uses. Nothing outside this
  * file names a colour; components.css composes these, and the sections use
- * components. Dark only, by decision (docs/plans/panel.md): a light scheme
- * would be a second block of these tokens and nothing else.
+ * components. Dark by default; the light scheme at the bottom is a second
+ * block of the same tokens and nothing else. `data-theme` on the root forces
+ * one; without it the system preference decides.
  */
 
 :root {
@@ -37,8 +38,8 @@
   /* --- type ------------------------------------------------------------------ */
   --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --mono: ui-monospace, "Cascadia Code", Menlo, Consolas, monospace;
-  --fs-0: 0.8125rem; /* 13px: help, meta */
-  --fs-1: 0.875rem; /* 14px: labels, body, controls */
+  --fs-0: 0.85rem; /* 13.6px: help, meta */
+  --fs-1: 0.9375rem; /* 15px: labels, body, controls */
   --fs-2: 1rem; /* 16px: card titles */
   --fs-3: 1.25rem; /* 20px: section title */
   --fs-4: 1.75rem; /* 28px: a number that matters */
@@ -68,4 +69,52 @@
   --nav-w: 15rem;
   --main-w: 80rem; /* the content column on a wide screen */
   --label-w: 16rem; /* the label column of a settings row */
+}
+
+/* --- the light scheme ------------------------------------------------------- */
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --bg-0: oklch(97% 0.006 var(--hue));
+    --bg-1: oklch(99.4% 0.003 var(--hue));
+    --bg-2: oklch(95% 0.008 var(--hue));
+    --bg-3: oklch(91% 0.012 var(--hue));
+    --fg: oklch(22% 0.03 var(--hue));
+    --fg-2: oklch(46% 0.03 var(--hue));
+    --fg-3: oklch(62% 0.025 var(--hue));
+    --accent: oklch(64% 0.135 80);
+    --accent-ink: oklch(99% 0.01 80);
+    --accent-soft: color-mix(in oklab, var(--accent) 14%, transparent);
+    --accent-line: color-mix(in oklab, var(--accent) 55%, transparent);
+    --ok: oklch(58% 0.16 155);
+    --warn: oklch(62% 0.15 75);
+    --danger: oklch(56% 0.19 22);
+    --line: color-mix(in oklab, var(--fg) 12%, transparent);
+    --line-strong: color-mix(in oklab, var(--fg) 24%, transparent);
+    --shadow-1: 0 1px 2px oklch(0% 0 0 / 0.06), 0 1px 3px oklch(0% 0 0 / 0.04);
+    --shadow-2: 0 4px 12px oklch(0% 0 0 / 0.1), 0 12px 40px oklch(0% 0 0 / 0.08);
+  }
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg-0: oklch(97% 0.006 var(--hue));
+  --bg-1: oklch(99.4% 0.003 var(--hue));
+  --bg-2: oklch(95% 0.008 var(--hue));
+  --bg-3: oklch(91% 0.012 var(--hue));
+  --fg: oklch(22% 0.03 var(--hue));
+  --fg-2: oklch(46% 0.03 var(--hue));
+  --fg-3: oklch(62% 0.025 var(--hue));
+  --accent: oklch(64% 0.135 80);
+  --accent-ink: oklch(99% 0.01 80);
+  --accent-soft: color-mix(in oklab, var(--accent) 14%, transparent);
+  --accent-line: color-mix(in oklab, var(--accent) 55%, transparent);
+  --ok: oklch(58% 0.16 155);
+  --warn: oklch(62% 0.15 75);
+  --danger: oklch(56% 0.19 22);
+  --line: color-mix(in oklab, var(--fg) 12%, transparent);
+  --line-strong: color-mix(in oklab, var(--fg) 24%, transparent);
+  --shadow-1: 0 1px 2px oklch(0% 0 0 / 0.06), 0 1px 3px oklch(0% 0 0 / 0.04);
+  --shadow-2: 0 4px 12px oklch(0% 0 0 / 0.1), 0 12px 40px oklch(0% 0 0 / 0.08);
 }
