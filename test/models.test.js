@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { describe } from 'node:test';
 
-import { MODELS, providerFor } from '../src/agent/models.js';
+import { MODELS, costOf, providerFor } from '../src/agent/models.js';
 
 /**
  * The known set the panel's selects are built from. Free-typed model ids stay
@@ -20,6 +20,10 @@ describe('the known models', () => {
       }
       assert.equal(typeof model.note, 'string');
       assert.ok(model.note.length > 0, model.id);
+      // The agent bills itself from these on the OpenAI side, so a missing or
+      // zeroed price is a spend figure that silently reads $0.00 forever.
+      assert.ok(model.pricePerMillion.input > 0, model.id);
+      assert.ok(model.pricePerMillion.output > 0, model.id);
     }
   });
 
@@ -34,8 +38,10 @@ describe('the known models', () => {
     assert.deepEqual(byId['claude-haiku-4-5'].role.sort(), ['chat', 'fast']);
     assert.deepEqual(byId['claude-sonnet-5'].role.sort(), ['agent', 'chat', 'fast']);
     assert.deepEqual(byId['claude-opus-5'].role.sort(), ['agent', 'chat']);
-    assert.deepEqual(byId['gpt-4.1'].role.sort(), ['chat', 'fast']);
-    assert.deepEqual(byId['gpt-4.1-mini'].role.sort(), ['chat', 'fast']);
+    // Both OpenAI ids gained the agent role when the agent stopped being
+    // Claude-only; the Claude assignments are unchanged.
+    assert.deepEqual(byId['gpt-4.1'].role.sort(), ['agent', 'chat', 'fast']);
+    assert.deepEqual(byId['gpt-4.1-mini'].role.sort(), ['agent', 'chat', 'fast']);
 
     assert.equal(byId['claude-haiku-4-5'].provider, 'anthropic');
     assert.equal(byId['claude-sonnet-5'].provider, 'anthropic');
@@ -75,5 +81,20 @@ describe('providerFor', () => {
     assert.equal(providerFor('llama-3'), null);
     assert.equal(providerFor(''), null);
     assert.equal(providerFor(undefined), null);
+  });
+});
+
+describe('what a turn cost', () => {
+  test('is the published list price for the tokens the API reported', () => {
+    // gpt-4.1 at $2 in and $8 out per million.
+    assert.ok(Math.abs(costOf('gpt-4.1', { input: 1_000_000, output: 0 }) - 2) < 1e-9);
+    assert.ok(Math.abs(costOf('gpt-4.1', { input: 0, output: 1_000_000 }) - 8) < 1e-9);
+    // claude-sonnet-5 at $2 in and $10 out.
+    assert.ok(Math.abs(costOf('claude-sonnet-5', { input: 0, output: 1_000_000 }) - 10) < 1e-9);
+  });
+
+  test('an id with no price costs zero rather than a guess', () => {
+    assert.equal(costOf('llama-3-70b', { input: 1_000_000, output: 1_000_000 }), 0);
+    assert.equal(costOf('gpt-4.1'), 0, 'no tokens, no cost');
   });
 });
