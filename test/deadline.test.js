@@ -74,10 +74,10 @@ describe('withDeadline', () => {
 });
 
 describe('the STT deadline scales with the clip', () => {
-  test('3 s plus a second per five seconds of audio, read from the WAV header', () => {
+  test('4 s plus a second per five seconds of audio, read from the WAV header', () => {
     const fourSeconds = pcmToWav(Buffer.alloc(16000 * 2 * 4));
     assert.ok(Math.abs(wavSeconds(fourSeconds) - 4) < 0.01);
-    assert.equal(sttDeadlineMs(fourSeconds), 3800);
-    assert.equal(sttDeadlineMs(Buffer.alloc(0)), 3000);
+    assert.equal(sttDeadlineMs(fourSeconds), 4800);
+    assert.equal(sttDeadlineMs(Buffer.alloc(0)), 4000);
   });
 });
