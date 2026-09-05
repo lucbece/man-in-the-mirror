@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 
-import { config, VOICES, LOCAL_VOICE_INFO, TTS_MODELS } from '../config.js';
+import { config, VOICES, LOCAL_VOICE_INFO, TTS_MODELS, clampSpeed } from '../config.js';
 import { bot } from '../bot/index.js';
 import { sessionManager } from '../voice/manager.js';
 import { formatTranscript, transcribeBuffer } from '../agent/stt.js';
@@ -305,7 +305,8 @@ export function createApp(deps = {}) {
     if (provider === 'openai' && !TTS_MODELS.includes(model)) {
       return res.status(400).json({ error: `Unknown speech model: ${model}` });
     }
-    const cacheKey = `${provider}:${voice}:${model}`;
+    const speed = req.query.speed === undefined ? config.get('ttsSpeed') : clampSpeed(req.query.speed);
+    const cacheKey = `${provider}:${voice}:${model}:${speed}`;
     const cached = previewCache.get(cacheKey);
     if (cached) {
       res.set('Content-Type', cached.contentType);
@@ -321,7 +322,7 @@ export function createApp(deps = {}) {
     }
 
     try {
-      const tts = makeTts({ provider, voice, model });
+      const tts = makeTts({ provider, voice, model, speed });
       const buffer = await tts.synthesize(PREVIEW_TEXT);
       // Both providers hand back Ogg Opus for this call — OpenAI's `opus`
       // response format, Piper re-encoded the same way in agent/piper.js —

@@ -41,6 +41,7 @@ ssh tunnel (see [running.md](running.md)), never a public port.
 | `customInstructions` | — | *(blank)* | Standing instructions, one per line. See [Standing instructions](#standing-instructions) |
 | `ttsProvider` | — | `openai` | `openai` or `local` (Piper) |
 | `ttsVoice` | — | `onyx` | OpenAI voice: `alloy`, `echo`, `fable`, `onyx`, `nova`, `shimmer` |
+| `ttsSpeed` | — | `1` | Speaking rate, 0.8 to 1.6. gpt-4o-mini-tts speaks slowly at 1; 1.25 is about tts-1's pace |
 | `ttsModel` | — | `gpt-4o-mini-tts` | OpenAI speech model: `gpt-4o-mini-tts` (first byte about half a second sooner) or `tts-1` |
 | `ttsLocalVoice` | — | `es_ES-davefx-medium` | Piper voice: `es_ES-davefx-medium`, `en_US-lessac-medium`, `es_AR-daniela-high` |
 | `musicChannel` | — | `music` | Text channel where music actions are written, since they are carried out without speaking. In music mode it also receives what the bot would have said (`🤫`) and any reminder that came due (`⏰`). A server without one gets no message; the music still plays |
