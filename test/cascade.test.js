@@ -313,3 +313,66 @@ describe('the tool name never reaches the room', () => {
     assert.equal(withoutToolName('Dame un segundo.'), 'Dame un segundo.');
   });
 });
+
+describe('commands carried out without a model', () => {
+  beforeEach(resetCascade);
+
+  const playing = () => ({
+    destroyed: false,
+    client: null,
+    music: {
+      playing: true,
+      queue: [],
+      skip: () => ({ title: 'Track 1' }),
+      stop() {},
+      pause: () => true,
+      resume: () => true,
+      setVolume: () => ({ from: 50, to: 35, applied: true }),
+    },
+  });
+
+  test('a skip never reaches either model, and counts as the silent tool', async () => {
+    const agent = fakeAgent();
+    let fastRan = false;
+    const tools = [];
+    const b = brain({
+      agent,
+      getSession: () => playing(),
+      runFast: async () => {
+        fastRan = true;
+        return { said: 'x', escalate: false };
+      },
+    });
+    const said = await b.answer(ask('espejo, saltá'), { onToolUse: (n) => tools.push(n) });
+    assert.equal(said, '');
+    assert.equal(fastRan, false);
+    assert.equal(agent.calls.length, 0);
+    assert.deepEqual(tools, ['mcp__bot__skip_song']);
+    assert.equal(b.escalated, false);
+  });
+
+  test('with nothing playing, the same words go to the agent as before', async () => {
+    const agent = fakeAgent();
+    const idle = playing();
+    idle.music.playing = false;
+    idle.music.skip = () => null;
+    const b = brain({ agent, getSession: () => idle, runFast: async () => ({ said: '', escalate: true }) });
+    await b.answer(ask('espejo, saltá'));
+    assert.equal(agent.calls.length, 1);
+  });
+
+  test('a question about the music is not a command', async () => {
+    const agent = fakeAgent();
+    let fastRan = false;
+    const b = brain({
+      agent,
+      getSession: () => playing(),
+      runFast: async () => {
+        fastRan = true;
+        return { said: 'Es Track 1.', escalate: false };
+      },
+    });
+    await b.answer(ask('espejo, qué tema es este'));
+    assert.equal(fastRan, true);
+  });
+});

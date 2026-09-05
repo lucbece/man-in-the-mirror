@@ -56,6 +56,7 @@ import { noteTimeout, FAST_FIRST_BLOCK_MS } from './deadline.js';
 
 import { config } from '../config.js';
 import { AgentBrain, DEFAULT_AGENT_MODEL } from './agent-brain.js';
+import { handleCommand } from './commands.js';
 import { promptWithInstructions } from './brain.js';
 import { providerFor } from './models.js';
 import { SentenceSplitter } from './sentences.js';
@@ -177,6 +178,16 @@ const MUSIC_COMMAND = [
 const looksLikeMusicCommand = (text) => MUSIC_COMMAND.some((re) => re.test(String(text ?? '')));
 
 /**
+ * The live session for a guild, imported when first needed: voice/manager.js
+ * imports the answer path, which imports this file, so a static import would
+ * be a cycle resolved by luck.
+ */
+async function defaultGetSession(guildId) {
+  const { sessionManager } = await import('../voice/manager.js');
+  return sessionManager.get(guildId);
+}
+
+/**
  * The tool's own name, said out loud.
  *
  * Heard in a real call: the fast leg spoke the word "Escalate." before handing
@@ -259,6 +270,25 @@ export class CascadeBrain {
       this.escalated = true;
       this.reason = 'the last answer used a tool, so this may be about what it found';
       return this.#runAgent(context, memory, { onSearchStart, onSentence, onToolUse });
+    }
+
+    // A command that needs no model at all: skip, stop, pause, resume, the
+    // volume. Carried out here, in no time, with the same note in the music
+    // channel the tool writes; reported as that tool so the turn is silent.
+    // Anything the matcher is unsure of, or that has nothing to act on, goes
+    // on to the agent as before.
+    const getSession = this.deps.getSession ?? defaultGetSession;
+    const carriedOut = await handleCommand(context, this.guildId, { getSession }).catch((err) => {
+      console.warn(`[cascade] command failed, asking the agent instead: ${err.message}`);
+      return null;
+    });
+    if (carriedOut) {
+      this.escalated = false;
+      this.reason = 'a music command, carried out without a model';
+      trace('ROUTE', 'carried out without a model', `${carriedOut} for: "${context.question}"`);
+      onToolUse?.(carriedOut);
+      memory.lastUsedTools = true;
+      return '';
     }
 
     // A command, not a question. The fast leg cannot carry it out and cannot

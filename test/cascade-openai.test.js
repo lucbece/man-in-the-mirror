@@ -14,13 +14,15 @@ import { CascadeBrain, resetCascade } from '../src/agent/cascade.js';
  */
 
 /** Mutates config for the duration of `fn`, never touching disk, then reverts. */
-function withConfig(seed, fn) {
+async function withConfig(seed, fn) {
   const snapshot = { ...config.values };
   const persist = config.persist;
   config.persist = () => {};
   try {
     Object.assign(config.values, seed);
-    return fn();
+    // Awaited, or the finally below restores the config before the body has
+    // reached its first read past an await.
+    return await fn();
   } finally {
     config.persist = persist;
     config.values = snapshot;
