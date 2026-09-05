@@ -106,8 +106,14 @@ export class SessionManager extends EventEmitter {
         if (session.speaking) {
           await entersState(session.player, AudioPlayerStatus.Idle, 15_000).catch(() => {});
         }
-        session.player.stop(true);
-        session.player.play(toAudioResource(audio));
+        // Through the same door as every answer: startSpeech pauses the music
+        // and hands the connection to the speaking player, then hands it back.
+        // Playing on session.player directly, as this did, went to a player
+        // the connection was not listening to whenever a song was on.
+        const speech = session.startSpeech();
+        speech.push(toAudioResource(audio), message);
+        speech.end();
+        await speech.finished;
         console.log(`[reminders] #${id} spoken: "${message}"`);
       } catch (err) {
         console.warn(`[reminders] #${id} could not be spoken: ${err.message}`);
@@ -190,7 +196,9 @@ export class SessionManager extends EventEmitter {
         }
       } catch (err) {
         // Don't speak errors into the channel — that's worse than silence.
-        if (!(err instanceof AgentBusyError)) {
+        if (err instanceof AgentBusyError) {
+          console.log(`[wake] ${askedBy} asked while it was still answering — dropped: "${heard}"`);
+        } else {
           console.warn(`[wake] could not answer: ${err.message}`);
         }
       }

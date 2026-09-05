@@ -27,6 +27,18 @@
  */
 import { AgentError, TURN_TIMEOUT_MS } from './agent-brain.js';
 import { withDeadline, AGENT_FIRST_BLOCK_MS } from './deadline.js';
+
+/** A stream event that is the model doing something, as opposed to the connection being up. */
+const isOutput = (event) =>
+  typeof event?.type === 'string' &&
+  (event.type.startsWith('response.output') ||
+    event.type.startsWith('response.function_call') ||
+    event.type.startsWith('response.web_search_call') ||
+    event.type.startsWith('response.reasoning') ||
+    event.type === 'response.completed' ||
+    event.type === 'response.failed' ||
+    event.type === 'response.error' ||
+    event.type === 'error');
 import { costOf } from './models.js';
 import { SentenceSplitter } from './sentences.js';
 import { readSse } from './sse.js';
@@ -53,8 +65,9 @@ export class OpenAiAgentSession {
     toolNames,
     maxTurns = 8,
     turn,
-    fetch = globalThis.fetch,
-  }) {
+    fetch = globalThis.fetch, firstBlockMs = AGENT_FIRST_BLOCK_MS }) {
+    /** Injectable so a stalled stream can be tested without waiting fifteen seconds. */
+    this.firstBlockMs = firstBlockMs;
     if (!apiKey) throw new AgentError('The agent brain needs an OpenAI API key.');
     this.signature = signature;
     this.guildId = guildId;
@@ -145,7 +158,7 @@ export class OpenAiAgentSession {
     // Fifteen seconds to the first output item, tried twice, then the turn
     // fails and the session stays: a lost turn costs one question, a lost
     // session costs the conversation.
-    const res = await withDeadline('agent', AGENT_FIRST_BLOCK_MS, (deadline, met) =>
+    const res = await withDeadline('agent', this.firstBlockMs, (deadline, met) =>
       this.#post(
         {
           model: this.model,
@@ -159,17 +172,26 @@ export class OpenAiAgentSession {
         },
         signal ? AbortSignal.any([signal, deadline]) : deadline,
       ).then(async (r) => {
-        // The first item has to arrive inside the deadline too, so the stream
-        // is peeked here and the event handed to the loop below.
+        // The first *output* has to arrive inside the deadline too. The stream
+        // opens with response.created and response.in_progress the moment the
+        // connection is up, long before the model has produced anything, so
+        // those are read and kept here and only an output item, a tool call,
+        // a search starting, or a failure counts as arrived.
         const events = readSse(r)[Symbol.asyncIterator]();
-        const first = await events.next();
+        const buffered = [];
+        for (;;) {
+          const next = await events.next();
+          if (next.done) break;
+          buffered.push(next.value);
+          if (isOutput(next.value)) break;
+        }
         met();
-        return { events, first };
+        return { events, buffered };
       }),
     );
-    const { events, first } = res;
+    const { events, buffered } = res;
     const stream = (async function* () {
-      if (!first.done) yield first.value;
+      yield* buffered;
       for (;;) {
         const next = await events.next();
         if (next.done) return;
@@ -268,8 +290,14 @@ export class OpenAiAgentSession {
     return outputs;
   }
 
+  /** Closed for a reason every later question should hear: a rejected key. */
+  doom(err) {
+    this.fatal = err;
+    this.end();
+  }
+
   async ask(text, { onToolUse, onSentence } = {}) {
-    if (this.closed) throw new AgentError('Agent session is closed.');
+    if (this.closed) throw this.fatal ?? new AgentError('Agent session is closed.');
     if (this.turn) throw new AgentError('Agent is mid-answer.');
     this.turn = { started: Date.now() };
     trace('INPUT', `agent turn (${this.model})`, text);

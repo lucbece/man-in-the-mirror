@@ -224,6 +224,8 @@ export const SETTINGS = [
     name: 'fast model',
     aliases: ['front model', 'modelo rapido', 'quick model'],
     key: 'fastModel',
+    // Cost and speed for everyone in every later call; the owner's to change.
+    ownerOnly: true,
     what: 'which model answers first in cascade mode, before anything is handed over',
     session: true,
     type: modelName,
@@ -232,6 +234,8 @@ export const SETTINGS = [
     name: 'model',
     aliases: ['brain model', 'modelo', 'which model'],
     key: 'brainModel',
+    // Cost and speed for everyone in every later call; the owner's to change.
+    ownerOnly: true,
     what: 'which model answers',
     session: true,
     type: modelName,
@@ -248,6 +252,8 @@ export const SETTINGS = [
     name: 'tool rounds',
     aliases: ['max turns', 'rondas', 'vueltas'],
     key: 'agentMaxTurns',
+    // Cost and speed for everyone in every later call; the owner's to change.
+    ownerOnly: true,
     what: 'how many tool-using rounds one answer may take',
     session: true,
     type: number({ min: 1, max: 25, unit: 'rounds' }),
