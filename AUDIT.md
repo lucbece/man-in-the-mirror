@@ -58,8 +58,9 @@ Package: WP3
 
 Seen 2026-09-04 while an album played: `heard 27.0s` on a turn, against the
 usual 1–3 s. Whether the eager queue was starved by the resolve of the next
-track, by the API, or by the clip gate's decode is not known; the `[stt]
-clip` lines carry the timings needed to tell.
+track, by the API, or by the clip gate's decode is not known; the `[stt]`
+lines (each sent clip, and the per-minute tally of dropped ones) carry the
+timings needed to tell.
 
 Package: WP2
 
@@ -237,11 +238,12 @@ Package: WP3
 ### The transcription gate is set by reasoning, not yet by data
 
 `src/agent/energy.js` refuses clips whose peak stays under -40 dBFS, a value
-chosen to be safe rather than tight. Every clip is logged with its peak, RMS
-and active share, kept or discarded, precisely so the threshold and a possible
-second rule (active share, which a breath fails and a word passes) can be set
-from a week of real evenings. Until that is done the log carries one line per
-clip, which is the same volume of lines the discarded hallucinations produced.
+chosen to be safe rather than tight. Every sent clip is logged with its peak,
+RMS and active share, and the dropped ones are tallied with their loudest
+peak, precisely so the threshold and a possible second rule (active share,
+which a breath fails and a word passes) can be set from a week of real
+evenings. `MIRROR_STT_CLIP_LOG=all` restores one line per dropped clip for
+that week.
 
 Package: WP2
 

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test, { describe } from 'node:test';
 import { EventEmitter } from 'node:events';
 
-import { SessionManager } from '../src/voice/manager.js';
+import { SessionManager, describeChanges } from '../src/voice/manager.js';
 import { config } from '../src/config.js';
 import { reminders } from '../src/agent/reminders.js';
 
@@ -398,5 +398,61 @@ describe('who the voice connection is carrying', () => {
     if (session.music.playing && !session.speech) session.handMouthTo('music');
 
     assert.deepEqual(subscribed, [], 'stealing it mid-answer would cut the answer off');
+  });
+});
+
+describe('the [config] line for the thinking mode', () => {
+  const base = {
+    brainKind: 'chat',
+    brainProvider: 'anthropic',
+    brainModel: '',
+    fastModel: '',
+    webSearch: false,
+    mcpServers: '',
+    sttProvider: 'openai',
+    sttLocalModel: '',
+    ttsProvider: 'openai',
+    ttsVoice: '',
+    ttsLocalVoice: '',
+    agentNames: 'mirror',
+  };
+
+  function logged(values, previous) {
+    const lines = [];
+    const original = console.log;
+    console.log = (line) => lines.push(String(line));
+    try {
+      describeChanges({ ...base, ...values }, { ...base, ...previous });
+    } finally {
+      console.log = original;
+    }
+    return lines.filter((l) => l.includes('thinking →'));
+  }
+
+  test('cascade names the fast model and the agent behind it', () => {
+    const lines = logged({ brainKind: 'cascade', fastModel: 'claude-sonnet-5' }, {});
+    assert.deepEqual(lines, ['[config] thinking → claude-sonnet-5 in front of Claude agent claude-sonnet-5']);
+  });
+
+  test('cascade with a blank fast model names the default', () => {
+    const lines = logged({ brainKind: 'cascade' }, {});
+    assert.deepEqual(lines, ['[config] thinking → claude-haiku-4-5 in front of Claude agent claude-sonnet-5']);
+  });
+
+  test('changing only the fast model is announced', () => {
+    const lines = logged(
+      { brainKind: 'cascade', fastModel: 'claude-sonnet-5' },
+      { brainKind: 'cascade', fastModel: '' },
+    );
+    assert.equal(lines.length, 1);
+  });
+
+  test('agent and chat keep their lines', () => {
+    assert.deepEqual(logged({ brainKind: 'agent' }, {}), [
+      '[config] thinking → Claude agent claude-sonnet-5 (no MCP servers)',
+    ]);
+    assert.deepEqual(logged({ brainKind: 'chat', brainProvider: 'openai' }, { brainProvider: 'anthropic' }), [
+      '[config] thinking → openai gpt-4.1',
+    ]);
   });
 });
