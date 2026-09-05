@@ -399,6 +399,28 @@ describe('music mode: it hears, it acts, it says nothing', () => {
     return session;
   };
 
+  test('the brain is told the turn began in music mode', async () => {
+    // The cascade routes on it: while nothing is spoken there is no speed to
+    // gain from its fast leg, and the request to talk again needs a tool the
+    // fast leg does not have. Read once at the top of the turn — the flag the
+    // sentences check afterwards is the live one.
+    const seen = [];
+    const d = deps({ sentences: ['Sí.'] });
+    const inner = d.createBrain;
+    d.createBrain = (opts) => {
+      const b = inner(opts);
+      const answer = b.answer.bind(b);
+      b.answer = (context, handlers) => {
+        seen.push(context.quiet);
+        return answer(context, handlers);
+      };
+      return b;
+    };
+    await ask(quietSession('told-quiet'), { question: 'estás?', askedBy: 'Vero' }, d);
+    await ask(fakeSession('told-loud'), { question: 'estás?', askedBy: 'Vero' }, d);
+    assert.deepEqual(seen, [true, false]);
+  });
+
   test('the answer is written to the music channel instead of spoken', async () => {
     const session = quietSession();
     const d = deps({ sentences: ['Es de Rubén Rada.', 'Del setenta y siete.'] });
