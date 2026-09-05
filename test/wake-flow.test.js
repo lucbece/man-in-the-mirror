@@ -262,3 +262,41 @@ describe('endsWithQuestion', () => {
     assert.equal(endsWithQuestion(null), false);
   });
 });
+
+describe('the grace counts from the end of the audio', () => {
+  test('a transcript that arrives after the grace has passed is asked about at once', async () => {
+    const s = stubSession();
+    // The clip ended long ago; transcription took longer than the grace.
+    s.checkForWake({ ...said('u1', 'Vero', 'mirror what do you think'), endedAt: Date.now() - GRACE * 4 });
+    await wait(5);
+    assert.equal(s.fired.length, 1, 'no second wait after the one the transcription already cost');
+  });
+
+  test('unless the speaker is still talking, in which case their next words are waited for', async () => {
+    const s = stubSession();
+    const stop = talking(s, 'u1');
+    s.checkForWake({ ...said('u1', 'Vero', 'mirror what do you'), endedAt: Date.now() - GRACE * 4 });
+    await wait(5);
+    assert.equal(s.fired.length, 0, 'their sentence is not over');
+    s.checkForWake(said('u1', 'Vero', 'think about it'));
+    stop();
+    await wait(GRACE * 3);
+    assert.equal(s.fired.length, 1);
+    assert.equal(s.fired[0].question, 'mirror what do you think about it');
+  });
+
+  test('or a later clip of theirs is still being transcribed', async () => {
+    const s = stubSession();
+    const later = { userId: 'u1', endedAt: Date.now(), text: null };
+    s.receiver.buffer = { untranscribed: () => [later] };
+    s.checkForWake({ ...said('u1', 'Vero', 'mirror what do you'), endedAt: Date.now() - GRACE * 4 });
+    await wait(5);
+    assert.equal(s.fired.length, 0);
+    later.text = 'think about it';
+    s.receiver.buffer = { untranscribed: () => [] };
+    s.checkForWake({ ...said('u1', 'Vero', 'think about it'), endedAt: later.endedAt });
+    await wait(GRACE * 3);
+    assert.equal(s.fired.length, 1);
+    assert.equal(s.fired[0].question, 'mirror what do you think about it');
+  });
+});

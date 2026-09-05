@@ -40,6 +40,11 @@ describe('deploy/latency.sh', () => {
   test('per-stage lines add the wait from the last word, when the log has them', () => {
     const lines = [
       ...LINES,
+      '[stt] clip 1.2s peak -8dB rms -22dB active 61% → kept',
+      '[stt] clip 0.9s peak -9dB rms -25dB active 55% → kept',
+      '[stt] clip 2.0s peak -7dB rms -20dB active 70% → kept',
+      '[wake] addressed as "mirror" in: "mirror qué hora es"',
+      '[wake] near miss: heard "mirar" vs "mirror" (0.67) in: "mirar qué hora es"',
       'mirror-1  | [latency] silence 0.5s · transcript +1.7s · grace +2.6s (0.9s) · settle +2.6s (0.0s) · asked +2.6s · first sentence +4.1s · first audio +4.9s · playing +5.0s · done +9.8s · timeouts none',
       '[latency] silence 0.5s · transcript +1.2s · grace +2.1s (0.9s) · settle +2.1s (0.0s) · asked +2.1s · first sentence +3.5s · first audio +4.2s · playing +4.4s · done +8.0s · timeouts stt=1',
       '[latency] asked +0.0s · first sentence +1.4s · first audio +2.0s · done +6.0s · timeouts none',
@@ -51,6 +56,7 @@ describe('deploy/latency.sh', () => {
     assert.match(stdout, /done\s+n=2\s+median\s+9\.8s\s+p90\s+9\.8s/);
     // The old block is still there for logs that predate the new line.
     assert.match(stdout, /answered in\s+n=5/);
+    assert.match(stdout, /wake rate\s+1 of 3 kept clips woke it \(33%\), 1 near misses/);
   });
 
   test('says so when there is nothing to measure', () => {

@@ -46,6 +46,17 @@ const MIN_CHUNK = 24;
 const MAX_CHUNK = 240;
 
 /**
+ * The first chunk may end at a clause, not only at a sentence.
+ *
+ * Every later chunk is rendered while the previous one is still being said,
+ * so only the first one is ever waited for, and first sentences run 47
+ * characters at the median and 73 at p75. A comma after this many characters,
+ * or this many characters at all, is enough to start the voice; the sentence
+ * finishes in the next chunk, back to back, as every chunk does.
+ */
+const FIRST_CLAUSE = 40;
+
+/**
  * Could this character open a sentence?
  *
  * Lowercase says the previous punctuation was doing something else — closing
@@ -84,10 +95,12 @@ function isBoundary(text, index) {
  * for the tail that never got its full stop.
  */
 export class SentenceSplitter {
-  constructor({ minChunk = MIN_CHUNK, maxChunk = MAX_CHUNK } = {}) {
+  constructor({ minChunk = MIN_CHUNK, maxChunk = MAX_CHUNK, firstClause = FIRST_CLAUSE } = {}) {
     this.buffer = '';
     this.minChunk = minChunk;
     this.maxChunk = maxChunk;
+    this.firstClause = firstClause;
+    this.taken = 0;
   }
 
   /** Feed a delta. Returns zero or more chunks ready to be spoken. */
@@ -117,9 +130,25 @@ export class SentenceSplitter {
       if (!isBoundary(this.buffer, match.index)) continue;
       if (!startsSentence(match[1])) continue;
       if (end < this.minChunk) continue; // too short to stand alone
-      const chunk = this.buffer.slice(0, end).trim();
-      this.buffer = this.buffer.slice(end).trimStart();
-      return chunk;
+      return this.#cut(end);
+    }
+
+    // The first chunk: a clause is enough to start talking. At the first
+    // comma past the clause length, with the same guard the full stop has
+    // for decimals ("2,5 kilómetros" is one number in Spanish); or, with no
+    // comma in sight, at the first space past it.
+    if (this.taken === 0 && this.firstClause && this.buffer.length > this.firstClause) {
+      const comma = /,\s+(?=\S)/g;
+      let m;
+      while ((m = comma.exec(this.buffer))) {
+        if (m.index + 1 < this.firstClause) continue;
+        if (/\d$/.test(this.buffer.slice(0, m.index)) && /^\d/.test(this.buffer.slice(m.index + m[0].length))) continue;
+        return this.#cut(m.index + 1);
+      }
+      const space = this.buffer.indexOf(' ', this.firstClause);
+      // A comma may still be coming: wait for the sentence to run on a little
+      // before settling for a bare space, unless it has already run on a lot.
+      if (space !== -1 && this.buffer.length >= this.firstClause * 2) return this.#cut(space);
     }
 
     // Nothing punctuated, and it's gone on long enough — break at the last
@@ -127,12 +156,17 @@ export class SentenceSplitter {
     if (this.buffer.length >= this.maxChunk) {
       const cut = this.buffer.lastIndexOf(', ', this.maxChunk);
       const at = cut > this.minChunk ? cut + 1 : this.maxChunk;
-      const chunk = this.buffer.slice(0, at).trim();
-      this.buffer = this.buffer.slice(at).trimStart();
-      return chunk;
+      return this.#cut(at);
     }
 
     return null;
+  }
+
+  #cut(end) {
+    const chunk = this.buffer.slice(0, end).trim();
+    this.buffer = this.buffer.slice(end).trimStart();
+    this.taken += 1;
+    return chunk;
   }
 
   /** Whatever is left, once the model has stopped producing. */
@@ -143,4 +177,4 @@ export class SentenceSplitter {
   }
 }
 
-export { MIN_CHUNK, MAX_CHUNK, ABBREVIATIONS };
+export { MIN_CHUNK, MAX_CHUNK, FIRST_CLAUSE, ABBREVIATIONS };

@@ -12,7 +12,7 @@ import { config } from '../config.js';
 import { SpeechQueue } from './speech-queue.js';
 import { MusicPlayer } from './music.js';
 import { VoiceReceiver } from './receiver.js';
-import { EagerTranscriber } from '../agent/eager.js';
+import { EagerTranscriber, CONCURRENCY_WITH_MUSIC } from '../agent/eager.js';
 import { detectAddress, normalise, splitNames } from '../agent/wake.js';
 
 const READY_TIMEOUT_MS = 20_000;
@@ -211,6 +211,7 @@ export class VoiceSession extends EventEmitter {
     if (!config.get('eagerTranscription')) return;
 
     this.eager ??= this.createEager();
+    if (this.music?.playing) this.eager.concurrency = Math.max(this.eager.concurrency, CONCURRENCY_WITH_MUSIC);
     this.eager.push(utterance);
   }
 
@@ -333,12 +334,32 @@ export class VoiceSession extends EventEmitter {
     this.armWake(WAKE_TIMING.graceMs);
   }
 
-  /** (Re)start the "have they finished talking?" timer. */
+  /**
+   * (Re)start the "have they finished talking?" timer.
+   *
+   * The deadline counts from when the audio ended, not from when its text
+   * arrived: whether the speaker went on is known from the microphone, and
+   * the transcription that got us here already took most of a second. So the
+   * grace runs under the transcription and only its remainder is waited for.
+   * If the deadline has passed by the time the text lands, the question is
+   * asked at once, unless the speaker's next words are already in flight (still
+   * talking, or a later clip of theirs not yet transcribed), which the old
+   * wait used to catch by accident and this one waits for on purpose.
+   */
   armWake(delayMs) {
     const pending = this.pendingWake;
     if (pending.timer) clearTimeout(pending.timer);
-    pending.timer = setTimeout(() => this.fireWake(), delayMs);
+    let wait = Math.max(0, pending.stoppedAt + delayMs - Date.now());
+    if (wait === 0 && this.moreComingFrom(pending.userId, pending.stoppedAt)) wait = WAKE_TIMING.graceMs;
+    pending.timer = setTimeout(() => this.fireWake(), wait);
     pending.timer.unref?.();
+  }
+
+  /** Is this speaker mid-sentence, or is a later clip of theirs still being transcribed? */
+  moreComingFrom(userId, after) {
+    if (this.receiver?.active?.has(userId)) return true;
+    const waiting = this.receiver?.buffer?.untranscribed?.() ?? [];
+    return waiting.some((u) => u.userId === userId && (u.endedAt ?? 0) > after);
   }
 
   /**

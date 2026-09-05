@@ -82,7 +82,7 @@ the pipeline began; `[latency]` counts every stage from the moment the person
 stopped talking, which is what the room actually waits:
 
 ```
-[latency] silence 0.5s · transcript +1.7s · grace +2.6s (0.9s) · settle +2.6s (0.0s) · asked +2.6s · first sentence +4.1s · first audio +4.9s · playing +5.0s · done +9.8s · timeouts none
+[latency] silence 0.3s · transcript +1.7s · grace +2.6s (0.9s) · settle +2.6s (0.0s) · asked +2.6s · first sentence +4.1s · first audio +4.9s · playing +5.0s · done +9.8s · timeouts none
 ```
 
 `deploy/latency.sh` turns a log into medians and p90 of both:
