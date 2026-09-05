@@ -303,7 +303,7 @@ export function mount(root, ctx) {
     const agentModel = cfg.brainModel || 'claude-sonnet-5';
     const thinks =
       (cfg.brainKind === 'cascade'
-        ? t('now.strip.cascade', { fast: cfg.fastModel || 'claude-haiku-4-5', agent: agentModel })
+        ? t('now.strip.cascade', { fast: cfg.fastModel || 'gpt-4.1', agent: agentModel })
         : cfg.brainKind === 'agent'
           ? t('now.strip.agent', { agent: agentModel })
           : `${cfg.brainProvider} · ${cfg.brainModel || (cfg.brainProvider === 'openai' ? 'gpt-4.1' : 'claude-sonnet-5')}`) +

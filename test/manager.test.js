@@ -436,7 +436,7 @@ describe('the [config] line for the thinking mode', () => {
 
   test('cascade with a blank fast model names the default', () => {
     const lines = logged({ brainKind: 'cascade' }, {});
-    assert.deepEqual(lines, ['[config] thinking → claude-haiku-4-5 in front of Claude agent claude-sonnet-5']);
+    assert.deepEqual(lines, ['[config] thinking → gpt-4.1 in front of Claude agent claude-sonnet-5']);
   });
 
   test('changing only the fast model is announced', () => {

@@ -260,7 +260,7 @@ export function describeChanges(values, previous) {
   ) {
     if (values.brainKind === 'cascade') {
       console.log(
-        `[config] thinking → ${values.fastModel || 'claude-haiku-4-5'} in front of Claude agent ${values.brainModel || 'claude-sonnet-5'}${values.webSearch ? ' + web search' : ''}`,
+        `[config] thinking → ${values.fastModel || 'gpt-4.1'} in front of Claude agent ${values.brainModel || 'claude-sonnet-5'}${values.webSearch ? ' + web search' : ''}`,
       );
     } else if (values.brainKind === 'agent') {
       let mcp = 'no MCP servers';
