@@ -1,6 +1,6 @@
 # Latency: where the time goes, and the plan to take it back
 
-Status: L0 and L1 built and merged, 2026-09-05 (PR 17 and the bench PR);
+Status: L0, L1 and L2 (all but item 11) built, 2026-09-05 (PRs 17, 18, 19);
 investigation and plan of 2026-09-04 below, unchanged. Measured on the
 production server (Hetzner Falkenstein) with a week of its logs and three
 benchmark runs inside the container against the real APIs.
@@ -37,8 +37,30 @@ benchmark runs inside the container against the real APIs.
   room asks. A server whose `fastModel` is set explicitly is unchanged.
 - **L1 item 7**: settle cap 800 ms.
 
-Not done: item 8 onward (L2, L3). Next measurement: `mirror logs latency 7`
-a week after deploy, against the 6.8 s baseline.
+- **L2 item 8a**: `SILENCE_MS` 500 → 250, with a wake-rate line in
+  `deploy/latency.sh` (kept clips that woke it, near misses) so a value that
+  splits names in two is visible. The value stays unless that rate drops.
+- **L2 item 8**: the grace deadline is the audio's end plus the grace; a
+  transcript that lands after it is asked about at once, unless the speaker
+  is still talking or a later clip of theirs is still being transcribed.
+  The `[latency]` line's `grace (x)` is the residual.
+- **L2 item 9**: clips are decoded and measured when queued, dropped by the
+  gate before taking a place, sorted loudest-and-longest first; concurrency
+  3 → 6 while music plays.
+- **L2 item 9b**: `ask()` waits at most 400 ms for the room's clips; the
+  line says `context cut short` when it did not wait for all of them.
+- **L2 item 10**: the first chunk ends at the first comma past 40
+  characters (decimal guard) or at a space after 80 with no comma; later
+  chunks as before. To be judged by listening as well as by the timing, as
+  the item says.
+- **L2 item 12**: a short "mm" once per turn when a tool that will speak
+  has started and nothing has been said; not for searches, not in music
+  mode, never on a timer.
+
+Not done: item 11 (speculative start, gated on a week of item 8's residual
+and restart rate) and L3. Next measurement: `mirror logs latency 7` a week
+after deploy, against the 6.8 s baseline; then the wake rate and the
+`discarded` lines before flipping `sttModel`.
 
 ## The number that matters
 
