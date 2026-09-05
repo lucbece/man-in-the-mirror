@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { describe } from 'node:test';
 
-import { looksHallucinated, echoesPrompt } from '../src/agent/stt.js';
+import { looksHallucinated, echoesPrompt, namedByNoise } from '../src/agent/stt.js';
 
 // The one that started this. Reported from a live channel with nobody
 // speaking, and repeated verbatim — which is the tell.
@@ -99,5 +99,22 @@ describe('the prompt coming back as if someone said it', () => {
   test('an empty prompt cannot be echoed', () => {
     assert.equal(echoesPrompt('cualquier cosa', ''), false);
     assert.equal(echoesPrompt('', 'mirror, espejo'), false);
+  });
+});
+
+describe('namedByNoise: the name alone, in a clip that was never loud', () => {
+  const quiet = { activeRatio: 0.1 };
+  const spoken = { activeRatio: 0.45 };
+  test('a lone name over a quiet clip is noise the model named', () => {
+    assert.equal(namedByNoise('espejo', 'mirror, espejo', quiet), true);
+    assert.equal(namedByNoise('Mirror.', 'mirror, espejo', quiet), true);
+  });
+  test('the same word over a clip somebody actually spoke into is a call', () => {
+    assert.equal(namedByNoise('espejo', 'mirror, espejo', spoken), false);
+  });
+  test('a quiet clip with words that are not the name is left to the other checks', () => {
+    assert.equal(namedByNoise('espejo qué hora es', 'mirror, espejo', quiet), false);
+    assert.equal(namedByNoise('', 'mirror, espejo', quiet), false);
+    assert.equal(namedByNoise('espejo', 'mirror, espejo', undefined), false);
   });
 });

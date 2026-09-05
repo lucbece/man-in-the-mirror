@@ -21,6 +21,20 @@ export function mount(root) {
   const providerHelp = h('p.help');
   const providerField = h('div.field', h('span.label', t('hearing.provider')), provider, providerHelp);
 
+  const apiModel = seg({
+    name: 'sttModel',
+    options: ['whisper-1', 'gpt-4o-transcribe', 'gpt-4o-mini-transcribe'].map((value) => ({
+      value,
+      label: t(`hearing.apiModel.${value}`),
+    })),
+  });
+  const apiField = field({
+    label: t('hearing.apiModel'),
+    control: apiModel,
+    help: t('hearing.apiModel.help'),
+    more: { summary: t('hearing.apiModel.more.summary'), text: t('hearing.apiModel.more.text') },
+  });
+
   const localModel = h('select.select', { name: 'sttLocalModel' });
   const localField = field({
     label: t('hearing.localModel'),
@@ -29,13 +43,14 @@ export function mount(root) {
     more: { summary: t('hearing.localModel.more.summary'), text: t('hearing.localModel.more.text') },
   });
 
-  const card = h('div.card', warning, providerField, localField);
+  const card = h('div.card', warning, providerField, apiField, localField);
   root.append(h('header', h('p', t('hearing.intro'))), card);
 
   function layout() {
     const p = selected(provider);
     providerHelp.textContent = t(`hearing.provider.${p}.help`);
     localField.hidden = p !== 'local';
+    apiField.hidden = p !== 'openai';
   }
   provider.addEventListener('change', layout);
 
@@ -47,11 +62,13 @@ export function mount(root) {
     return {
       sttProvider: selected(provider),
       sttLocalModel: localModel.value,
+      sttModel: selected(apiModel),
     };
   }
 
   function write(cfg) {
     for (const r of provider.querySelectorAll('input')) r.checked = r.value === cfg.sttProvider;
+    for (const r of apiModel.querySelectorAll('input')) r.checked = r.value === (cfg.sttModel || 'whisper-1');
     fillModels(cfg.sttLocalModel);
     layout();
 

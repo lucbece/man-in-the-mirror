@@ -49,6 +49,7 @@ function fakeConfig(overrides = {}) {
     eagerTranscription: true,
     sttProvider: 'openai',
     sttLocalModel: 'ggml-base',
+    sttModel: 'whisper-1',
     brainProvider: 'anthropic',
     brainModel: '',
     brainKind: 'agent',

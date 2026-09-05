@@ -231,9 +231,13 @@ export class SessionManager extends EventEmitter {
  * whether it had quietly fallen back.
  */
 function describeChanges(values, previous) {
-  if (values.sttProvider !== previous.sttProvider || values.sttLocalModel !== previous.sttLocalModel) {
+  if (
+    values.sttProvider !== previous.sttProvider ||
+    values.sttLocalModel !== previous.sttLocalModel ||
+    values.sttModel !== previous.sttModel
+  ) {
     console.log(
-      `[config] hearing → ${values.sttProvider === 'local' ? `whisper.cpp ${values.sttLocalModel} (this machine)` : 'OpenAI whisper-1 (API)'}`,
+      `[config] hearing → ${values.sttProvider === 'local' ? `whisper.cpp ${values.sttLocalModel} (this machine)` : `OpenAI ${values.sttModel} (API)`}`,
     );
   }
   if (
