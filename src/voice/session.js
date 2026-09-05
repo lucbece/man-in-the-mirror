@@ -12,7 +12,7 @@ import { config } from '../config.js';
 import { SpeechQueue } from './speech-queue.js';
 import { MusicPlayer } from './music.js';
 import { VoiceReceiver } from './receiver.js';
-import { EagerTranscriber } from '../agent/eager.js';
+import { EagerTranscriber, CONCURRENCY_WITH_MUSIC } from '../agent/eager.js';
 import { detectAddress, normalise, splitNames } from '../agent/wake.js';
 
 const READY_TIMEOUT_MS = 20_000;
@@ -211,6 +211,7 @@ export class VoiceSession extends EventEmitter {
     if (!config.get('eagerTranscription')) return;
 
     this.eager ??= this.createEager();
+    if (this.music?.playing) this.eager.concurrency = Math.max(this.eager.concurrency, CONCURRENCY_WITH_MUSIC);
     this.eager.push(utterance);
   }
 
