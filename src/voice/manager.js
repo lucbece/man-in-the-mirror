@@ -244,10 +244,11 @@ export function describeChanges(values, previous) {
     values.ttsProvider !== previous.ttsProvider ||
     values.ttsVoice !== previous.ttsVoice ||
     values.ttsModel !== previous.ttsModel ||
+    values.ttsSpeed !== previous.ttsSpeed ||
     values.ttsLocalVoice !== previous.ttsLocalVoice
   ) {
     console.log(
-      `[config] speaking → ${values.ttsProvider === 'local' ? `Piper ${values.ttsLocalVoice} (this machine)` : `OpenAI ${values.ttsModel} ${values.ttsVoice} (API)`}`,
+      `[config] speaking → ${values.ttsProvider === 'local' ? `Piper ${values.ttsLocalVoice} (this machine)` : `OpenAI ${values.ttsModel} ${values.ttsVoice}${Number(values.ttsSpeed) !== 1 ? ` ×${values.ttsSpeed}` : ''} (API)`}`,
     );
   }
   if (

@@ -36,7 +36,9 @@ function cachePath(line, voice) {
 function currentVoiceKey() {
   return config.get('ttsProvider') === 'local'
     ? `local:${config.get('ttsLocalVoice')}`
-    : `openai:${config.get('ttsVoice')}`;
+    // Model and rate included: a filler rendered by the other model, or at the
+    // other pace, sounds like a second person cutting in.
+    : `openai:${config.get('ttsVoice')}:${config.get('ttsModel')}:${config.get('ttsSpeed')}`;
 }
 
 /**
