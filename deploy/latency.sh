@@ -49,6 +49,18 @@ stat 2 "heard"
 stat 3 "first words at"
 stat 4 "thought through"
 
+# How often a clip that reached the transcriber woke the bot, and how often
+# the name came back mangled. A shorter silence cut-off ends utterances sooner
+# and could split a name in two; if the wake rate drops after such a change,
+# that is what happened.
+kept=$(printf '%s\n' "$input" | grep -c '\[stt\] clip .* → kept' || true)
+woke=$(printf '%s\n' "$input" | grep -c '\[wake\] addressed as ' || true)
+near=$(printf '%s\n' "$input" | grep -c '\[wake\] near miss' || true)
+if [ "$kept" -gt 0 ]; then
+  printf 'wake rate        %d of %d kept clips woke it (%d%%), %d near misses\n' \
+    "$woke" "$kept" "$(( woke * 100 / kept ))" "$near"
+fi
+
 # The per-stage line, when the log has it, counts from the moment the person
 # stopped talking rather than from the moment the pipeline began — the number
 # the room actually waits. `playing` is when the first audio reached the

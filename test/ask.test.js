@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test, { describe } from 'node:test';
 
 import { ask, AgentBusyError, stagesFrom, describeStages, COULD_NOT_LINES } from '../src/agent/index.js';
+import { SILENCE_MS } from '../src/voice/receiver.js';
 
 /**
  * The orchestrator with its collaborators replaced.
@@ -439,7 +440,7 @@ describe('the [latency] line', () => {
     const marks = { heardAt: stoppedAt + 1700, firedAt: stoppedAt + 2600, settledAt: stoppedAt + 2600, settleMs: 0 };
     const result = await ask(fakeSession(), { question: 'hola', askedBy: 'Vero', stoppedAt, marks }, d);
     const s = result.timings.stages;
-    assert.equal(s.silenceMs, 500);
+    assert.equal(s.silenceMs, SILENCE_MS);
     assert.equal(s.transcriptMs, 1700);
     assert.equal(s.graceFiredMs, 2600);
     assert.ok(s.askedMs >= 2900, `asked at ${s.askedMs}`);
@@ -448,7 +449,7 @@ describe('the [latency] line', () => {
     assert.ok(s.doneMs >= s.firstAudioMs);
     // The fake speech queue never reaches a player, so there is no playing mark.
     assert.equal(s.playingMs, undefined);
-    assert.match(describeStages(s), /^silence 0\.5s · transcript \+1\.7s · grace \+2\.6s \(0\.9s\) · settle \+2\.6s \(0\.0s\) · asked \+\d+\.\ds · first sentence \+\d+\.\ds · first audio \+\d+\.\ds · done \+\d+\.\ds · timeouts none$/);
+    assert.match(describeStages(s), /^silence 0\.[0-9]s · transcript \+1\.7s · grace \+2\.6s \(0\.9s\) · settle \+2\.6s \(0\.0s\) · asked \+\d+\.\ds · first sentence \+\d+\.\ds · first audio \+\d+\.\ds · done \+\d+\.\ds · timeouts none$/);
   });
 
   test('a turn typed into the panel counts from the pipeline start and has no pre-ask stages', () => {
