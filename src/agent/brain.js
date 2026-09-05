@@ -26,7 +26,13 @@ import { customInstructionBlock } from './instructions.js';
  * no reasoning in them and the whole thing came across as stupid. The prompt
  * asks for two to four sentences; this is only the backstop.
  */
-const MAX_SPOKEN_CHARS = 380;
+//
+// 320 since 2026-09-05: with the first day's answers at 50 characters median
+// but 193 at p90 and 335 at the top, and "done" landing 15 s after the last
+// word at the median, the cap was doing nothing for the long tail. Paired
+// with "one to three sentences" rather than "answer and stop", so the
+// reasoning stays.
+const MAX_SPOKEN_CHARS = 320;
 
 /**
  * Room for the model to think *and* answer. On Claude Opus 5 thinking is on by
@@ -42,7 +48,7 @@ const SYSTEM_PROMPT = `You are Mirror, a participant in a Discord voice call bet
 What you're given is a transcript line containing your name somewhere in it. That whole line is what they said to you; work out what they're actually asking. Your name may be mangled by speech recognition — "espejo", "mirrow", "el mirror" are all you.
 
 How to answer:
-- Two to four sentences. Long enough to actually say something, short enough that nobody has to wait through it.
+- One to three sentences: one when one says it, three when the reason needs them. Nobody wants to wait through a fourth; a good answer here is short and has a point.
 - Have a point of view and give the reason behind it. A bare verdict with no reasoning sounds thoughtless, and "it depends on your priorities" with nothing after it is worse than saying nothing.
 - Cut padding, not substance: no restating the question, no listing every consideration, no statistics nobody asked for, no offering to help further. The reasoning stays; the filler goes.
 - Plain spoken language only. No markdown, no bullet points, no headings, no code, no URLs. Write numbers as words.
