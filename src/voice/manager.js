@@ -167,10 +167,10 @@ export class SessionManager extends EventEmitter {
     session.on('update', () => this.emit('update'));
 
     // Someone said the wake phrase out loud. This is the whole point.
-    session.on('wake', async ({ question, askedBy, askedById, heard, stoppedAt, viaFollowUp }) => {
+    session.on('wake', async ({ question, askedBy, askedById, heard, stoppedAt, marks, viaFollowUp }) => {
       console.log(`[wake] ${askedBy}: "${heard}"`);
       try {
-        const result = await ask(session, { question, askedBy, askedById, stoppedAt, viaFollowUp });
+        const result = await ask(session, { question, askedBy, askedById, stoppedAt, marks, viaFollowUp });
         console.log(`[wake] answered: "${result.spoken}"`);
         // If it ended by asking something, the person it asked can answer
         // without saying its name again. Set after playback rather than

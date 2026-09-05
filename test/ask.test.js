@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { describe } from 'node:test';
 
-import { ask, AgentBusyError } from '../src/agent/index.js';
+import { ask, AgentBusyError, stagesFrom, describeStages } from '../src/agent/index.js';
 
 /**
  * The orchestrator with its collaborators replaced.
@@ -422,5 +422,40 @@ describe('music mode: it hears, it acts, it says nothing', () => {
 
     assert.equal(result.spoken, '');
     assert.deepEqual(d.notes, ['🤫  Dale, me callo.']);
+  });
+});
+
+describe('the [latency] line', () => {
+  test('a spoken turn counts every stage from the moment they stopped talking', async () => {
+    const d = deps({ sentences: ['Hola.'] });
+    const stoppedAt = Date.now() - 3000;
+    const marks = { heardAt: stoppedAt + 1700, firedAt: stoppedAt + 2600, settledAt: stoppedAt + 2600, settleMs: 0 };
+    const result = await ask(fakeSession(), { question: 'hola', askedBy: 'Vero', stoppedAt, marks }, d);
+    const s = result.timings.stages;
+    assert.equal(s.silenceMs, 500);
+    assert.equal(s.transcriptMs, 1700);
+    assert.equal(s.graceFiredMs, 2600);
+    assert.ok(s.askedMs >= 2900, `asked at ${s.askedMs}`);
+    assert.ok(s.firstSentenceMs >= s.askedMs);
+    assert.ok(s.firstAudioMs >= s.firstSentenceMs);
+    assert.ok(s.doneMs >= s.firstAudioMs);
+    // The fake speech queue never reaches a player, so there is no playing mark.
+    assert.equal(s.playingMs, undefined);
+    assert.match(describeStages(s), /^silence 0\.5s · transcript \+1\.7s · grace \+2\.6s \(0\.9s\) · settle \+2\.6s \(0\.0s\) · asked \+\d+\.\ds · first sentence \+\d+\.\ds · first audio \+\d+\.\ds · done \+\d+\.\ds · timeouts none$/);
+  });
+
+  test('a turn typed into the panel counts from the pipeline start and has no pre-ask stages', () => {
+    const started = 1000;
+    const s = stagesFrom({ started, t0: started, at: { asked: 1200, firstSentence: 2000, firstAudio: 2500, playing: 2600, done: 5000 } });
+    assert.equal(s.silenceMs, undefined);
+    assert.equal(s.transcriptMs, undefined);
+    assert.equal(s.askedMs, 200);
+    assert.equal(s.playingMs, 1600);
+    assert.equal(describeStages(s), 'asked +0.2s · first sentence +1.0s · first audio +1.5s · playing +1.6s · done +4.0s · timeouts none');
+  });
+
+  test('timeouts are named per stage when any happened', () => {
+    const s = stagesFrom({ started: 0, t0: 0, at: { asked: 100, done: 900, timeouts: { stt: 1, tts: 0 } } });
+    assert.equal(describeStages(s), 'asked +0.1s · done +0.9s · timeouts stt=1');
   });
 });
