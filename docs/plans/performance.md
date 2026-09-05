@@ -351,16 +351,30 @@ first byte under 400 ms with a voice the room accepts through "Hear it".
 | Soniox stt-rt-v5 | **249 ms median** independent (Daily.co, Feb 2026, 1,000 turns); vendor 260 ms median, 313 ms P99 | semantic, tunable (`endpoint_sensitivity`, `max_endpoint_delay_ms`), manual `finalize` | generic Spanish, no es-AR variant; language identification per token, code-switching claimed | `context.terms` list | 0.12 USD, billed for the open socket | **First spike**: the only vendor measured under a second; 10 concurrent sockets by default, connection setup can exceed 1 s so open the socket when speaking starts |
 | Azure real-time | no published figure; independent reports of 2 to 8 s to the final event over years | 500 ms silence default; semantic mode not for interactive use | es-AR locale; **no mid-sentence code-switching** | phrase list with weight | 1.00 USD | Not for this room |
 | OpenAI Realtime (GA) | 2.05 s measured here | server VAD | as gpt-4o-transcribe | prompt | — | Slower than the clip |
-| Deepgram Nova-3, AssemblyAI, Speechmatics, Gladia, Google | not yet researched (the run was cut by the usage limit); Daily.co's benchmark puts Deepgram at 247 ms and Speechmatics at 495 ms median | | | | | Pending |
+| Deepgram Nova-3 | **247 ms median** independent (same benchmark), monolingual model; the multilingual tier the bot needs (`language=multi`) has no published figure | fixed: `endpointing` (10 ms default, 300 to 500 recommended) plus `utterance_end_ms` (1 s minimum); no semantic mode on Nova-3 | `es` and `es-419` only; code-switching on the multilingual tier | `keyterm`, documented for proper nouns, not common words | 0.35 to 0.55 USD (multilingual) | Second spike: mature Node SDK, 150 concurrent sockets; hallucination on silence reported by users |
+| Speechmatics real-time | **495 ms median** independent; `max_delay` floor 0.7 s; connection setup documented under 1 s | `end_of_utterance_silence_trigger`, 0.5 to 0.8 s recommended for voice agents; manual force | one `es` model that names Argentina among its accents; a documented bilingual es/en pack in real time | `additional_vocab` with `sounds_like` | 0.129 USD; free tier with 2 sockets | Third spike: the closest fit to this room on paper, twice the latency of the leaders |
+| AssemblyAI Universal-3.5 Pro | vendor benchmark on a set that includes Spanish: 568 ms P50, 829 ms P90 | semantic turn detection, `min_turn_silence` 128 to 512 ms | `es`, mid-sentence code-switching only on the Pro tier | `keyterms_prompt`, docs warn against common words | 0.45 USD, billed on socket-open time | Requirements-complete, slowest of the viable ones, dearest |
+| Gladia | vendor only, ~300 ms, English-tagged, absent from both independent benchmarks | fixed silence, 50 ms default | `es`, no variant | per-entry language and intensity | 0.75 USD | Unverified |
+| Google Cloud STT v2 (Chirp) | no figure anywhere | VAD timeouts | streaming Spanish is es-ES and es-US only; **no mid-sentence code-switching on the Chirp family** | phrase boost, "small effect on one-word phrases" | not retrievable | Out |
 
-Soniox changes what streaming transcription can do here: a final transcript
-a quarter of a second after the last word, against 1.2 s for the clip path
-after L1, and partials that could arm the wake before the utterance ends.
-The costs are real too: a socket per active speaker, billed while open; a
-concurrency limit of 10; partials that are revised until final, so the name
-in a partial is a pre-trigger, not a trigger. It is the one spike that could
-take the structural floor from about 2.4 s to under 2 s, and it comes after
-L1 and L2, not instead of them.
+Soniox and Deepgram change what streaming transcription can do here: a
+final transcript a quarter of a second after the last word, against 1.2 s
+for the clip path after L1, and partials that could arm the wake before the
+utterance ends. The costs are real too: a socket per active speaker, billed
+while open at most vendors; Soniox's concurrency limit of 10; partials that
+are revised until final, so the name in a partial is a pre-trigger, not a
+trigger; and Deepgram's number is for the monolingual model, so the
+multilingual tier has to be measured. The independent benchmark is English
+only; no vendor publishes Spanish end-of-speech latency. It is the one spike
+that could take the structural floor from about 2.4 s to under 2 s, and it
+comes after L1 and L2, not instead of them.
+
+One finding cuts across every vendor: Deepgram, AssemblyAI and Google each
+document that keyword boosting is meant for proper nouns and rare terms and
+is weak on short common words, which is exactly what "mirror" and "espejo"
+are. Whatever transcriber is chosen, the wake path keeps its own defences:
+the fuzzy match in `src/agent/wake.js` and the echo guard on active share
+from L1 item 4.
 
 ## What a wider second pass would still add
 
