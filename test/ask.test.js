@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { describe } from 'node:test';
 
-import { ask, AgentBusyError, stagesFrom, describeStages, COULD_NOT_LINES } from '../src/agent/index.js';
+import { ask, AgentBusyError, stagesFrom, describeStages, COULD_NOT_LINES, CONTEXT_WAIT_MS } from '../src/agent/index.js';
 import { SILENCE_MS } from '../src/voice/receiver.js';
 
 /**
@@ -205,6 +205,30 @@ describe('ask()', () => {
     const listening = { ...fakeSession('g2'), agentEnabled: true };
     await ask(listening, { question: 'a', askedBy: 'Vero' }, d);
     assert.equal(called, 1);
+  });
+});
+
+describe('the wait for context is bounded', () => {
+  test('a slow transcription of the room does not hold the question', async () => {
+    const slow = new Promise((resolve) => {
+      setTimeout(resolve, CONTEXT_WAIT_MS * 3);
+    });
+    const d = { ...deps({ sentences: ['Hola.'] }), transcribeBuffer: () => slow };
+    const listening = { ...fakeSession('g3'), agentEnabled: true };
+    const t = Date.now();
+    const result = await ask(listening, { question: 'a', askedBy: 'Vero' }, d);
+    assert.ok(Date.now() - t < CONTEXT_WAIT_MS * 2, `took ${Date.now() - t}ms`);
+    assert.equal(result.timings.contextCut, true);
+    assert.equal(result.spoken, 'Hola.');
+    await slow;
+  });
+
+  test('a failing transcription is noted, not thrown into the answer', async () => {
+    const d = { ...deps({ sentences: ['Hola.'] }), transcribeBuffer: () => Promise.reject(new Error('quota')) };
+    const listening = { ...fakeSession('g4'), agentEnabled: true };
+    const result = await ask(listening, { question: 'a', askedBy: 'Vero' }, d);
+    assert.equal(result.spoken, 'Hola.');
+    assert.equal(result.timings.contextCut, undefined);
   });
 });
 
