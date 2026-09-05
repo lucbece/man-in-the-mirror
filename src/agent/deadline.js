@@ -71,9 +71,15 @@ export function wavSeconds(wav) {
   return byteRate > 0 ? Math.max(0, wav.length - 44) / byteRate : 0;
 }
 
-/** The STT deadline: 3 s plus 1 s per 5 s of clip, so a long clip is not cut twice. */
+/**
+ * The STT deadline: 4 s plus 1 s per 5 s of clip, so a long clip is not cut
+ * twice. 4 rather than the 3 it started at: the first day in production, with
+ * up to six clips in flight under music, 2.2% of requests passed 3 s and were
+ * sent twice, and 0.6% passed it twice and were lost; most of the first group
+ * would have finished on their own within the extra second.
+ */
 export function sttDeadlineMs(wav) {
-  return 3000 + Math.round((wavSeconds(wav) / 5) * 1000);
+  return 4000 + Math.round((wavSeconds(wav) / 5) * 1000);
 }
 
 export const TTS_FIRST_BYTE_MS = 3000;
