@@ -24,15 +24,16 @@ import {
 class TtsError extends Error {}
 
 class OpenAiTts {
-  constructor({ apiKey, voice, model }) {
+  constructor({ apiKey, voice, model, speed = 1 }) {
     if (!apiKey) throw new TtsError('No OpenAI API key configured.');
     this.apiKey = apiKey;
     this.voice = voice || 'onyx';
     this.model = model || 'gpt-4o-mini-tts';
+    this.speed = speed;
   }
 
   get label() {
-    return `OpenAI ${this.model} (${this.voice})`;
+    return `OpenAI ${this.model} (${this.voice}${this.speed !== 1 ? ` ×${this.speed}` : ''})`;
   }
 
   async request(text) {
@@ -50,6 +51,9 @@ class OpenAiTts {
         input: text,
         response_format: 'opus',
         stream_format: 'audio',
+        // Works on both models, the docs notwithstanding: measured, 1.25 cut
+        // gpt-4o-mini-tts's 6.6 s to 5.5 on the same sentence.
+        ...(this.speed !== 1 ? { speed: this.speed } : {}),
       }),
       signal,
     }).then((r) => {
@@ -143,7 +147,7 @@ class LocalTts {
  * the voice preview route does: it is always asked about one exact voice,
  * whatever is currently configured for the running bot.
  */
-export function createTts({ provider, voice, model } = {}) {
+export function createTts({ provider, voice, model, speed } = {}) {
   if ((provider ?? config.get('ttsProvider')) === 'local') {
     return new LocalTts({ voice: voice ?? config.get('ttsLocalVoice') });
   }
@@ -151,6 +155,7 @@ export function createTts({ provider, voice, model } = {}) {
     apiKey: config.get('openaiApiKey'),
     voice: voice ?? config.get('ttsVoice'),
     model: model ?? config.get('ttsModel'),
+    speed: speed ?? config.get('ttsSpeed'),
   });
 }
 
