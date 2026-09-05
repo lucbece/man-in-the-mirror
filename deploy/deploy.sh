@@ -40,6 +40,19 @@ wait_healthy() {
   done
   return 1
 }
+archive_log() {
+  local id; id=$(container)
+  [ -n "$id" ] || return 0
+  mkdir -p logs
+  local tag; tag=$(printf '%s' "${1:-}" | sed -E 's#.*:##; s#[^A-Za-z0-9_.-]#_#g')
+  local file; file="logs/$(date -u +%Y%m%dT%H%M%SZ)-${tag:-unknown}.log"
+  if docker compose logs --no-color --no-log-prefix --timestamps mirror > "$file" 2>/dev/null; then
+    echo "deploy: previous log kept in $file ($(wc -l < "$file") lines)"
+  else
+    rm -f "$file"
+  fi
+  ls -1t logs/*.log 2>/dev/null | tail -n +31 | xargs -r rm -f
+}
 log_marker() {
   # One line into the container's own log stream, so `logs.sh since <sha>`
   # has a boundary to find. `docker exec` output goes to the exec, not to the
@@ -79,6 +92,13 @@ case "$verb" in
 
     echo "deploy: $old -> $new"
     docker pull "$new"
+    # The container about to be replaced takes its log with it: Docker's
+    # json-file log belongs to the container, and `docker compose logs` only
+    # knows the one that exists. So the whole thing is written to a file
+    # first, named by time and by what was running, and logs.sh reads those
+    # files along with the live log. The last 30 are kept; at a few deploys a
+    # week that is months.
+    archive_log "$old"
     set_image "$new"
     docker compose up -d --remove-orphans
     if wait_healthy; then

@@ -259,3 +259,11 @@ Every successful deploy writes `[deploy] <sha> sha-<short>` into the
 container's log stream, so `logs.sh since <sha>` on the server prints only
 what the new version did. `logs.sh` has a few more verbs; its header lists
 them.
+
+A deploy replaces the container, and Docker's log belongs to the container,
+so before rolling, `deploy.sh` writes the outgoing container's whole log to
+`/opt/mirror/logs/<time>-<tag>.log` and keeps the last thirty. The verbs
+that look back (`since`, `thinking`, `turns`, `latency`) read those files
+and then the live log, so `logs.sh latency 7` still covers the week after
+a Monday deploy, and last night's conversation can be read after this
+morning's release. Dozzle shows only the running container.
