@@ -61,7 +61,14 @@ export class MusicPlayer extends EventEmitter {
     this.player.on('error', (err) => console.warn(`[music] ${err.message}`));
     this.player.on(AudioPlayerStatus.Idle, () => {
       // Pausing reports Idle on some transitions; only a real finish advances.
-      if (this.pausedForSpeech || this.pausedByUser) return;
+      // A skip is a finish asked for, and it advances even while paused: the
+      // Idle it causes used to be swallowed by this guard whenever the bot was
+      // speaking in the same turn, and the queue stood still on a track that
+      // was no longer playing. The next one starts, and the pause is applied
+      // to it again below, so a skip under speech resumes with the new song.
+      const skipped = this.advancing;
+      this.advancing = false;
+      if (!skipped && (this.pausedForSpeech || this.pausedByUser)) return;
       this.#playNext().catch((err) => console.warn(`[music] ${err.message}`));
     });
     // A pause asked for while the next track is still loading is ignored by
@@ -208,6 +215,10 @@ export class MusicPlayer extends EventEmitter {
   skip() {
     const was = this.current;
     if (!was) return null;
+    // Skipping means "play the next one", so a pause the user asked for does
+    // not carry over; one for the bot's own speech does, until it is done.
+    this.pausedByUser = false;
+    this.advancing = true;
     this.player.stop(true);
     return was;
   }

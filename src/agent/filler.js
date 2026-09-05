@@ -97,7 +97,12 @@ function pickLine(lang, set) {
  * Failures are not fatal — a missing filler just means a quiet pause.
  */
 export async function warmFillers() {
-  if (!config.get('openaiApiKey')) return { rendered: 0, skipped: 'no API key' };
+  // The key gate is for the API voice only: Piper renders on this machine,
+  // and without this exception a local install had an empty clip cache for
+  // the life of the process, so every tool call was unbroken silence.
+  if (config.get('ttsProvider') !== 'local' && !config.get('openaiApiKey')) {
+    return { rendered: 0, skipped: 'no API key' };
+  }
 
   let tts;
   try {

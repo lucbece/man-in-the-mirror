@@ -7,6 +7,7 @@ import { AudioPlayerStatus, entersState } from '@discordjs/voice';
 import { ask, AgentBusyError } from '../agent/index.js';
 import { endAgentSession, warmAgentSession } from '../agent/agent-brain.js';
 import { recapCall } from '../agent/recap.js';
+import { presence, rejoinRecent } from './presence.js';
 import { forgetCascade } from '../agent/cascade.js';
 import { providerFor } from '../agent/models.js';
 import { reminders } from '../agent/reminders.js';
@@ -147,6 +148,8 @@ export class SessionManager extends EventEmitter {
 
     const session = this.createSession(channel);
     this.sessions.set(channel.guild.id, session);
+    // Written down so a restart can put the bot back; see presence.js.
+    presence.remember(channel.guild.id, channel.id);
 
     session.on('destroyed', () => {
       // Inside the identity check, not beside it. This event arrives from the
@@ -209,17 +212,34 @@ export class SessionManager extends EventEmitter {
     return session;
   }
 
-  leave(guildId) {
+  /**
+   * Leave a channel. Asked to, by voice, command or panel, the channel is
+   * forgotten; `{ comingBack: true }` is the shutdown's version, which keeps it
+   * so the next start can return.
+   */
+  leave(guildId, { comingBack = false } = {}) {
     const session = this.sessions.get(guildId);
     if (!session) return false;
+    if (!comingBack) presence.forget(guildId);
     session.destroy();
     this.sessions.delete(guildId);
     this.emit('update');
     return true;
   }
 
-  leaveAll() {
-    for (const guildId of [...this.sessions.keys()]) this.leave(guildId);
+  leaveAll({ comingBack = false } = {}) {
+    for (const guildId of [...this.sessions.keys()]) this.leave(guildId, { comingBack });
+  }
+
+  /** After a restart: back into the channels it was in, if anyone is still there. */
+  rejoin(client) {
+    return rejoinRecent(presence, {
+      fetchChannel: async (id) => {
+        const channel = await client.channels.fetch(id).catch(() => null);
+        return channel?.isVoiceBased?.() ? channel : null;
+      },
+      join: (channel) => this.join(channel),
+    });
   }
 
   status() {

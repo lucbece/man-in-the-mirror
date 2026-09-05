@@ -43,17 +43,6 @@ should close it, so a package's brief can be its goal plus its entries.
 
 ## Medium
 
-### A deploy drops the bot from the call
-
-Every deploy restarts the container, the voice session lives in the process,
-and nobody is told: the bot is simply gone from the channel until someone
-runs `/mj join` again. With deploy-on-push that is once per merge. The
-session knows its guild and channel; writing them to `data/` on join and
-rejoining on start, if the channel still has people in it, would make a
-deploy a few seconds of absence rather than an absence.
-
-Package: WP3
-
 ### Transcription can lag by tens of seconds during music
 
 Seen 2026-09-04 while an album played: `heard 27.0s` on a turn, against the
@@ -97,19 +86,6 @@ same place, which is why it is the length it is.
 
 Package: WP3
 
-### Nothing covers a wait when the voice is local
-
-`warmFillers()` gives up before rendering anything unless an OpenAI key is
-configured (`src/agent/filler.js:87`), but `createTts()` needs no key at all
-when `ttsProvider` is `local` (`src/agent/tts.js:134-137`). And `takeFiller`
-deliberately never synthesises on demand (`src/agent/filler.js:138-142`). So on
-a Piper install the clip cache is empty for the life of the process and every
-tool call is unbroken silence — precisely the failure the clips exist to
-prevent. The re-warm on a voice change goes through the same gate
-(`src/voice/manager.js:43`).
-
-Package: WP2
-
 ### A language it does not recognise gets Spanish
 
 `pickLine` falls back to `table.es` for any language with no clips
@@ -121,26 +97,6 @@ and `looksLikeLeakedReasoning` (`src/agent/spoken-guards.js:83`) switches
 itself off entirely, since it only runs when the question looks Spanish.
 
 Package: WP2
-
-### The agent's memory of the room moves on before the answer succeeds
-
-`buildTurn` sets `session.lastAnsweredAt = Date.now()` while it is composing
-the message (`src/agent/agent-brain.js:556`), and it is composed as the
-argument to `session.ask()` (`src/agent/agent-brain.js:510`) — so the mark
-moves before the turn has run. The next turn sends only lines newer than it
-(`src/agent/agent-brain.js:550`). When a turn times out at two minutes or the
-session crashes, everything the room said before that question is silently
-never given to the agent.
-
-The cascade does the same thing with what it owes: `memory.owed.length = 0`
-(`src/agent/cascade.js:280`) empties the list of answers the fast leg gave
-before `this.agent.answer` is called, so a hand-over that fails loses them for
-good.
-
-Both are bookkeeping written as a side effect of a helper that builds a string,
-which is why neither has a place to be rolled back from.
-
-Package: WP1
 
 ### Three brains keep three copies of the streaming rules
 
@@ -204,24 +160,6 @@ profile with music switched off still ships a list of music tool names through
 the middle of the pipeline.
 
 Package: WP3
-
-### Skipping a track while it is speaking leaves the music stopped
-
-The music player advances by stopping the current resource and acting on the
-Idle that follows (`src/voice/music.js:186-191`), and its Idle handler returns
-early whenever the track is paused (`src/voice/music.js:62-66`). If the agent
-says anything in the same turn as a skip, `startSpeech` has already called
-`pauseForSpeech` (`src/voice/session.js:485`), so the Idle is swallowed: no
-next track starts and `current` still names the skipped one.
-`resumeAfterSpeech` then unpauses a player that is stopped, which plays
-nothing. A user pause followed by a skip does the same. The panel and
-`now_playing` both report a track that is not playing until somebody skips
-again.
-
-`src/voice/music.js` is in no package's file list yet.
-
-Package: WP3
-
 
 ### `/mj ask` reports "voiced NaNs"
 

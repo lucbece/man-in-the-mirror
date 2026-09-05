@@ -425,6 +425,19 @@ describe('commands carried out without a model', () => {
     assert.equal(b.escalated, false);
   });
 
+  test('right after a tool turn, a skip is still carried out without a model', async () => {
+    // "poné X" is a tool turn, and the "saltá" that follows it is the case
+    // this path exists for; the follow-up-to-a-tool rule must not take it.
+    const agent = fakeAgent({ tools: ['mcp__bot__play_music'], text: '' });
+    const b = brain({ agent, getSession: () => playing(), runFast: async () => ({ said: '', escalate: true }) });
+    await b.answer(ask('espejo, poné algo de los redondos'));
+    assert.equal(agent.calls.length, 1);
+    const tools = [];
+    await b.answer(ask('espejo, saltá'), { onToolUse: (n) => tools.push(n) });
+    assert.equal(agent.calls.length, 1, 'the agent was not asked again');
+    assert.deepEqual(tools, ['mcp__bot__skip_song']);
+  });
+
   test('with nothing playing, the same words go to the agent as before', async () => {
     const agent = fakeAgent();
     const idle = playing();

@@ -239,7 +239,11 @@ key can do nothing else. It refreshes `compose.yaml` and itself from the
 deployed commit, pulls, starts, and waits up to 60 seconds for the container
 to report healthy. If it does not, it puts the previous image back and exits
 non-zero, which turns the Actions run red. The bot is down for the length of
-one restart either way, a few seconds.
+one restart either way, a few seconds, and comes back on its own: the channel
+it was in is written to `data/voice.json` when it joins, and on start it
+rejoins if it left less than fifteen minutes ago and somebody is still there.
+A channel it was *asked* to leave is forgotten, so it never comes back
+uninvited.
 
 ### Rolling back
 
