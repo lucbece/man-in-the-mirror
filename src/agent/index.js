@@ -19,6 +19,7 @@ import { createTts, toAudioResource } from './tts.js';
 import { guessLanguage, takeFiller } from './filler.js';
 import { formatTranscript, transcribeBuffer } from './stt.js';
 import { SILENCE_MS } from '../voice/receiver.js';
+import { takeTimeouts } from './deadline.js';
 
 /**
  * Longest a reply may spend playing before it is cut off.
@@ -100,6 +101,12 @@ const isSilentTool = (name) => SILENT_TOOLS.has(name);
  * Returns the timings and the text that was spoken, so callers can show the
  * user what happened rather than just "done".
  */
+/** Said when the model gave nothing, so a timeout is heard rather than waited on. */
+export const COULD_NOT_LINES = {
+  es: 'Perdón, me trabé. ¿Me lo repetís?',
+  en: 'Sorry, I got stuck. Say that again?',
+};
+
 export async function ask(session, { question, askedBy, askedById, stoppedAt, marks, viaFollowUp }, deps = {}) {
   // The collaborators are injectable, defaulting to the real ones, purely so
   // this function can be tested. It is where the brain, the synthesiser, the
@@ -299,6 +306,16 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, ma
           },
         },
       );
+    } catch (err) {
+      // Fail loudly, which in a voice channel means the room hears it: a
+      // hung request answered with silence is the bot being ignored, and the
+      // question is asked again anyway. Only when nothing was said or done;
+      // a half answer followed by an apology is two answers.
+      const saidNothing = at.firstSentence === undefined && !written.length && !toolsUsed.length;
+      if (!saidNothing || session.quiet) throw err;
+      console.warn(`[agent] could not answer, saying so: ${err.message}`);
+      timings.failed = err.message;
+      say(COULD_NOT_LINES[guessLanguage(question)] ?? COULD_NOT_LINES.en);
     } finally {
       finishedThinking = true;
       clearTimeout(quietTimer);
@@ -341,6 +358,9 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, ma
     if (stoppedAt) timings.beforeAskMs = started - stoppedAt;
     at.playing = speech?.startedAt ?? undefined;
     at.done = Date.now();
+    // Eager transcription runs outside this turn, so its misses land on the
+    // next answer line; close enough, and never lost.
+    at.timeouts = takeTimeouts();
     timings.stages = stagesFrom({ stoppedAt, marks, started, t0, at });
 
     recordAnswer({

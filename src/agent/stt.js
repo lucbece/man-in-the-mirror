@@ -8,6 +8,7 @@
  */
 import { config } from '../config.js';
 import { decodeToMono16k, pcmToWav } from './audio.js';
+import { withDeadline, sttDeadlineMs } from './deadline.js';
 import { describeEnergy, measureEnergy, tooQuiet } from './energy.js';
 import { MODELS, ensureModel, ensureWhisper, transcribeWav } from './whisper.js';
 
@@ -161,11 +162,21 @@ class OpenAiWhisper {
     // it knows. A prompt containing the name makes it a word Whisper expects.
     if (prompt) form.append('prompt', prompt);
 
-    const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${this.apiKey}` },
-      body: form,
-    });
+    // The whole request has to finish in time: a transcript arrives in one
+    // piece, so there is no first byte to wait for. One request hanging here
+    // once held the channel for 50 s.
+    const res = await withDeadline('stt', sttDeadlineMs(wav), (signal) =>
+      fetch('https://api.openai.com/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${this.apiKey}` },
+        body: form,
+        signal,
+      }).then(async (r) => {
+        // Read inside the deadline too: the body is the transcript.
+        if (r.ok) r.parsed = await r.json();
+        return r;
+      }),
+    );
 
     if (!res.ok) {
       const detail = await res.text().catch(() => '');
@@ -195,8 +206,7 @@ class OpenAiWhisper {
       );
     }
 
-    const json = await res.json();
-    return (json.text ?? '').trim();
+    return (res.parsed?.text ?? '').trim();
   }
 }
 

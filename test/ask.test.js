@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { describe } from 'node:test';
 
-import { ask, AgentBusyError, stagesFrom, describeStages } from '../src/agent/index.js';
+import { ask, AgentBusyError, stagesFrom, describeStages, COULD_NOT_LINES } from '../src/agent/index.js';
 
 /**
  * The orchestrator with its collaborators replaced.
@@ -156,6 +156,13 @@ describe('ask()', () => {
     const d = deps({ sentences: ['Alcancé a decir esto.'], failWith: 'died midway' });
     await assert.rejects(() => ask(fakeSession(), { question: 'a', askedBy: 'Vero' }, d));
     assert.deepEqual(d.rendered, ['Alcancé a decir esto.'], 'what was said should have played');
+  });
+
+  test('a brain that fails before saying anything is heard failing, not waited on', async () => {
+    const d = deps({ sentences: [], failWith: 'stt gave no answer in 3.0s' });
+    const result = await ask(fakeSession(), { question: 'che, qué hora es', askedBy: 'Vero' }, d);
+    assert.equal(result.spoken, COULD_NOT_LINES.es);
+    assert.equal(result.timings.failed, 'stt gave no answer in 3.0s');
   });
 
   test('an answer with nothing sayable is an error, not silence', async () => {

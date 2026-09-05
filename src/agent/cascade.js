@@ -52,6 +52,7 @@
  * grammar and genuinely a question.
  */
 import Anthropic from '@anthropic-ai/sdk';
+import { noteTimeout, FAST_FIRST_BLOCK_MS } from './deadline.js';
 
 import { config } from '../config.js';
 import { AgentBrain, DEFAULT_AGENT_MODEL } from './agent-brain.js';
@@ -352,12 +353,32 @@ export class CascadeBrain {
     }
 
     const client = new Anthropic({ apiKey });
-    const stream = client.messages.stream({
-      model: this.fastModel,
-      max_tokens: MAX_TOKENS,
-      system: promptWithInstructions(this.guildId, FAST_PROMPT_EXTRA),
-      tools: [ESCALATE_TOOL],
-      messages: [{ role: 'user', content: buildFastMessage(context, memory) }],
+    // Five seconds to its first content block, or the agent takes the question:
+    // escalation is the retry here, so the deadline itself tries only once.
+    const deadline = new AbortController();
+    let arrived = false;
+    const firstBlock = setTimeout(() => {
+      if (!arrived) {
+        noteTimeout('fast');
+        deadline.abort(new Error(`no content block in ${FAST_FIRST_BLOCK_MS / 1000}s`));
+      }
+    }, FAST_FIRST_BLOCK_MS);
+    firstBlock.unref?.();
+    const stream = client.messages.stream(
+      {
+        model: this.fastModel,
+        max_tokens: MAX_TOKENS,
+        system: promptWithInstructions(this.guildId, FAST_PROMPT_EXTRA),
+        tools: [ESCALATE_TOOL],
+        messages: [{ role: 'user', content: buildFastMessage(context, memory) }],
+      },
+      { signal: deadline.signal },
+    );
+    stream.on('streamEvent', (event) => {
+      if (event?.type === 'content_block_start') {
+        arrived = true;
+        clearTimeout(firstBlock);
+      }
     });
     trace('INPUT', `fast leg (${this.fastModel})`, buildFastMessage(context, memory));
 
@@ -383,6 +404,8 @@ export class CascadeBrain {
       // A failure here must not lose the question: the agent can still answer
       // it, and would have been the only option before this file existed.
       return { said, escalate: true, reason: `the fast model failed (${err?.message ?? err})` };
+    } finally {
+      clearTimeout(firstBlock);
     }
 
     const rest = withoutToolName(splitter.flush());
@@ -423,6 +446,18 @@ export class CascadeBrain {
     let said = '';
     let escalateArgs = null;
 
+    // Same deadline as the Anthropic leg: first output item in five seconds,
+    // or the agent takes the question.
+    const deadline = new AbortController();
+    let arrived = false;
+    const firstBlock = setTimeout(() => {
+      if (!arrived) {
+        noteTimeout('fast');
+        deadline.abort(new Error(`no content block in ${FAST_FIRST_BLOCK_MS / 1000}s`));
+      }
+    }, FAST_FIRST_BLOCK_MS);
+    firstBlock.unref?.();
+
     try {
       const res = await fetchImpl('https://api.openai.com/v1/responses', {
         method: 'POST',
@@ -438,6 +473,7 @@ export class CascadeBrain {
           max_output_tokens: MAX_TOKENS,
           stream: true,
         }),
+        signal: deadline.signal,
       });
 
       if (!res.ok) {
@@ -448,6 +484,10 @@ export class CascadeBrain {
       // Sentences go out as they complete, exactly as the Anthropic leg does
       // it, so an answer this leg keeps starts speaking with no routing cost.
       for await (const event of readSse(res)) {
+        if (event.type === 'response.output_item.added' || event.type === 'response.output_text.delta') {
+          arrived = true;
+          clearTimeout(firstBlock);
+        }
         switch (event.type) {
           case 'response.output_text.delta':
             if (onSentence) {
@@ -474,6 +514,8 @@ export class CascadeBrain {
     } catch (err) {
       // A failure here must not lose the question, same as the Anthropic leg.
       return { said, escalate: true, reason: `the fast model failed (${err?.message ?? err})` };
+    } finally {
+      clearTimeout(firstBlock);
     }
 
     const rest = withoutToolName(splitter.flush());
