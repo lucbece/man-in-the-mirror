@@ -6,6 +6,7 @@ import { AudioPlayerStatus, entersState } from '@discordjs/voice';
 
 import { ask, AgentBusyError } from '../agent/index.js';
 import { endAgentSession, warmAgentSession } from '../agent/agent-brain.js';
+import { recapCall } from '../agent/recap.js';
 import { forgetCascade } from '../agent/cascade.js';
 import { providerFor } from '../agent/models.js';
 import { reminders } from '../agent/reminders.js';
@@ -158,6 +159,12 @@ export class SessionManager extends EventEmitter {
         return;
       }
       this.sessions.delete(channel.guild.id);
+      // Before the conversation is forgotten, the two or three things worth
+      // keeping from it go into the notebook. Fire and forget: nobody is
+      // waiting, and a failure here is a missed note, not a broken bot.
+      recapCall({ exchanges: session.recentExchanges }).catch((err) => {
+        console.warn(`[notebook] end-of-call recap failed: ${err.message}`);
+      });
       // The agent session's memory is that conversation; when the bot leaves
       // the channel, the conversation is over.
       endAgentSession(channel.guild.id);
