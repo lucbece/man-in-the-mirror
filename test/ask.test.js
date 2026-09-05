@@ -208,6 +208,32 @@ describe('ask()', () => {
   });
 });
 
+describe('the acknowledgement when a speaking tool starts', () => {
+  test('a short "mm" plays once, before the answer, when a tool that will speak has started', async () => {
+    const d = deps({ tools: ['mcp__bot__get_time', 'mcp__bot__get_weather'], sentences: ['Son las diez.'] });
+    const result = await ask(fakeSession(), { question: 'che qué hora es', askedBy: 'Vero' }, d);
+    assert.deepEqual(d.fillersTaken, ['ack']);
+    assert.equal(result.timings.ack, 'Dame un segundo.');
+    assert.equal(result.spoken, 'Son las diez.', 'the ack is not part of what was said');
+  });
+
+  test('not for a silent command, not for a search, not in music mode', async () => {
+    const quiet = deps({ tools: ['mcp__bot__skip_song'], sentences: [] });
+    await ask(fakeSession(), { question: 'saltá', askedBy: 'Vero' }, quiet);
+    assert.deepEqual(quiet.fillersTaken, []);
+
+    const searching = deps({ tools: ['mcp__bot__search_web'], search: true, sentences: ['Listo.'] });
+    await ask(fakeSession(), { question: 'buscá', askedBy: 'Vero' }, searching);
+    assert.deepEqual(searching.fillersTaken, ['thinking'], 'the search filler covers it');
+
+    const music = deps({ tools: ['mcp__bot__get_time'], sentences: ['Son las diez.'] });
+    const session = fakeSession();
+    session.quiet = true;
+    await ask(session, { question: 'qué hora es', askedBy: 'Vero' }, music);
+    assert.deepEqual(music.fillersTaken, []);
+  });
+});
+
 describe('the wait for context is bounded', () => {
   test('a slow transcription of the room does not hold the question', async () => {
     const slow = new Promise((resolve) => {

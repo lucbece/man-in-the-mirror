@@ -65,15 +65,26 @@ const WAITING_LINES = {
   en: ["Sorry, still digging, give me a moment.", "Nearly there, hang on a second."],
 };
 
+/**
+ * The shortest thing that says "heard you": played once, the moment a tool
+ * that will speak has started and nothing has been said yet, so the seconds
+ * the tool takes are not silence after a question. Not on a timer: a timer
+ * cannot know the turn will end in a silent music command.
+ */
+const ACK_LINES = {
+  es: ['Mmm.', 'A ver.'],
+  en: ['Hmm.', 'Let me see.'],
+};
+
 /** Rendered audio, keyed by the exact line. Survives for the process lifetime. */
 const cache = new Map();
 
-const lastIndex = { first: -1, waiting: -1 };
+const lastIndex = { first: -1, waiting: -1, ack: -1 };
 let cachedVoice = null;
 
 /** Rotate rather than repeat — the same clip every time sounds like a recording. */
 function pickLine(lang, set) {
-  const table = set === 'waiting' ? WAITING_LINES : LINES;
+  const table = set === 'waiting' ? WAITING_LINES : set === 'ack' ? ACK_LINES : LINES;
   const lines = table[lang] ?? table.es;
   lastIndex[set] = (lastIndex[set] + 1) % lines.length;
   return lines[lastIndex[set]];
@@ -104,7 +115,7 @@ export async function warmFillers() {
   let rendered = 0;
   let reused = 0;
 
-  for (const line of [...LINES.es, ...LINES.en, ...WAITING_LINES.es, ...WAITING_LINES.en]) {
+  for (const line of [...LINES.es, ...LINES.en, ...WAITING_LINES.es, ...WAITING_LINES.en, ...ACK_LINES.es, ...ACK_LINES.en]) {
     if (cache.has(line)) continue;
 
     const file = cachePath(line, voice);
@@ -178,4 +189,4 @@ export function guessLanguage(text) {
   return hits > 0 ? 'es' : 'en';
 }
 
-export { LINES, WAITING_LINES };
+export { LINES, WAITING_LINES, ACK_LINES };

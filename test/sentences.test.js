@@ -22,11 +22,12 @@ describe('SentenceSplitter', () => {
   });
 
   test('never splits a decimal', () => {
-    // "dos punto" … "cinco por ciento" is a stutter nobody forgives.
-    assert.deepEqual(
-      drip('La inflación fue de 2.5 por ciento el mes pasado, bastante alta.'),
-      ['La inflación fue de 2.5 por ciento el mes pasado, bastante alta.'],
-    );
+    const text = 'La inflación fue de 2.5 por ciento el mes pasado, bastante alta.';
+    const chunks = drip(text);
+    // The first clause may be cut at the comma; the number never is.
+    assert.equal(chunks.join(' '), text);
+    assert.ok(chunks.every((c) => !/\d\.$/.test(c)), JSON.stringify(chunks));
+    assert.equal(chunks[0], 'La inflación fue de 2.5 por ciento el mes pasado,');
   });
 
   test('never splits an abbreviation or an initial', () => {
@@ -86,7 +87,41 @@ describe('SentenceSplitter', () => {
     const splitter = new SentenceSplitter();
     assert.deepEqual(splitter.push('El total fue de 3'), []);
     assert.deepEqual(splitter.push('.'), []);
-    assert.deepEqual(splitter.push('7 por ciento este mes, bastante.'), []);
-    assert.equal(splitter.flush(), 'El total fue de 3.7 por ciento este mes, bastante.');
+    // The clause rule cuts at the comma, once the number is safely whole.
+    assert.deepEqual(splitter.push('7 por ciento este mes, bastante.'), ['El total fue de 3.7 por ciento este mes,']);
+    assert.equal(splitter.flush(), 'bastante.');
+  });
+});
+
+describe('the first chunk is a clause', () => {
+  test('cuts at the first comma past the clause length, and only the first time', () => {
+    // Dripped, as a token stream arrives: the comma is there before the stop is.
+    const out = drip('Mirá, yo diría que conviene esperar hasta el jueves, porque el pronóstico da lluvia. Después vemos, no hay apuro.');
+    assert.equal(out[0], 'Mirá, yo diría que conviene esperar hasta el jueves,');
+    // The rest of that sentence, then a whole sentence: commas no longer cut.
+    assert.deepEqual(out.slice(1), ['porque el pronóstico da lluvia.', 'Después vemos, no hay apuro.']);
+    // Handed the whole sentence at once, the sentence wins over the clause.
+    const whole = new SentenceSplitter().push('Mirá, yo diría que conviene esperar hasta el jueves, porque el pronóstico da lluvia. Y');
+    assert.deepEqual(whole, ['Mirá, yo diría que conviene esperar hasta el jueves, porque el pronóstico da lluvia.']);
+  });
+
+  test('a comma inside a number is not a clause', () => {
+    const out = drip('La distancia hasta el pueblo es de unos 2,5 kilómetros, así que se puede ir caminando.');
+    assert.equal(out[0], 'La distancia hasta el pueblo es de unos 2,5 kilómetros,');
+  });
+
+  test('with no comma coming, a long enough clause is cut at a space', () => {
+    const splitter = new SentenceSplitter();
+    assert.deepEqual(splitter.push('Yo creo que lo mejor que podés hacer en ese caso es'), []);
+    const out = splitter.push(' esperar a que el pronóstico cambie y decidir el jueves por la mañana');
+    assert.equal(out.length, 1);
+    // The first space past the clause length, once the text has run on twice that far.
+    assert.equal(out[0], 'Yo creo que lo mejor que podés hacer en ese');
+  });
+
+  test('a short first sentence is still taken whole', () => {
+    // Under the clause length, so the comma does not cut; the stop does.
+    const out = drip('Sí, claro que podés venir. Y traé algo más para la parrilla.');
+    assert.deepEqual(out, ['Sí, claro que podés venir.', 'Y traé algo más para la parrilla.']);
   });
 });
