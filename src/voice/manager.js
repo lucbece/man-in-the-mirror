@@ -167,10 +167,10 @@ export class SessionManager extends EventEmitter {
     session.on('update', () => this.emit('update'));
 
     // Someone said the wake phrase out loud. This is the whole point.
-    session.on('wake', async ({ question, askedBy, askedById, heard, stoppedAt, viaFollowUp }) => {
+    session.on('wake', async ({ question, askedBy, askedById, heard, stoppedAt, marks, viaFollowUp }) => {
       console.log(`[wake] ${askedBy}: "${heard}"`);
       try {
-        const result = await ask(session, { question, askedBy, askedById, stoppedAt, viaFollowUp });
+        const result = await ask(session, { question, askedBy, askedById, stoppedAt, marks, viaFollowUp });
         console.log(`[wake] answered: "${result.spoken}"`);
         // If it ended by asking something, the person it asked can answer
         // without saying its name again. Set after playback rather than
@@ -231,14 +231,23 @@ export class SessionManager extends EventEmitter {
  * whether it had quietly fallen back.
  */
 export function describeChanges(values, previous) {
-  if (values.sttProvider !== previous.sttProvider || values.sttLocalModel !== previous.sttLocalModel) {
+  if (
+    values.sttProvider !== previous.sttProvider ||
+    values.sttLocalModel !== previous.sttLocalModel ||
+    values.sttModel !== previous.sttModel
+  ) {
     console.log(
-      `[config] hearing → ${values.sttProvider === 'local' ? `whisper.cpp ${values.sttLocalModel} (this machine)` : 'OpenAI whisper-1 (API)'}`,
+      `[config] hearing → ${values.sttProvider === 'local' ? `whisper.cpp ${values.sttLocalModel} (this machine)` : `OpenAI ${values.sttModel} (API)`}`,
     );
   }
-  if (values.ttsProvider !== previous.ttsProvider || values.ttsVoice !== previous.ttsVoice || values.ttsLocalVoice !== previous.ttsLocalVoice) {
+  if (
+    values.ttsProvider !== previous.ttsProvider ||
+    values.ttsVoice !== previous.ttsVoice ||
+    values.ttsModel !== previous.ttsModel ||
+    values.ttsLocalVoice !== previous.ttsLocalVoice
+  ) {
     console.log(
-      `[config] speaking → ${values.ttsProvider === 'local' ? `Piper ${values.ttsLocalVoice} (this machine)` : `OpenAI tts-1 ${values.ttsVoice} (API)`}`,
+      `[config] speaking → ${values.ttsProvider === 'local' ? `Piper ${values.ttsLocalVoice} (this machine)` : `OpenAI ${values.ttsModel} ${values.ttsVoice} (API)`}`,
     );
   }
   if (

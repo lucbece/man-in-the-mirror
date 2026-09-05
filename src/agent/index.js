@@ -18,6 +18,8 @@ import {
 import { createTts, toAudioResource } from './tts.js';
 import { guessLanguage, takeFiller } from './filler.js';
 import { formatTranscript, transcribeBuffer } from './stt.js';
+import { SILENCE_MS } from '../voice/receiver.js';
+import { takeTimeouts } from './deadline.js';
 
 /**
  * Longest a reply may spend playing before it is cut off.
@@ -99,7 +101,13 @@ const isSilentTool = (name) => SILENT_TOOLS.has(name);
  * Returns the timings and the text that was spoken, so callers can show the
  * user what happened rather than just "done".
  */
-export async function ask(session, { question, askedBy, askedById, stoppedAt, viaFollowUp }, deps = {}) {
+/** Said when the model gave nothing, so a timeout is heard rather than waited on. */
+export const COULD_NOT_LINES = {
+  es: 'Perdón, me trabé. ¿Me lo repetís?',
+  en: 'Sorry, I got stuck. Say that again?',
+};
+
+export async function ask(session, { question, askedBy, askedById, stoppedAt, marks, viaFollowUp }, deps = {}) {
   // The collaborators are injectable, defaulting to the real ones, purely so
   // this function can be tested. It is where the brain, the synthesiser, the
   // filler clips and the speech queue meet — and it had no coverage at all,
@@ -147,6 +155,8 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, vi
     //    synthesis — a sentence takes two or three seconds to say and under
     //    one to render, so the queue stays ahead. The only gap is the first.
     const t1 = Date.now();
+    /** Clock times of each stage, turned into the `[latency]` line at the end. */
+    const at = { asked: t1 };
     const brain = makeBrain({ guildId: session.guildId });
     const tts = makeTts();
 
@@ -249,9 +259,11 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, vi
         return;
       }
       budget -= clean.length;
+      at.firstSentence ??= Date.now();
       rendering = rendering
         .then(async () => {
           const audio = await tts.synthesizeStream(clean);
+          at.firstAudio ??= Date.now();
           timings.firstAudioMs ??= Date.now() - t1;
           mouth().push(toResource(audio), clean);
           nudge();
@@ -294,6 +306,16 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, vi
           },
         },
       );
+    } catch (err) {
+      // Fail loudly, which in a voice channel means the room hears it: a
+      // hung request answered with silence is the bot being ignored, and the
+      // question is asked again anyway. Only when nothing was said or done;
+      // a half answer followed by an apology is two answers.
+      const saidNothing = at.firstSentence === undefined && !written.length && !toolsUsed.length;
+      if (!saidNothing || session.quiet) throw err;
+      console.warn(`[agent] could not answer, saying so: ${err.message}`);
+      timings.failed = err.message;
+      say(COULD_NOT_LINES[guessLanguage(question)] ?? COULD_NOT_LINES.en);
     } finally {
       finishedThinking = true;
       clearTimeout(quietTimer);
@@ -334,6 +356,12 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, vi
     // silence detection, transcription, the grace wait. The model's half has
     // always been measured; this is the half that never was.
     if (stoppedAt) timings.beforeAskMs = started - stoppedAt;
+    at.playing = speech?.startedAt ?? undefined;
+    at.done = Date.now();
+    // Eager transcription runs outside this turn, so its misses land on the
+    // next answer line; close enough, and never lost.
+    at.timeouts = takeTimeouts();
+    timings.stages = stagesFrom({ stoppedAt, marks, started, t0, at });
 
     recordAnswer({
       brain: brain.label,
@@ -383,6 +411,7 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, vi
           : ''),
     );
     console.log(`[agent]   via ${brain.label} → ${tts.label}`);
+    console.log(`[latency] ${describeStages(timings.stages)}`);
 
     return {
       spoken,
@@ -397,6 +426,55 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, vi
   } finally {
     inFlight.delete(session.guildId);
   }
+}
+
+/**
+ * Every stage of one answer as milliseconds after the person stopped talking.
+ *
+ * `stoppedAt` is when Discord closed their audio stream, which is already
+ * {@link SILENCE_MS} after their last word; the line says so rather than
+ * hiding it. Turns without a spoken origin (the panel's "ask" box, tests)
+ * have no pre-ask stages and count from the moment the pipeline began.
+ *
+ * Undefined stages are left out rather than printed as zero: a turn that
+ * never spoke has no first sentence, and "0.0" would read as instant.
+ */
+export function stagesFrom({ stoppedAt, marks, started, t0, at }) {
+  const zero = stoppedAt ?? started;
+  const since = (t) => (typeof t === 'number' ? Math.max(0, t - zero) : undefined);
+  return {
+    silenceMs: stoppedAt ? SILENCE_MS : undefined,
+    transcriptMs: since(marks?.heardAt),
+    graceFiredMs: since(marks?.firedAt),
+    settledMs: since(marks?.settledAt),
+    settleWaitMs: marks?.settleMs,
+    contextMs: since(t0) === undefined ? undefined : since(at.asked),
+    askedMs: since(at.asked),
+    firstSentenceMs: since(at.firstSentence),
+    firstAudioMs: since(at.firstAudio),
+    playingMs: since(at.playing),
+    doneMs: since(at.done),
+    timeouts: at.timeouts,
+  };
+}
+
+export function describeStages(s) {
+  const sec = (ms) => `${(ms / 1000).toFixed(1)}s`;
+  const parts = [];
+  if (s.silenceMs !== undefined) parts.push(`silence ${sec(s.silenceMs)}`);
+  if (s.transcriptMs !== undefined) parts.push(`transcript +${sec(s.transcriptMs)}`);
+  if (s.graceFiredMs !== undefined) {
+    parts.push(`grace +${sec(s.graceFiredMs)} (${sec(s.graceFiredMs - (s.transcriptMs ?? 0))})`);
+  }
+  if (s.settledMs !== undefined) parts.push(`settle +${sec(s.settledMs)} (${sec(s.settleWaitMs ?? 0)})`);
+  parts.push(`asked +${sec(s.askedMs)}`);
+  if (s.firstSentenceMs !== undefined) parts.push(`first sentence +${sec(s.firstSentenceMs)}`);
+  if (s.firstAudioMs !== undefined) parts.push(`first audio +${sec(s.firstAudioMs)}`);
+  if (s.playingMs !== undefined) parts.push(`playing +${sec(s.playingMs)}`);
+  parts.push(`done +${sec(s.doneMs)}`);
+  const timeouts = Object.entries(s.timeouts ?? {}).filter(([, n]) => n > 0);
+  parts.push(timeouts.length ? `timeouts ${timeouts.map(([k, n]) => `${k}=${n}`).join(' ')}` : 'timeouts none');
+  return parts.join(' · ');
 }
 
 export { SPEAK_TIMEOUT_MS };
