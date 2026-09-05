@@ -6,7 +6,9 @@ import { SettingsForm } from '../form.js';
  * Instructions: the list of things the people in the call have taught the
  * bot, edited here exactly as it is edited by voice — see
  * `src/agent/instructions.js`, which is what actually enforces the limits
- * below and what `/api/config` validates against.
+ * below and what `/api/config` validates against. Below it, the notebook:
+ * what the bot has learned about the group between calls, the same list
+ * shape with its own limits (`src/agent/notebook.js`).
  *
  * Browser code cannot import a server module, so the two limits are copied
  * by hand. `test/panel-limits.test.js` reads this file as text and fails if
@@ -15,6 +17,9 @@ import { SettingsForm } from '../form.js';
  */
 const MAX_INSTRUCTIONS = 20;
 const MAX_INSTRUCTION_CHARS = 300;
+/** Same arrangement for the notebook: `src/agent/notebook.js` is the source of truth. */
+const MAX_NOTES = 40;
+const MAX_NOTE_CHARS = 200;
 
 /** `<@id|Name>`, the same shape `src/agent/instructions.js` writes and reads. */
 const PERSON_TOKEN = /<@(\d{1,32})\|([^<>|]*)>/g;
@@ -57,27 +62,27 @@ function serialiseText(container) {
   return out;
 }
 
-export function mount(root) {
-  const introText = h('p', t('instructions.intro'));
-
-  const emptyRow = h('div.empty', t('instructions.empty'));
+/**
+ * One editable list of lines: the add row, the items with their remove
+ * buttons, the count-and-limit help line. Used twice, for the instructions
+ * and for the notebook, which differ only in key, limits and words.
+ */
+function listEditor({ prefix, key, max, maxChars, onChange }) {
+  const emptyRow = h('div.empty', t(`${prefix}.empty`));
   const addInput = h('input.input', {
     type: 'text',
-    placeholder: t('instructions.add.placeholder'),
+    placeholder: t(`${prefix}.add.placeholder`),
     autocomplete: 'off',
   });
-  const addBtn = h('button.btn', { type: 'button' }, t('instructions.add.button'));
+  const addBtn = h('button.btn', { type: 'button' }, t(`${prefix}.add.button`));
   const addRow = h('div.add', addInput, addBtn);
   const list = h('div.list', emptyRow, addRow);
   const helpLine = h('p.help');
 
-  const card = h('div.card', list, helpLine);
-  root.append(h('header', introText), card);
-
   function makeItem(raw) {
     const text = h('div.text', { contenteditable: 'true' });
     text.append(renderText(raw));
-    const remove = h('button.remove', { type: 'button', 'aria-label': t('instructions.remove') }, '×');
+    const remove = h('button.remove', { type: 'button', 'aria-label': t(`${prefix}.remove`) }, '×');
     const item = h('div.item', text, remove);
 
     remove.addEventListener('click', () => {
@@ -85,14 +90,14 @@ export function mount(root) {
       afterChange();
     });
     text.addEventListener('keydown', (event) => {
-      // One line per instruction: Enter finishes editing rather than
-      // starting a second one inside the same item.
+      // One line per entry: Enter finishes editing rather than starting a
+      // second one inside the same item.
       if (event.key === 'Enter') {
         event.preventDefault();
         text.blur();
       }
     });
-    text.addEventListener('input', validate);
+    text.addEventListener('input', () => onChange());
     return item;
   }
 
@@ -102,7 +107,7 @@ export function mount(root) {
 
   /** After add/remove, which no input event covers on its own — typing does. */
   function afterChange() {
-    validate();
+    onChange();
     list.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
@@ -121,14 +126,13 @@ export function mount(root) {
     }
   });
 
-  let saveBtn = null;
-
+  /** Marks what is over a limit and says so; returns whether all is well. */
   function validate() {
     const rows = items();
     let overChars = false;
     for (const item of rows) {
       const textEl = item.querySelector('.text');
-      const invalid = textEl.textContent.length > MAX_INSTRUCTION_CHARS;
+      const invalid = textEl.textContent.length > maxChars;
       if (invalid) {
         textEl.setAttribute('aria-invalid', 'true');
         overChars = true;
@@ -137,15 +141,14 @@ export function mount(root) {
       }
     }
     const count = rows.length;
-    const overCount = count > MAX_INSTRUCTIONS;
+    const overCount = count > max;
     const bad = overChars || overCount;
 
     helpLine.classList.toggle('error', bad);
-    if (overChars) helpLine.textContent = t('instructions.help.overChars', { max: MAX_INSTRUCTION_CHARS });
-    else if (overCount) helpLine.textContent = t('instructions.help.overCount', { n: count, max: MAX_INSTRUCTIONS });
-    else helpLine.textContent = t('instructions.help', { n: count, max: MAX_INSTRUCTIONS });
+    if (overChars) helpLine.textContent = t(`${prefix}.help.overChars`, { max: maxChars });
+    else if (overCount) helpLine.textContent = t(`${prefix}.help.overCount`, { n: count, max });
+    else helpLine.textContent = t(`${prefix}.help`, { n: count, max });
 
-    if (saveBtn) saveBtn.disabled = bad;
     emptyRow.hidden = count > 0;
     return !bad;
   }
@@ -154,16 +157,60 @@ export function mount(root) {
     const rows = items()
       .map((item) => serialiseText(item.querySelector('.text')).trim())
       .filter(Boolean);
-    return { customInstructions: rows.join('\n') };
+    return { [key]: rows.join('\n') };
   }
 
   function write(cfg) {
     for (const item of items()) item.remove();
-    for (const raw of splitLines(cfg.customInstructions)) list.insertBefore(makeItem(raw), addRow);
+    for (const raw of splitLines(cfg[key])) list.insertBefore(makeItem(raw), addRow);
     validate();
   }
 
-  const form = new SettingsForm({ section: root, read, write });
+  return { list, helpLine, read, write, validate };
+}
+
+export function mount(root) {
+  let saveBtn = null;
+  const refresh = () => {
+    const ok = instructions.validate() && notebook.validate();
+    if (saveBtn) saveBtn.disabled = !ok;
+  };
+
+  const instructions = listEditor({
+    prefix: 'instructions',
+    key: 'customInstructions',
+    max: MAX_INSTRUCTIONS,
+    maxChars: MAX_INSTRUCTION_CHARS,
+    onChange: refresh,
+  });
+  const notebook = listEditor({
+    prefix: 'notebook',
+    key: 'notebook',
+    max: MAX_NOTES,
+    maxChars: MAX_NOTE_CHARS,
+    onChange: refresh,
+  });
+
+  root.append(
+    h('header', h('p', t('instructions.intro'))),
+    h('div.card', instructions.list, instructions.helpLine),
+    h(
+      'div.card',
+      h('div.head', h('h2', t('notebook.title')), h('span.meta', t('notebook.note'))),
+      notebook.list,
+      notebook.helpLine,
+    ),
+  );
+
+  const form = new SettingsForm({
+    section: root,
+    read: () => ({ ...instructions.read(), ...notebook.read() }),
+    write: (cfg) => {
+      instructions.write(cfg);
+      notebook.write(cfg);
+      refresh();
+    },
+  });
   saveBtn = form.bar.querySelector('.btn.primary');
 
   return {
