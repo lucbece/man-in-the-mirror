@@ -138,10 +138,10 @@ class SttError extends Error {
 }
 
 class OpenAiWhisper {
-  constructor({ apiKey }) {
+  constructor({ apiKey, model }) {
     if (!apiKey) throw new SttError('No OpenAI API key configured.');
     this.apiKey = apiKey;
-    this.model = 'whisper-1';
+    this.model = model || 'whisper-1';
   }
 
   get label() {
@@ -234,6 +234,31 @@ export function namePrompt() {
   // far less quotable, and echoesPrompt below catches it when it comes back
   // anyway.
   return names.join(', ');
+}
+
+/**
+ * Below this share of loud windows, a clip that came back as nothing but the
+ * bot's name was noise the model named. A spoken name fills roughly half its
+ * clip even with the 500 ms silence tail that closes every utterance, so
+ * this sits well under a real call.
+ */
+export const NOISE_ACTIVE_RATIO = 0.25;
+
+/**
+ * Did the model name the bot because the prompt told it to expect the name?
+ *
+ * gpt-4o-transcribe, given the names as a prompt, answers a clip of breath or
+ * keyboard with "espejo" — a lone name, which `echoesPrompt` must let through
+ * because a lone name is someone calling the bot. The clip's own energy tells
+ * the two apart: a person saying the name is loud for a good part of the
+ * clip, noise the model dressed up as a word is not.
+ */
+export function namedByNoise(text, prompt, energy) {
+  if (!energy || energy.activeRatio >= NOISE_ACTIVE_RATIO) return false;
+  const words = normaliseForMatch(text).split(' ').filter(Boolean);
+  if (!words.length) return false;
+  const names = new Set(normaliseForMatch(prompt ?? '').split(' ').filter(Boolean));
+  return words.every((w) => names.has(w));
 }
 
 /**
@@ -343,6 +368,7 @@ export function createProvider() {
   const key = [
     config.get('sttProvider'),
     config.get('sttLocalModel'),
+    config.get('sttModel'),
     config.get('openaiApiKey').slice(0, 8),
   ].join('|');
 
@@ -356,7 +382,7 @@ function buildProvider() {
   if (config.get('sttProvider') === 'local') {
     return new LocalWhisper({ model: config.get('sttLocalModel') });
   }
-  return new OpenAiWhisper({ apiKey: config.get('openaiApiKey') });
+  return new OpenAiWhisper({ apiKey: config.get('openaiApiKey'), model: config.get('sttModel') });
 }
 
 /**
@@ -427,7 +453,10 @@ async function runTranscription(utterance, stt) {
     });
     // The prompt echo has to go before anything else reads the text: it
     // contains the bot's names, so it reads as someone calling the bot.
-    const junk = echoesPrompt(text, prompt) || looksHallucinated(text, utterance.durationMs);
+    const junk =
+      echoesPrompt(text, prompt) ||
+      namedByNoise(text, prompt, energy) ||
+      looksHallucinated(text, utterance.durationMs);
     if (junk && text.trim()) {
       console.log(
         `[stt] clip ${describeEnergy(energy)} → discarded, nobody said this: "${text.trim().slice(0, 80)}"`,

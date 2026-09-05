@@ -29,6 +29,7 @@ ssh tunnel (see [running.md](running.md)), never a public port.
 | `bufferSeconds` | `BUFFER_SECONDS` | `90` | Conversation held in memory, 10–600 seconds |
 | `sttProvider` | — | `openai` | `openai` (Whisper API) or `local` (whisper.cpp) |
 | `sttLocalModel` | — | `ggml-base` | `ggml-base`, `ggml-small`, `ggml-large-v3-turbo` |
+| `sttModel` | — | `whisper-1` | OpenAI transcription model: `whisper-1`, `gpt-4o-transcribe` (about a second sooner; a quiet clip that returns only the bot's name is dropped as noise), `gpt-4o-mini-transcribe` |
 | `brainKind` | — | `agent` | `chat`, `agent` or `cascade`. See [Modes](#modes) |
 | `brainProvider` | — | `anthropic` | `anthropic` or `openai`. Chat mode only |
 | `brainModel` | — | *(blank)* | An Anthropic or an OpenAI model id. In agent and cascade modes the agent runs on whichever it is, with the same tools and the same memory of the call, and needs that provider's key; in chat mode it is the model for `brainProvider`. Blank uses `claude-sonnet-5` |

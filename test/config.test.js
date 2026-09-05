@@ -110,6 +110,10 @@ describe('clamping', () => {
     withConfig({}, () => {
       config.update({ ttsVoice: 'not-a-voice' });
       assert.equal(config.get('ttsVoice'), 'onyx');
+      config.update({ sttModel: 'gpt-4o-transcribe' });
+      assert.equal(config.get('sttModel'), 'gpt-4o-transcribe');
+      config.update({ sttModel: 'whisper-2' });
+      assert.equal(config.get('sttModel'), 'whisper-1');
       config.update({ ttsModel: 'tts-1' });
       assert.equal(config.get('ttsModel'), 'tts-1');
       config.update({ ttsModel: 'not-a-model' });
