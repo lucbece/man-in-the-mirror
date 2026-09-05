@@ -1,9 +1,14 @@
 # Control panel redesign
 
-Status, 2026-09-04: P0 to P8 done on `wp/panel`. The old panel is gone from
-that branch; the mock pages under `src/web/public/mock/` stay as the
-reference renderings. Left for the merge: a pull request from `wp/panel`
-into `main`, and a look at the real panel over the tunnel.
+Status, 2026-09-04 (night): P0 to P8 done on `wp/panel`, plus the
+same-day follow-ups: the Tools section rebuilt around a server list with
+file import, Listening's Advanced row and clearer wake copy, a light
+scheme with an Auto/Dark/Light toggle, larger type, the wide-screen layout
+(settings as label-control rows, Now in two columns), a new logo, and the
+agent runnable on OpenAI as well as Claude. Pull request 15 is open
+against `main`; the mock pages under `src/web/public/mock/` stay as the
+reference renderings. After the merge: see it with real data over the
+tunnel, and set the Discord avatar from `src/web/public/icon-512.png`.
 
 The panel at `src/web/public/` does its job and reads like a manual. This
 plan replaces it with a panel that shows what the bot is doing and asks for
