@@ -1,6 +1,6 @@
 # Latency: where the time goes, and the plan to take it back
 
-Status: L0, L1 and L2 (all but item 11) built, 2026-09-05 (PRs 17, 18, 19);
+Status: L0, L1, L2 (all but item 11) and L3 item 13 built, 2026-09-05 (PRs 17 to 22);
 investigation and plan of 2026-09-04 below, unchanged. Measured on the
 production server (Hetzner Falkenstein) with a week of its logs and three
 benchmark runs inside the container against the real APIs.
@@ -58,8 +58,16 @@ benchmark runs inside the container against the real APIs.
   has started and nothing has been said; not for searches, not in music
   mode, never on a timer.
 
+- **L3 item 13**: skip, stop, pause, resume and the volume are carried out
+  without a model when the utterance, minus the bot's names and a few
+  filler words, is nothing but the command (`src/agent/commands.js`); the
+  same note goes to the music channel, the turn counts as the silent tool,
+  and the trace says `carried out without a model`. "Play" and anything
+  with nothing to act on go to the agent as before.
+
 Not done: item 11 (speculative start, gated on a week of item 8's residual
-and restart rate) and L3. Next measurement: `mirror logs latency 7` a week
+and restart rate), 14 (parallel fast leg and agent: 11 of 65 escalations
+on the first day) and 15 (moot while the fast leg is gpt-4.1). Next measurement: `mirror logs latency 7` a week
 after deploy, against the 6.8 s baseline; then the wake rate and the
 `discarded` lines before flipping `sttModel`.
 
