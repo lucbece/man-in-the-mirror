@@ -33,7 +33,7 @@ ssh tunnel (see [running.md](running.md)), never a public port.
 | `brainKind` | — | `agent` | `chat`, `agent` or `cascade`. See [Modes](#modes) |
 | `brainProvider` | — | `anthropic` | `anthropic` or `openai`. Chat mode only |
 | `brainModel` | — | *(blank)* | An Anthropic or an OpenAI model id. In agent and cascade modes the agent runs on whichever it is, with the same tools and the same memory of the call, and needs that provider's key; in chat mode it is the model for `brainProvider`. Blank uses `claude-sonnet-5` |
-| `fastModel` | — | *(blank)* | The model in front of the agent in cascade mode. An Anthropic or an OpenAI id, chosen by the id itself; needs the matching key. Blank uses `claude-haiku-4-5`. The agent behind it is always Claude |
+| `fastModel` | — | *(blank)* | The model in front of the agent in cascade mode. An Anthropic or an OpenAI id, chosen by the id itself; needs the matching key. Blank uses `gpt-4.1`, the fastest to a first sentence in the bench (`scripts/latency-bench.mjs`). The agent behind it is always Claude |
 | `agentMaxTurns` | — | `8` | Tool rounds per agent answer, 1–25 |
 | `webSearch` | — | `true` | Give the agent web search |
 | `mcpServers` | — | *(blank)* | MCP servers as JSON. See [MCP servers](#mcp-servers) |

@@ -14,7 +14,7 @@ const FALLBACK_MODELS = [
   { id: 'claude-haiku-4-5', provider: 'anthropic', role: ['fast', 'chat'], note: '' },
   { id: 'gpt-4.1', provider: 'openai', role: ['agent', 'fast', 'chat'], note: '' },
 ];
-const DEFAULTS = { agent: 'claude-sonnet-5', fast: 'claude-haiku-4-5', anthropic: 'claude-sonnet-5', openai: 'gpt-4.1' };
+const DEFAULTS = { agent: 'claude-sonnet-5', fast: 'gpt-4.1', anthropic: 'claude-sonnet-5', openai: 'gpt-4.1' };
 
 export function mount(root) {
   let models = FALLBACK_MODELS;

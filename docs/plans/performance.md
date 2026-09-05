@@ -1,9 +1,44 @@
 # Latency: where the time goes, and the plan to take it back
 
-Status: investigation and plan, 2026-09-04, second pass the same evening.
-Measured on the production server (Hetzner Falkenstein) with a week of its
-logs and three benchmark runs inside the container against the real APIs.
-Nothing below is built yet.
+Status: L0 and L1 built and merged, 2026-09-05 (PR 17 and the bench PR);
+investigation and plan of 2026-09-04 below, unchanged. Measured on the
+production server (Hetzner Falkenstein) with a week of its logs and three
+benchmark runs inside the container against the real APIs.
+
+## What shipped, and what the bench said on the way out
+
+- **L0 items 1 and 2**: the `[latency]` line per answer, counted from the
+  last word, with `deploy/latency.sh` reading it; deadlines with one retry
+  (STT 3 s plus 1 s per 5 s of clip, TTS first byte 3 s, fast model first
+  block 5 s, agent first block 15 s ending the turn and keeping the
+  session), a per-stage tally of misses on the line, and a spoken "I got
+  stuck" line when the model gave nothing.
+- **L0 item 3**: `scripts/latency-bench.mjs`, the three private scripts in
+  one, run from the server in a throwaway container of the deployed image.
+- **L1 item 4**: `sttModel` key and a Whisper / GPT-4o / GPT-4o mini control
+  in Hearing; a guard that drops a quiet clip returned as only the bot's
+  name. whisper-1 stays the default until the guard has a week of log behind
+  it. Bench, 2026-09-05: 4 s clip whisper-1 1.17 s, gpt-4o-transcribe
+  0.58 s, gpt-4o-mini-transcribe 0.68 s; one word 0.86 / 0.37 / 0.37 s. On
+  clips nobody spoke into, whisper-1 says the subtitle boilerplate the lists
+  already catch; both GPT-4o models say "mirror", "espejo" or "mirror,
+  espejo". The whole-prompt echo is caught by `echoesPrompt`; the lone name
+  is caught by the new guard only when the clip sat mostly under the energy
+  gate, so a breath loud enough to fill its clip still gets through. That is
+  the case to watch in the `discarded` lines before flipping the default.
+- **L1 item 5**: `ttsModel` key, gpt-4o-mini-tts by default. Bench: first
+  byte 1.10 s against tts-1's 1.30 s this morning, 0.4 to 1.1 against 0.8 to
+  1.5 the night before; the gap is real but varies with the hour.
+- **L1 item 6**: default fast model gpt-4.1. Bench with the real fast prompt
+  and the escalate tool, four runs each: first sentence gpt-4.1 0.79 s,
+  claude-haiku-4-5 1.14 s, gpt-4.1-mini 1.63 s; claude-sonnet-5 escalated
+  three of four opinion questions, at 1.3 s to the tool call, so the cached
+  Sonnet that item 15 counted on is not a fast leg for the questions this
+  room asks. A server whose `fastModel` is set explicitly is unchanged.
+- **L1 item 7**: settle cap 800 ms.
+
+Not done: item 8 onward (L2, L3). Next measurement: `mirror logs latency 7`
+a week after deploy, against the 6.8 s baseline.
 
 ## The number that matters
 
