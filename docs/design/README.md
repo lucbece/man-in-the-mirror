@@ -16,3 +16,5 @@ Every measurement carries its date and the machine it was taken on.
 - [cascade.md](cascade.md) — a fast model in front of the agent, and the
   arithmetic that decides whether it pays.
 - [music.md](music.md) — one voice connection with two things to play.
+- [panel.md](panel.md) — the control panel: two layers, a component
+  vocabulary, and the contract each settings section is built against.

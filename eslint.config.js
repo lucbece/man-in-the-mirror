@@ -18,7 +18,7 @@ import globals from 'globals';
 
 export default [
   {
-    ignores: ['node_modules/**', 'dist/**', 'runtime/**', 'data/**'],
+    ignores: ['node_modules/**', 'dist/**', 'runtime/**', 'data/**', '.claude/**', 'shots/**'],
   },
 
   js.configs.recommended,
@@ -91,10 +91,11 @@ export default [
   },
 
   {
-    // Browser code: no Node globals, and the panel is a plain script.
+    // Browser code: no Node globals.
     files: ['src/web/public/**/*.js'],
+    // ES modules served as they are; the panel has no build step.
     languageOptions: {
-      sourceType: 'script',
+      sourceType: 'module',
       globals: globals.browser,
     },
   },

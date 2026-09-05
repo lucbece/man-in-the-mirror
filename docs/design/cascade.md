@@ -4,6 +4,13 @@
 leg answers whatever needs no tools and hands the rest over. What it is in
 front of is described in [agent-mode.md](agent-mode.md).
 
+`fastModel` may be an Anthropic or an OpenAI id — `providerFor` in
+[`src/agent/models.js`](../../src/agent/models.js) tells the two apart by the
+id itself, so there is no separate provider setting to keep in sync with it.
+Either way the fast leg needs the matching key, and either way it hands over
+to the same thing: the agent is the Claude Agent SDK session, always, however
+the fast model in front of it is chosen.
+
 ## The trade it exists to break
 
 The agent is slow for a reason that has nothing to do with the answer: a

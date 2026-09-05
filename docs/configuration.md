@@ -31,12 +31,12 @@ ssh tunnel (see [running.md](running.md)), never a public port.
 | `sttLocalModel` | — | `ggml-base` | `ggml-base`, `ggml-small`, `ggml-large-v3-turbo` |
 | `brainKind` | — | `agent` | `chat`, `agent` or `cascade`. See [Modes](#modes) |
 | `brainProvider` | — | `anthropic` | `anthropic` or `openai`. Chat mode only |
-| `brainModel` | — | *(blank)* | Model for the chosen provider. Blank uses its default |
-| `fastModel` | — | *(blank)* | The model in front of the agent in cascade mode. Blank uses `claude-haiku-4-5` |
+| `brainModel` | — | *(blank)* | An Anthropic or an OpenAI model id. In agent and cascade modes the agent runs on whichever it is, with the same tools and the same memory of the call, and needs that provider's key; in chat mode it is the model for `brainProvider`. Blank uses `claude-sonnet-5` |
+| `fastModel` | — | *(blank)* | The model in front of the agent in cascade mode. An Anthropic or an OpenAI id, chosen by the id itself; needs the matching key. Blank uses `claude-haiku-4-5`. The agent behind it is always Claude |
 | `agentMaxTurns` | — | `8` | Tool rounds per agent answer, 1–25 |
 | `webSearch` | — | `true` | Give the agent web search |
 | `mcpServers` | — | *(blank)* | MCP servers as JSON. See [MCP servers](#mcp-servers) |
-| `agentDirectories` | — | *(blank)* | Directories root-aware MCP servers may read, one absolute path per line |
+| `agentDirectories` | — | *(blank)* | Directories root-aware MCP servers may read, one absolute path per line. On a Claude agent they are the session's additional directories; on an OpenAI agent they reach local MCP servers as `MIRROR_AGENT_DIRECTORIES`, colon-separated |
 | `customInstructions` | — | *(blank)* | Standing instructions, one per line. See [Standing instructions](#standing-instructions) |
 | `ttsProvider` | — | `openai` | `openai` or `local` (Piper) |
 | `ttsVoice` | — | `onyx` | OpenAI voice: `alloy`, `echo`, `fable`, `onyx`, `nova`, `shimmer` |
@@ -62,7 +62,7 @@ Two consequences:
 
 Renaming the bot is open to the room by voice through `set_names`, and it is
 the one setting that can lock the channel out: a name nobody says leaves
-nothing to wake it with. Recovery is the panel's Listening tab.
+nothing to wake it with. Recovery is the panel's Listening section.
 
 ## Modes
 
@@ -76,7 +76,9 @@ nothing to wake it with. Recovery is the panel's Listening tab.
   questions. A session ends when the bot leaves the channel or after 30
   minutes idle.
 - **`cascade`**: a small fast model in front of the agent. It answers what
-  needs no tool and hands the rest over. The reasoning is in
+  needs no tool and hands the rest over. The fast model may be an Anthropic
+  or an OpenAI id, picked by `fastModel`'s own id — the agent it hands over
+  to is always the Claude agent above. The reasoning is in
   [design/cascade.md](design/cascade.md).
 
 ## Hearing and speaking: API or local
@@ -184,7 +186,7 @@ The prompt has a fixed half and a mutable half. The fixed half (answer only
 when addressed, keep replies short and speakable, do not disclose the
 configuration) is not reachable from the channel. The mutable half is
 `customInstructions`: up to 20 lines of 300 characters, edited from the
-panel's Thinking tab or by voice, and applied in every mode.
+panel's Instructions section or by voice, and applied in every mode.
 
 Custom lines are appended below the fixed rules, numbered, under a paragraph
 stating that they do not override what precedes them. Adding one does not
@@ -199,8 +201,9 @@ the model can say who it meant when two people answer to the same name. The
 prompt, `list_instructions` and `forget_instruction` all use the name the
 server shows today, so the model reads the same name that labels that person's
 lines in the transcript. The limits above are measured on that rendered text.
-The panel's Thinking tab shows the stored form, tokens included; a line
-without a token behaves as it always did.
+The panel's Instructions section shows each token as a chip with the
+person's name and keeps the stored form underneath; a line without a token
+behaves as it always did.
 
 ## MCP servers
 
@@ -242,6 +245,13 @@ standard filesystem server included, read the directories from
 `agentDirectories`, not from their own arguments. The name `bot` is reserved
 for the bot's own tool server.
 
+An OpenAI agent connects to the same servers itself rather than through the
+Agent SDK, and there is no roots handshake in that path. The directories are
+passed to local (`command`) servers in the environment instead, as
+`MIRROR_AGENT_DIRECTORIES`, colon-separated like `PATH`. A server that reads
+that variable gets the same folders; one that does not is unaffected, and
+nothing is silently widened.
+
 The agent receives only the configured MCP servers, the built-in tools and
 web search. The SDK's file and shell tools are denied.
 
@@ -263,6 +273,44 @@ Anyone who can see the commands can use them. To restrict them to a role,
 use Discord's own integration settings for the bot (Server Settings →
 Integrations). Playback volume is per listener in Discord; audio is sent as
 Opus and played without re-encoding, so the bot cannot adjust its own level.
+
+## Panel API
+
+Not a documented public API — it is what the control panel itself calls,
+same-origin only (see [running.md](running.md)) — but a few fields and routes
+are worth naming here because nothing else does.
+
+`GET /api/state` includes:
+
+- `bot.applicationId` and `bot.inviteUrl`: the Discord application id and an
+  invite link built from it, with the scopes and permissions the bot actually
+  needs (Connect, Speak, Move Members, Mute Members). Both are `null` until
+  the bot has logged in once.
+- `sessions[].music`: `{ playing, paused, title, queued, volume }` for the
+  guild's music player, read live off `MusicPlayer`.
+- `sessions[].recent`: the last ten questions and answers in that call,
+  newest last, each `{ askedBy, question, answer, firstAudioMs, totalMs, at }`.
+  Kept in memory only, for the life of the call — dropped the moment the bot
+  leaves the channel. Unlike the per-answer statistics below, this keeps the
+  actual text, so it exists only here, never in a file.
+- `models`: the known Anthropic and OpenAI model ids, each
+  `{ id, provider, label, role, note }`, for the panel's model selects. A
+  model id typed by hand is still accepted everywhere it is today — this list
+  only supplies the known set, it does not narrow what's valid.
+
+`POST /api/voice/music/:action`, `action` one of `play`, `skip`, `pause`,
+`resume`, `stop` — body `{ guildId, query }` (`query` required for `play`).
+Reaches the same `MusicPlayer` the `/mj` music commands do, and answers with
+the new `music` status. A guild the bot is not in is a 404; an action outside
+the five is a 400.
+
+`GET /api/tts/preview?provider=openai|local&voice=<id>` synthesises one fixed
+sentence ("Hola, soy el espejo. This is how I sound.") with the given voice
+and returns the audio, for a "Hear it" button next to the voice select. Cached
+in memory per provider and voice for the life of the process — the same
+sentence is never resynthesised. An unknown provider or voice is a 400; a
+provider that cannot currently speak (no OpenAI key, Piper not installed) is
+a 503.
 
 ## What touches the disk
 

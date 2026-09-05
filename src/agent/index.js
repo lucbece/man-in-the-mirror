@@ -344,6 +344,19 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, vi
       timings,
     });
 
+    // The panel's "recent exchanges" card — unlike the register above, this
+    // keeps the actual text, so it lives on the session (gone with the call)
+    // rather than anywhere longer-lived. Optional chaining: several tests
+    // stand in a session with no such method, and a turn that used a tool
+    // silently is still worth a row here.
+    session.recordExchange?.({
+      askedBy,
+      question,
+      answer: spoken || wrote,
+      firstAudioMs: timings.firstAudioMs,
+      totalMs: timings.totalMs,
+    });
+
     // Asked to disconnect: now, with the goodbye already said. Doing it inside
     // the tool call would tear down the agent session that was still running
     // that very call.

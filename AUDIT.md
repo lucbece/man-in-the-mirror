@@ -270,18 +270,6 @@ with it, every time somebody edits their nickname for a joke.
 
 Package: WP3
 
-### The panel shows the raw token, not the name
-
-The Thinking tab renders `customInstructions` verbatim, so an instruction saved
-by voice reads `a <@481920374856102938|Fede> decile tío Fede` there. It is
-editable and it round-trips, and the token is arguably the honest thing to show
-someone editing the stored form — but it is not what the room hears, and nobody
-has been told what the angle brackets are for. Either the panel renders through
-`renderInstruction` and hides the ids, or `docs/configuration.md` explains the
-syntax. It currently does neither.
-
-Package: WP3
-
 ### Whisper's invented-phrase lists only know Spanish and English
 
 `HALLUCINATIONS` (`src/agent/stt.js:22-33`) and `BOILERPLATE`
@@ -325,8 +313,8 @@ Package: WP3
 ### The wake chain is measured now, but not yet tuned
 
 `answers.js` records `beforeAskMs` — from the moment someone stops talking to
-the moment the model is asked anything — and the Thinking tab shows it as
-"heard → asked". That is the half of the wait that was never measured, only
+the moment the model is asked anything — and the Now page shows it as
+"heard to asked". That is the half of the wait that was never measured, only
 chosen: 500ms of silence to cut the utterance, up to 900ms of grace for more
 of the question, transcription in between.
 

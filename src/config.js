@@ -303,4 +303,4 @@ function previewToken(token) {
 }
 
 export const config = new Config();
-export { CONFIG_PATH, DEFAULTS };
+export { CONFIG_PATH, DEFAULTS, VOICES, LOCAL_VOICE_INFO };
