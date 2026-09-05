@@ -315,14 +315,58 @@ data. L3 after a week of L1 and L2 in production.
 Every package is measured the same way: `mirror logs latency 7` before and
 after, and the benchmark script for any provider change.
 
+## Third pass: outside tools, researched
+
+Web research by three agents on 2026-09-04 (evening), sources dated in
+their reports; the numbers below are the vendors' or independent
+benchmarks', not measured from this server, and most vendor
+time-to-first-byte figures exclude network transit while the OpenAI
+figures above include it. Every candidate goes through the benchmark
+script before it is chosen.
+
+### Text to speech
+
+| Vendor | First byte (claim or independent) | Spanish | Output | Price per 1 M characters | Fit |
+| --- | --- | --- | --- | --- | --- |
+| Rime (Mist v3 / Arcana v3) | vendor: sub-200 ms cloud; ~225 ms P50 measured by a hosting partner for the previous generation | Spanish voices, es-MX tag seen, es-AR unconfirmed | genuine Ogg Opus by `Accept: audio/ogg;codecs=opus` over plain HTTP | 20 to 30 USD | **First spike**: near copy of the OpenAI class |
+| Azure Neural, standard tier | independent (BOTfriends, Germany, 2025): 59 to 135 ms | es-AR Elena and Tomás voices | mono Ogg Opus via the SDK or REST | 15 to 16 USD | Second spike: Frankfurt region, Rioplatense voices; SDK or REST plumbing |
+| Gradium (Kyutai spinout) | 155 ms P50 over WebSocket measured from Paris, warm connection | generic Spanish, one of five languages | Ogg Opus over HTTP | 36 to 58 USD | Third: EU residency pinning; small vendor |
+| ElevenLabs Flash v2.5 | vendor 50 to 75 ms; one India-to-US test 478 to 866 ms | named Argentine-accent voices | `opus_48000`, container unconfirmed (check for `OggS`) | 80 to 165 USD | Fourth: Netherlands region; expensive |
+| Deepgram Aura-2 | vendor ~90 ms model; 313 ms P50 independent over WebSocket | Argentine voice "Antonia" | Ogg Opus on REST only; the fast WebSocket path is PCM | 27 to 30 USD | US-only infrastructure |
+| Inworld TTS-2 / Flash | vendor 25 to 100 ms P99, model only | generic | Ogg Opus over HTTP | 10 to 25 USD | US by default; EU residency is enterprise |
+| Cartesia Sonic 3.6 | vendor sub-90 ms; 188 ms P50 independent | Mexican and Castilian only | **no Opus**: WebSocket PCM, ffmpeg encode needed | 37 to 50 USD | Two extra hops; no Argentine voice |
+| Google Chirp 3 HD | independent 2025: slowest tested (614 ms to 3.4 s), possibly the non-streaming path | es-ES and es-MX only | Ogg Opus, but streaming is gRPC only | 30 USD | gRPC client, no es-AR |
+| Hume Octave, Smallest.ai, Unreal Speech | vendor 100 to 300 ms | generic | no Opus | 10 to 150 USD | ffmpeg hop each |
+| PlayHT, LMNT | — | — | — | — | Shut down (2025) |
+
+Piper on the server is slower than all of these (second pass). The plan's
+TTS item becomes: keep gpt-4o-mini-tts as the default, spike Rime and Azure
+from the container with the benchmark script, adopt the one that gives a
+first byte under 400 ms with a voice the room accepts through "Hear it".
+
+### Streaming speech to text
+
+| Vendor | End of speech to final transcript | Endpointing | Spanish and code-switching | Boosting | Price per hour | Fit |
+| --- | --- | --- | --- | --- | --- | --- |
+| Soniox stt-rt-v5 | **249 ms median** independent (Daily.co, Feb 2026, 1,000 turns); vendor 260 ms median, 313 ms P99 | semantic, tunable (`endpoint_sensitivity`, `max_endpoint_delay_ms`), manual `finalize` | generic Spanish, no es-AR variant; language identification per token, code-switching claimed | `context.terms` list | 0.12 USD, billed for the open socket | **First spike**: the only vendor measured under a second; 10 concurrent sockets by default, connection setup can exceed 1 s so open the socket when speaking starts |
+| Azure real-time | no published figure; independent reports of 2 to 8 s to the final event over years | 500 ms silence default; semantic mode not for interactive use | es-AR locale; **no mid-sentence code-switching** | phrase list with weight | 1.00 USD | Not for this room |
+| OpenAI Realtime (GA) | 2.05 s measured here | server VAD | as gpt-4o-transcribe | prompt | — | Slower than the clip |
+| Deepgram Nova-3, AssemblyAI, Speechmatics, Gladia, Google | not yet researched (the run was cut by the usage limit); Daily.co's benchmark puts Deepgram at 247 ms and Speechmatics at 495 ms median | | | | | Pending |
+
+Soniox changes what streaming transcription can do here: a final transcript
+a quarter of a second after the last word, against 1.2 s for the clip path
+after L1, and partials that could arm the wake before the utterance ends.
+The costs are real too: a socket per active speaker, billed while open; a
+concurrency limit of 10; partials that are revised until final, so the name
+in a partial is a pre-trigger, not a trigger. It is the one spike that could
+take the structural floor from about 2.4 s to under 2 s, and it comes after
+L1 and L2, not instead of them.
+
 ## What a wider second pass would still add
 
-A multi-agent pass was started on 2026-09-04 and cut short by the account's
-usage limit; its measurement half was done by hand and is the section
-above. The half not done is outside research, and it is worth a leaner
-rerun: low-latency TTS vendors (ElevenLabs Flash, Cartesia) and Piper on the
-CX23 itself, both against the 0.8 s first byte of OpenAI TTS; streaming
-STT vendors that promise a final transcript under a second after the last
-word; and the turn-taking practice of voice-agent frameworks, in
-particular semantic endpointing as a replacement for the fixed 500 ms
-silence. None of it changes the order of L0 to L2.
+Still open after the third pass: the remaining streaming STT vendors
+(Deepgram, AssemblyAI, Speechmatics, Gladia, Google), the turn-taking
+practice of voice-agent frameworks (semantic endpointing, acknowledgement
+timing, Silero VAD cost on two vCPUs), and an adversarial pass over L1 and
+L2 against the code and the arithmetic. None of it changes the order of L0
+to L2.
