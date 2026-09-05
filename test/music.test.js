@@ -122,6 +122,37 @@ describe('sharing one mouth with the talking voice', () => {
     assert.equal(music.queue.length, 1);
   });
 
+  test('a skip while the bot is speaking still advances, and the next track waits for the speech', async () => {
+    const music = player();
+    await music.add('a', 'Vero');
+    await music.add('b', 'Vero');
+    music.pauseForSpeech();
+    // The fake's stop() moves the player's state, and the real state setter
+    // emits Idle for it, exactly as the real player does once.
+    const skipped = music.skip();
+    await new Promise((r) => {
+      setTimeout(r, 0);
+    });
+    assert.equal(skipped.title, 'Track 1');
+    assert.equal(music.current.title, 'Track 2', 'the queue moved on despite the pause');
+    assert.equal(music.pausedForSpeech, true, 'and the new track is held until the speech ends');
+    music.resumeAfterSpeech();
+    assert.equal(music.pausedForSpeech, false);
+  });
+
+  test('a skip while paused by the user plays the next one', async () => {
+    const music = player();
+    await music.add('a', 'Vero');
+    await music.add('b', 'Vero');
+    music.pause();
+    music.skip();
+    await new Promise((r) => {
+      setTimeout(r, 0);
+    });
+    assert.equal(music.current.title, 'Track 2');
+    assert.equal(music.pausedByUser, false, 'skipping means play the next one');
+  });
+
   test('resuming twice is not an error', async () => {
     const music = player();
     await music.add('a', 'Vero');
