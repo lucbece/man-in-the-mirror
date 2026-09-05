@@ -58,8 +58,12 @@ const WAKE_OPEN_MS = 6_000;
  *
  * Only paid when somebody else is genuinely speaking at that moment, and it
  * ends the instant they stop rather than running the clock out.
+ *
+ * 800 rather than the 1500 it started at: the cap was hit in ten of twenty-one
+ * waits measured over a week, so the cap was the wait. 800 ms still lets a
+ * sentence finish; a speaker still going after that is not about to stop.
  */
-const WAKE_SETTLE_MS = 1_500;
+const WAKE_SETTLE_MS = 800;
 
 /**
  * How long a question the bot asked stays open for its answer.

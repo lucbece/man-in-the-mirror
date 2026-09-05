@@ -40,6 +40,7 @@ ssh tunnel (see [running.md](running.md)), never a public port.
 | `customInstructions` | — | *(blank)* | Standing instructions, one per line. See [Standing instructions](#standing-instructions) |
 | `ttsProvider` | — | `openai` | `openai` or `local` (Piper) |
 | `ttsVoice` | — | `onyx` | OpenAI voice: `alloy`, `echo`, `fable`, `onyx`, `nova`, `shimmer` |
+| `ttsModel` | — | `gpt-4o-mini-tts` | OpenAI speech model: `gpt-4o-mini-tts` (first byte about half a second sooner) or `tts-1` |
 | `ttsLocalVoice` | — | `es_ES-davefx-medium` | Piper voice: `es_ES-davefx-medium`, `en_US-lessac-medium`, `es_AR-daniela-high` |
 | `musicChannel` | — | `music` | Text channel where music actions are written, since they are carried out without speaking. In music mode it also receives what the bot would have said (`🤫`) and any reminder that came due (`⏰`). A server without one gets no message; the music still plays |
 | `webPort` | `WEB_PORT` | `3000` | Control panel port. Read at startup, so a change needs a restart |
@@ -87,7 +88,7 @@ Each of the two stages can run through the OpenAI API or on the host machine.
 | Stage | API | Local |
 | --- | --- | --- |
 | Hearing | Whisper (`whisper-1`) | whisper.cpp, downloaded on first use into `runtime/` |
-| Speaking | `tts-1` | Piper, downloaded on first use into `runtime/` |
+| Speaking | `gpt-4o-mini-tts` or `tts-1` | Piper, downloaded on first use into `runtime/` |
 
 Before a clip is sent anywhere it is measured. Discord starts a stream on a
 breath or a keyboard as readily as on a word, and a clip whose loudest moment
