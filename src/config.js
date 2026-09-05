@@ -46,6 +46,7 @@ const DEFAULTS = {
   // Transcription
   sttProvider: 'openai', // 'openai' | 'local' (whisper.cpp on this machine)
   sttLocalModel: 'ggml-base', // whisper.cpp model; the panel suggests one per machine
+  sttModel: 'whisper-1', // OpenAI transcription model: 'whisper-1' | 'gpt-4o-transcribe' | 'gpt-4o-mini-transcribe'
   openaiApiKey: '',
 
   // Thinking
@@ -92,6 +93,7 @@ const DEFAULTS = {
   // Speaking
   ttsProvider: 'openai', // 'openai' | 'local' (Piper, runs on this machine)
   ttsVoice: 'onyx', // OpenAI voice
+  ttsModel: 'gpt-4o-mini-tts', // OpenAI speech model: 'gpt-4o-mini-tts' | 'tts-1'
   ttsLocalVoice: 'es_ES-davefx-medium', // Piper voice
 
   // Where it writes down what it is playing.
@@ -123,8 +125,18 @@ const ENV_KEYS = {
 
 /** OpenAI's stock voices. */
 const VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
+/** OpenAI speech models: the faster one first. Measured first byte 0.4 to 1.1 s against tts-1's 0.8 to 1.5 s. */
+export const TTS_MODELS = ['gpt-4o-mini-tts', 'tts-1'];
 
 /** whisper.cpp models, described for the panel. */
+/**
+ * OpenAI transcription models. whisper-1 stays the default until a week of
+ * the noise guard's log shows gpt-4o-transcribe's echoes are caught: measured
+ * from the server it answers in 0.7 s against whisper-1's 1.7 s, but with a
+ * name prompt it answers noise with the bot's name.
+ */
+export const STT_API_MODELS = ['whisper-1', 'gpt-4o-transcribe', 'gpt-4o-mini-transcribe'];
+
 const STT_MODELS = [
   { id: 'ggml-base', label: 'base — 142MB, quick on a CPU' },
   { id: 'ggml-small', label: 'small — 466MB, better without a GPU' },
@@ -195,10 +207,12 @@ function clampConfig(cfg) {
   out.customInstructions = serialiseInstructions(parseInstructions(out.customInstructions));
   out.agentMaxTurns = Math.min(25, Math.max(1, Math.round(out.agentMaxTurns)));
   if (!VOICES.includes(out.ttsVoice)) out.ttsVoice = 'onyx';
+  if (!TTS_MODELS.includes(out.ttsModel)) out.ttsModel = DEFAULTS.ttsModel;
   if (!['openai', 'local'].includes(out.ttsProvider)) out.ttsProvider = 'openai';
   out.agentNames = out.agentNames.trim().toLowerCase() || DEFAULTS.agentNames;
   if (!['openai', 'local'].includes(out.sttProvider)) out.sttProvider = 'openai';
   if (!STT_MODELS.some((m) => m.id === out.sttLocalModel)) out.sttLocalModel = 'ggml-base';
+  if (!STT_API_MODELS.includes(out.sttModel)) out.sttModel = DEFAULTS.sttModel;
 
   return out;
 }

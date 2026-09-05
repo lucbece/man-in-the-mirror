@@ -15,7 +15,11 @@ set -euo pipefail
 # a Spanish one would make awk read "10.4" as 10 and print "10,4".
 export LC_ALL=C
 
-rows=$(grep -oE '\[agent\] answered in [0-9.]+s \(heard [0-9.]+s, first words at [0-9.]+s, thought through [0-9.]+s\)' "${1:--}" \
+# Read once: stdin cannot be grepped twice, and there are two kinds of line.
+input=$(cat "${1:--}")
+
+rows=$(printf '%s\n' "$input" \
+  | grep -oE '\[agent\] answered in [0-9.]+s \(heard [0-9.]+s, first words at [0-9.]+s, thought through [0-9.]+s\)' \
   | sed -E 's/[^0-9. ]//g' | awk '{print $1, $2, $3, $4}' || true)
 
 n=$(printf '%s\n' "$rows" | grep -c . || true)
@@ -44,3 +48,19 @@ stat 1 "answered in"
 stat 2 "heard"
 stat 3 "first words at"
 stat 4 "thought through"
+
+# The per-stage line, when the log has it, counts from the moment the person
+# stopped talking rather than from the moment the pipeline began — the number
+# the room actually waits. `playing` is when the first audio reached the
+# player; `done` when the answer finished. Older logs have no such lines and
+# the block is simply skipped.
+stages=$(printf '%s\n' "$input" \
+  | grep -oE '\[latency\] .*playing \+[0-9.]+s .*done \+[0-9.]+s' \
+  | sed -E 's/.*playing \+([0-9.]+)s.*done \+([0-9.]+)s.*/\1 \2/' || true)
+sn=$(printf '%s\n' "$stages" | grep -c . || true)
+if [ "$sn" -gt 0 ]; then
+  rows=$stages n=$sn
+  echo "from the last word (+${SILENCE:-0.5}s of silence detection not counted):"
+  stat 1 "first audio"
+  stat 2 "done"
+fi

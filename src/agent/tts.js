@@ -8,6 +8,7 @@
  * which is a collision waiting to happen.
  */
 import { Readable } from 'node:stream';
+import { withDeadline, TTS_FIRST_BYTE_MS } from './deadline.js';
 import { StreamType, createAudioResource } from '@discordjs/voice';
 import ffmpegPath from 'ffmpeg-static';
 
@@ -23,13 +24,11 @@ import {
 class TtsError extends Error {}
 
 class OpenAiTts {
-  constructor({ apiKey, voice }) {
+  constructor({ apiKey, voice, model }) {
     if (!apiKey) throw new TtsError('No OpenAI API key configured.');
     this.apiKey = apiKey;
     this.voice = voice || 'onyx';
-    // tts-1 over the higher-quality variants: this is conversational filler in
-    // a noisy voice call, and latency matters far more than fidelity here.
-    this.model = 'tts-1';
+    this.model = model || 'gpt-4o-mini-tts';
   }
 
   get label() {
@@ -37,7 +36,9 @@ class OpenAiTts {
   }
 
   async request(text) {
-    const res = await fetch('https://api.openai.com/v1/audio/speech', {
+    // First byte within the deadline; the rest of the stream may take its time.
+    const res = await withDeadline('tts', TTS_FIRST_BYTE_MS, (signal, arrived) =>
+      fetch('https://api.openai.com/v1/audio/speech', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
@@ -50,7 +51,12 @@ class OpenAiTts {
         response_format: 'opus',
         stream_format: 'audio',
       }),
-    });
+      signal,
+    }).then((r) => {
+      arrived();
+      return r;
+    }),
+    );
 
     if (!res.ok) {
       const detail = await res.text().catch(() => '');
@@ -137,13 +143,14 @@ class LocalTts {
  * the voice preview route does: it is always asked about one exact voice,
  * whatever is currently configured for the running bot.
  */
-export function createTts({ provider, voice } = {}) {
+export function createTts({ provider, voice, model } = {}) {
   if ((provider ?? config.get('ttsProvider')) === 'local') {
     return new LocalTts({ voice: voice ?? config.get('ttsLocalVoice') });
   }
   return new OpenAiTts({
     apiKey: config.get('openaiApiKey'),
     voice: voice ?? config.get('ttsVoice'),
+    model: model ?? config.get('ttsModel'),
   });
 }
 

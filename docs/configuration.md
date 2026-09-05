@@ -29,6 +29,7 @@ ssh tunnel (see [running.md](running.md)), never a public port.
 | `bufferSeconds` | `BUFFER_SECONDS` | `90` | Conversation held in memory, 10–600 seconds |
 | `sttProvider` | — | `openai` | `openai` (Whisper API) or `local` (whisper.cpp) |
 | `sttLocalModel` | — | `ggml-base` | `ggml-base`, `ggml-small`, `ggml-large-v3-turbo` |
+| `sttModel` | — | `whisper-1` | OpenAI transcription model: `whisper-1`, `gpt-4o-transcribe` (about a second sooner; a quiet clip that returns only the bot's name is dropped as noise), `gpt-4o-mini-transcribe` |
 | `brainKind` | — | `agent` | `chat`, `agent` or `cascade`. See [Modes](#modes) |
 | `brainProvider` | — | `anthropic` | `anthropic` or `openai`. Chat mode only |
 | `brainModel` | — | *(blank)* | An Anthropic or an OpenAI model id. In agent and cascade modes the agent runs on whichever it is, with the same tools and the same memory of the call, and needs that provider's key; in chat mode it is the model for `brainProvider`. Blank uses `claude-sonnet-5` |
@@ -40,6 +41,7 @@ ssh tunnel (see [running.md](running.md)), never a public port.
 | `customInstructions` | — | *(blank)* | Standing instructions, one per line. See [Standing instructions](#standing-instructions) |
 | `ttsProvider` | — | `openai` | `openai` or `local` (Piper) |
 | `ttsVoice` | — | `onyx` | OpenAI voice: `alloy`, `echo`, `fable`, `onyx`, `nova`, `shimmer` |
+| `ttsModel` | — | `gpt-4o-mini-tts` | OpenAI speech model: `gpt-4o-mini-tts` (first byte about half a second sooner) or `tts-1` |
 | `ttsLocalVoice` | — | `es_ES-davefx-medium` | Piper voice: `es_ES-davefx-medium`, `en_US-lessac-medium`, `es_AR-daniela-high` |
 | `musicChannel` | — | `music` | Text channel where music actions are written, since they are carried out without speaking. In music mode it also receives what the bot would have said (`🤫`) and any reminder that came due (`⏰`). A server without one gets no message; the music still plays |
 | `webPort` | `WEB_PORT` | `3000` | Control panel port. Read at startup, so a change needs a restart |
@@ -88,7 +90,7 @@ Each of the two stages can run through the OpenAI API or on the host machine.
 | Stage | API | Local |
 | --- | --- | --- |
 | Hearing | Whisper (`whisper-1`) | whisper.cpp, downloaded on first use into `runtime/` |
-| Speaking | `tts-1` | Piper, downloaded on first use into `runtime/` |
+| Speaking | `gpt-4o-mini-tts` or `tts-1` | Piper, downloaded on first use into `runtime/` |
 
 Before a clip is sent anywhere it is measured. Discord starts a stream on a
 breath or a keyboard as readily as on a word, and a clip whose loudest moment

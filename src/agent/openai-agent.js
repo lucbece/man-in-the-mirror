@@ -26,6 +26,7 @@
  * price table in `models.js` turns them into the same figure.
  */
 import { AgentError, TURN_TIMEOUT_MS } from './agent-brain.js';
+import { withDeadline, AGENT_FIRST_BLOCK_MS } from './deadline.js';
 import { costOf } from './models.js';
 import { SentenceSplitter } from './sentences.js';
 import { readSse } from './sse.js';
@@ -141,19 +142,40 @@ export class OpenAiAgentSession {
    * where the conversation now stands.
    */
   async #round(input, { onToolUse, onSentence, signal }) {
-    const res = await this.#post(
-      {
-        model: this.model,
-        instructions: this.instructions,
-        input,
-        ...(this.previousResponseId ? { previous_response_id: this.previousResponseId } : {}),
-        tools: this.#tools(),
-        store: true,
-        stream: true,
-        max_output_tokens: MAX_OUTPUT_TOKENS,
-      },
-      signal,
+    // Fifteen seconds to the first output item, tried twice, then the turn
+    // fails and the session stays: a lost turn costs one question, a lost
+    // session costs the conversation.
+    const res = await withDeadline('agent', AGENT_FIRST_BLOCK_MS, (deadline, met) =>
+      this.#post(
+        {
+          model: this.model,
+          instructions: this.instructions,
+          input,
+          ...(this.previousResponseId ? { previous_response_id: this.previousResponseId } : {}),
+          tools: this.#tools(),
+          store: true,
+          stream: true,
+          max_output_tokens: MAX_OUTPUT_TOKENS,
+        },
+        signal ? AbortSignal.any([signal, deadline]) : deadline,
+      ).then(async (r) => {
+        // The first item has to arrive inside the deadline too, so the stream
+        // is peeked here and the event handed to the loop below.
+        const events = readSse(r)[Symbol.asyncIterator]();
+        const first = await events.next();
+        met();
+        return { events, first };
+      }),
     );
+    const { events, first } = res;
+    const stream = (async function* () {
+      if (!first.done) yield first.value;
+      for (;;) {
+        const next = await events.next();
+        if (next.done) return;
+        yield next.value;
+      }
+    })();
 
     const splitter = new SentenceSplitter();
     const block = new BlockCollector('OUTPUT', 'agent says');
@@ -162,7 +184,7 @@ export class OpenAiAgentSession {
     let announced = false;
     let responseId = null;
 
-    for await (const event of readSse(res)) {
+    for await (const event of stream) {
       switch (event.type) {
         case 'response.output_text.delta':
           text += event.delta ?? '';

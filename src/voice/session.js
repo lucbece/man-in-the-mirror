@@ -58,8 +58,12 @@ const WAKE_OPEN_MS = 6_000;
  *
  * Only paid when somebody else is genuinely speaking at that moment, and it
  * ends the instant they stop rather than running the clock out.
+ *
+ * 800 rather than the 1500 it started at: the cap was hit in ten of twenty-one
+ * waits measured over a week, so the cap was the wait. 800 ms still lets a
+ * sentence finish; a speaker still going after that is not about to stop.
  */
-const WAKE_SETTLE_MS = 1_500;
+const WAKE_SETTLE_MS = 800;
 
 /**
  * How long a question the bot asked stays open for its answer.
@@ -301,6 +305,9 @@ export class VoiceSession extends EventEmitter {
       // slow — silence detection, transcription, the grace wait — and none of
       // it was ever measured, only chosen. See AUDIT.md.
       stoppedAt: utterance.endedAt ?? Date.now(),
+      // When the words arrived as text. The gap from `stoppedAt` is what the
+      // transcription cost the room; the `[latency]` line prints it per turn.
+      heardAt: Date.now(),
       // Came from the bot's own question rather than from its name, so the
       // panel can show how often that path fires — and whether it fires wrongly.
       viaFollowUp: answeringUs,
@@ -322,6 +329,7 @@ export class VoiceSession extends EventEmitter {
     pending.parts.push(utterance.text.trim());
     pending.heard += ` ${utterance.text.trim()}`;
     pending.stoppedAt = utterance.endedAt ?? Date.now();
+    pending.heardAt = Date.now();
     this.armWake(WAKE_TIMING.graceMs);
   }
 
@@ -367,6 +375,7 @@ export class VoiceSession extends EventEmitter {
     const pending = this.pendingWake;
     this.pendingWake = null;
     if (!pending || this.destroyed) return;
+    const firedAt = Date.now();
 
     // Before reading the buffer, let the rest of the room finish landing in it.
     const waited = await this.settleOtherSpeakers(pending.userId);
@@ -393,6 +402,9 @@ export class VoiceSession extends EventEmitter {
           : question,
       askedBy: pending.askedBy,
       stoppedAt: pending.stoppedAt,
+      // The stages between the last word and the pipeline, as clock times,
+      // so `ask()` can print every wait on one line instead of one total.
+      marks: { heardAt: pending.heardAt, firedAt, settledAt: Date.now(), settleMs: waited },
       viaFollowUp: pending.viaFollowUp,
       // Discord attributes this to the audio stream it arrived on, so it is
       // the one part of a spoken request that can't be claimed by saying it.

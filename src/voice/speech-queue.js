@@ -26,6 +26,8 @@ export class SpeechQueue {
     this.ended = false; // no more pieces will be pushed
     this.cancelled = false;
     this.spoken = [];
+    /** When the first piece reached the player: the moment the room heard something. */
+    this.startedAt = null;
 
     this.finished = new Promise((resolve) => {
       this.resolve = resolve;
@@ -74,6 +76,7 @@ export class SpeechQueue {
       this.playing = true;
       try {
         this.player.play(next);
+        this.startedAt ??= Date.now();
       } catch (err) {
         // A bad resource must not wedge the rest of the sentence.
         console.warn(`[speech] could not play a piece: ${err.message}`);
