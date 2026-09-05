@@ -32,13 +32,7 @@ should close it, so a package's brief can be its goal plus its entries.
 
 ## High
 
-- **An invalid Anthropic key costs the room two minutes of silence, not a
-  sentence.** Seen on 2026-09-03 with a revoked key: the fast leg failed in
-  under a second with a clear 401 and escalated, then the agent leg sat until
-  the two-minute limit ("The agent took over two minutes — gave up on that
-  one"). `cascade.js` and `agent-brain.js`: an `authentication_error` from
-  either leg should end the turn at once and say so in the log, and the
-  panel's state should show it instead of "ready".
+Nothing open.
 
 
 ## Medium

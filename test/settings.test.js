@@ -146,7 +146,8 @@ describe('changing one', () => {
     // It decides what a connected filesystem server may read, which is a
     // security boundary rather than a preference.
     assert.equal(findSetting('folders').ownerOnly, true);
-    assert.equal(SETTINGS.filter((s) => s.ownerOnly).length, 1);
+    // Folders, and the three that set the bill for every later answer.
+    assert.deepEqual(SETTINGS.filter((s) => s.ownerOnly).map((s) => s.key).sort(), ['agentDirectories', 'agentMaxTurns', 'brainModel', 'fastModel']);
     assert.equal(planChange(values(), 'folders', '/home/vero/notes').after, '/home/vero/notes');
     assert.equal(planChange(values(), 'folders', 'C:\\Users\\vero\\notes').after, 'C:\\Users\\vero\\notes');
     assert.throws(() => planChange(values(), 'folders', 'la carpeta de documentos'), /full path/);

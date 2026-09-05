@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { AGENT_FIRST_BLOCK_MS } from '../src/agent/deadline.js';
+import { verifyKey, AgentError } from '../src/agent/agent-brain.js';
 import test, { describe } from 'node:test';
 
 import { AgentSession, TURN_TIMEOUT_MS } from '../src/agent/agent-brain.js';
@@ -275,5 +276,24 @@ describe('the input side', () => {
     assert.equal(sdk.interrupted, 1);
     s.end();
     assert.equal(sdk.interrupted, 1, 'ending twice must not double-interrupt');
+  });
+});
+
+describe('the key check', () => {
+  const answering = (status) => async () => new Response('{}', { status });
+  test('a 401 or 403 is a rejected key; anything else is not held against it', async () => {
+    assert.equal(await verifyKey('anthropic', 'k', { fetchImpl: answering(401) }), 'rejected');
+    assert.equal(await verifyKey('openai', 'k', { fetchImpl: answering(403) }), 'rejected');
+    assert.equal(await verifyKey('anthropic', 'k', { fetchImpl: answering(200) }), 'ok');
+    assert.equal(await verifyKey('anthropic', 'k', { fetchImpl: answering(500) }), 'unknown');
+    assert.equal(await verifyKey('openai', 'k', { fetchImpl: async () => { throw new Error('offline'); } }), 'unknown');
+  });
+
+  test('a doomed session refuses every later question with the reason', async () => {
+    const sdk = fakeSdk();
+    const s = session(sdk);
+    s.doom(new AgentError('Anthropic rejected the API key. Fix it in the panel under Keys.'));
+    await assert.rejects(s.ask('q'), /rejected the API key/);
+    assert.equal(s.closed, true);
   });
 });

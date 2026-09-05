@@ -44,6 +44,8 @@ const MUSIC = new Set(['musica', 'cancion', 'tema', 'song', 'music', 'track', 's
 const SKIP = new Set(['skip', 'saltea', 'salteala', 'saltealo', 'salta', 'saltala', 'saltalo', 'siguiente', 'next', 'proxima', 'proximo']);
 const STOP_VERB = new Set(['para', 'pare', 'frena', 'detene', 'stop', 'corta', 'cortala', 'cortalo', 'apaga', 'apagala', 'apagalo']);
 const PAUSE = new Set(['pausa', 'pausala', 'pausalo', 'pause']);
+/** Stop verbs that mean the queue too, even without "la música" after them. */
+const STOP_FOR_GOOD = new Set(['stop', 'frena', 'detene', 'corta', 'cortala', 'cortalo', 'apaga', 'apagala', 'apagalo']);
 const RESUME = new Set(['reanuda', 'reanudala', 'reanudalo', 'despausa', 'despausala', 'resume']);
 const CONTINUE = new Set(['segui', 'continua', 'seguila', 'continuala']);
 const LOWER = new Set(['baja', 'bajale', 'bajalo', 'bajala', 'bajame', 'bajen', 'lower', 'down']);
@@ -117,11 +119,12 @@ export function matchCommand(text) {
   if (rest.length && only(CONTINUE) && has(MUSIC)) return { kind: 'resume' };
 
   if (rest.length && only(STOP_VERB, MOMENT)) {
-    // "pará un segundo" pauses; "pará la música" and a bare "pará" stop.
-    // The bare form is the destructive reading only when the queue is about
-    // to be heard again anyway: the runner refuses when nothing is playing.
+    // "pará un segundo" and a bare "pará" pause; "pará la música", "stop",
+    // "cortala", "apagá" stop and clear the queue. Stopping throws the queue
+    // away, so the ambiguous form takes the reading that loses nothing.
     if (has(MOMENT)) return { kind: 'pause' };
-    if (rest.some((w) => w === 'stop') || has(MUSIC) || rest.length === 1) return { kind: 'stop' };
+    if (has(MUSIC) || rest.some((w) => STOP_FOR_GOOD.has(w))) return { kind: 'stop' };
+    return { kind: 'pause' };
   }
 
   const volume = matchVolume(all, rest);
