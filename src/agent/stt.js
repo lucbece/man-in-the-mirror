@@ -432,25 +432,41 @@ export function transcribeUtterance(utterance, stt) {
 /** One tally for the process: clips from every channel land in one log. */
 const clipLog = new ClipLog();
 
-async function runTranscription(utterance, stt) {
-  const prompt = namePrompt();
+/**
+ * Decode and measure a clip, and drop it if it was never loud enough to be a
+ * voice. The numbers are the only thing known about a clip before paying for
+ * it (see energy.js for the threshold), and they are what the eager queue
+ * sorts by, so this runs once, at push time, and the transcription reuses
+ * the decoded audio.
+ *
+ * Returns the energy of a clip worth sending, `null` for one that was not;
+ * a dropped clip has its text set to '' so nothing waits on it.
+ */
+export function measureUtterance(utterance) {
+  if (utterance.energy) return tooQuiet(utterance.energy) ? null : utterance.energy;
   if (utterance.durationMs < MIN_UTTERANCE_MS) {
     utterance.text = '';
-    return { spoken: false, failed: false };
+    return null;
   }
-
-  // Decoded once, measured, then sent: the numbers are the only thing known
-  // about a clip before paying for it, and a clip that never got loud enough
-  // to be a voice is not sent at all. See energy.js for the threshold.
   const pcm = decodeToMono16k(utterance.packets);
   const energy = measureEnergy(pcm);
+  utterance.energy = energy;
   if (tooQuiet(energy)) {
     clipLog.quiet(energy);
     utterance.text = '';
-    utterance.energy = energy;
-    return { spoken: false, failed: false, skipped: true };
+    return null;
   }
-  utterance.energy = energy;
+  // Kept until the request is sent, so the audio is not decoded twice.
+  utterance.pcm = pcm;
+  return energy;
+}
+
+async function runTranscription(utterance, stt) {
+  const prompt = namePrompt();
+  const energy = measureUtterance(utterance);
+  if (!energy) return { spoken: false, failed: false, skipped: utterance.durationMs >= MIN_UTTERANCE_MS };
+  const pcm = utterance.pcm ?? decodeToMono16k(utterance.packets);
+  utterance.pcm = null;
   try {
     const text = await stt.transcribe(pcmToWav(pcm), {
       prompt,

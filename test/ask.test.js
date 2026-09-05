@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test, { describe } from 'node:test';
 
-import { ask, AgentBusyError, stagesFrom, describeStages, COULD_NOT_LINES } from '../src/agent/index.js';
+import { ask, AgentBusyError, stagesFrom, describeStages, COULD_NOT_LINES, CONTEXT_WAIT_MS } from '../src/agent/index.js';
+import { SILENCE_MS } from '../src/voice/receiver.js';
 
 /**
  * The orchestrator with its collaborators replaced.
@@ -204,6 +205,56 @@ describe('ask()', () => {
     const listening = { ...fakeSession('g2'), agentEnabled: true };
     await ask(listening, { question: 'a', askedBy: 'Vero' }, d);
     assert.equal(called, 1);
+  });
+});
+
+describe('the acknowledgement when a speaking tool starts', () => {
+  test('a short "mm" plays once, before the answer, when a tool that will speak has started', async () => {
+    const d = deps({ tools: ['mcp__bot__get_time', 'mcp__bot__get_weather'], sentences: ['Son las diez.'] });
+    const result = await ask(fakeSession(), { question: 'che qué hora es', askedBy: 'Vero' }, d);
+    assert.deepEqual(d.fillersTaken, ['ack']);
+    assert.equal(result.timings.ack, 'Dame un segundo.');
+    assert.equal(result.spoken, 'Son las diez.', 'the ack is not part of what was said');
+  });
+
+  test('not for a silent command, not for a search, not in music mode', async () => {
+    const quiet = deps({ tools: ['mcp__bot__skip_song'], sentences: [] });
+    await ask(fakeSession(), { question: 'saltá', askedBy: 'Vero' }, quiet);
+    assert.deepEqual(quiet.fillersTaken, []);
+
+    const searching = deps({ tools: ['mcp__bot__search_web'], search: true, sentences: ['Listo.'] });
+    await ask(fakeSession(), { question: 'buscá', askedBy: 'Vero' }, searching);
+    assert.deepEqual(searching.fillersTaken, ['thinking'], 'the search filler covers it');
+
+    const music = deps({ tools: ['mcp__bot__get_time'], sentences: ['Son las diez.'] });
+    const session = fakeSession();
+    session.quiet = true;
+    await ask(session, { question: 'qué hora es', askedBy: 'Vero' }, music);
+    assert.deepEqual(music.fillersTaken, []);
+  });
+});
+
+describe('the wait for context is bounded', () => {
+  test('a slow transcription of the room does not hold the question', async () => {
+    const slow = new Promise((resolve) => {
+      setTimeout(resolve, CONTEXT_WAIT_MS * 3);
+    });
+    const d = { ...deps({ sentences: ['Hola.'] }), transcribeBuffer: () => slow };
+    const listening = { ...fakeSession('g3'), agentEnabled: true };
+    const t = Date.now();
+    const result = await ask(listening, { question: 'a', askedBy: 'Vero' }, d);
+    assert.ok(Date.now() - t < CONTEXT_WAIT_MS * 2, `took ${Date.now() - t}ms`);
+    assert.equal(result.timings.contextCut, true);
+    assert.equal(result.spoken, 'Hola.');
+    await slow;
+  });
+
+  test('a failing transcription is noted, not thrown into the answer', async () => {
+    const d = { ...deps({ sentences: ['Hola.'] }), transcribeBuffer: () => Promise.reject(new Error('quota')) };
+    const listening = { ...fakeSession('g4'), agentEnabled: true };
+    const result = await ask(listening, { question: 'a', askedBy: 'Vero' }, d);
+    assert.equal(result.spoken, 'Hola.');
+    assert.equal(result.timings.contextCut, undefined);
   });
 });
 
@@ -439,7 +490,7 @@ describe('the [latency] line', () => {
     const marks = { heardAt: stoppedAt + 1700, firedAt: stoppedAt + 2600, settledAt: stoppedAt + 2600, settleMs: 0 };
     const result = await ask(fakeSession(), { question: 'hola', askedBy: 'Vero', stoppedAt, marks }, d);
     const s = result.timings.stages;
-    assert.equal(s.silenceMs, 500);
+    assert.equal(s.silenceMs, SILENCE_MS);
     assert.equal(s.transcriptMs, 1700);
     assert.equal(s.graceFiredMs, 2600);
     assert.ok(s.askedMs >= 2900, `asked at ${s.askedMs}`);
@@ -448,7 +499,7 @@ describe('the [latency] line', () => {
     assert.ok(s.doneMs >= s.firstAudioMs);
     // The fake speech queue never reaches a player, so there is no playing mark.
     assert.equal(s.playingMs, undefined);
-    assert.match(describeStages(s), /^silence 0\.5s · transcript \+1\.7s · grace \+2\.6s \(0\.9s\) · settle \+2\.6s \(0\.0s\) · asked \+\d+\.\ds · first sentence \+\d+\.\ds · first audio \+\d+\.\ds · done \+\d+\.\ds · timeouts none$/);
+    assert.match(describeStages(s), /^silence 0\.[0-9]s · transcript \+1\.7s · grace \+2\.6s \(0\.9s\) · settle \+2\.6s \(0\.0s\) · asked \+\d+\.\ds · first sentence \+\d+\.\ds · first audio \+\d+\.\ds · done \+\d+\.\ds · timeouts none$/);
   });
 
   test('a turn typed into the panel counts from the pipeline start and has no pre-ask stages', () => {

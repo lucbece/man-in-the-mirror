@@ -101,6 +101,20 @@ const isSilentTool = (name) => SILENT_TOOLS.has(name);
  * Returns the timings and the text that was spoken, so callers can show the
  * user what happened rather than just "done".
  */
+/** How long the question waits for the rest of the room to be transcribed. */
+export const CONTEXT_WAIT_MS = 400;
+
+/** Resolves true if `ms` passed before `promise` settled. */
+function outlasts(promise, ms) {
+  let timer;
+  return Promise.race([
+    promise.then(() => false),
+    new Promise((resolve) => {
+      timer = setTimeout(() => resolve(true), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
 /** Said when the model gave nothing, so a timeout is heard rather than waited on. */
 export const COULD_NOT_LINES = {
   es: 'Perdón, me trabé. ¿Me lo repetís?',
@@ -139,7 +153,15 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, ma
     let transcript = '';
     let utterances = [];
     if (session.agentEnabled) {
-      await transcribe(session.receiver.buffer);
+      // Bounded: these clips are context, not the question, which is already
+      // text. Measured, the wait was 0 at the median and 1.9 s at p90, all of
+      // it spent on clips the model could have done without. Whatever is
+      // transcribed by the deadline goes in; the rest keeps transcribing in
+      // the background for the next question.
+      const context = transcribe(session.receiver.buffer).catch((err) => {
+        console.warn(`[stt] context: ${err.message}`);
+      });
+      if (await outlasts(context, CONTEXT_WAIT_MS)) timings.contextCut = true;
       utterances = session.receiver.buffer.recent();
       transcript = format(utterances);
     }
@@ -286,6 +308,17 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, ma
           onSentence: say,
           onToolUse: (name) => {
             if (!toolsUsed.includes(name)) toolsUsed.push(name);
+            // A tool that will speak has started and nothing has been said:
+            // the room is about to wait seconds. A short "mm" says it was
+            // heard. Once per turn, never over a search filler, never in
+            // music mode, never for a silent command.
+            // A search has its own, longer filler through onSearchStart.
+            if (isSilentTool(name) || /search/i.test(name) || session.quiet || speech || at.firstSentence !== undefined) return;
+            const ack = getFiller(guessLanguage(question), 'ack');
+            if (!ack) return;
+            timings.ack = ack.line;
+            mouth().push(toResource(ack.audio), null);
+            nudge();
           },
           // Only reached when nothing has been said yet — a canned clip on top
           // of the model's own words would be two fillers in a row.
@@ -361,6 +394,7 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, ma
     // Eager transcription runs outside this turn, so its misses land on the
     // next answer line; close enough, and never lost.
     at.timeouts = takeTimeouts();
+    at.contextCut = timings.contextCut;
     timings.stages = stagesFrom({ stoppedAt, marks, started, t0, at });
 
     recordAnswer({
@@ -404,6 +438,7 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, ma
         (timings.filler
           ? ` · searched at ${(timings.searchedAtMs / 1000).toFixed(1)}s, said "${timings.filler}"`
           : '') +
+        (timings.ack ? ` · said "${timings.ack}" when the tool started` : '') +
         (timings.waited ? ` · filled ${timings.waited} long silence(s)` : '') +
         (toolsUsed.length ? ` · tools: ${toolsUsed.join(', ')}` : ' · no tools') +
         (timings.beforeAskMs
@@ -455,6 +490,7 @@ export function stagesFrom({ stoppedAt, marks, started, t0, at }) {
     playingMs: since(at.playing),
     doneMs: since(at.done),
     timeouts: at.timeouts,
+    contextCut: at.contextCut,
   };
 }
 
@@ -467,7 +503,7 @@ export function describeStages(s) {
     parts.push(`grace +${sec(s.graceFiredMs)} (${sec(s.graceFiredMs - (s.transcriptMs ?? 0))})`);
   }
   if (s.settledMs !== undefined) parts.push(`settle +${sec(s.settledMs)} (${sec(s.settleWaitMs ?? 0)})`);
-  parts.push(`asked +${sec(s.askedMs)}`);
+  parts.push(`asked +${sec(s.askedMs)}${s.contextCut ? ' (context cut short)' : ''}`);
   if (s.firstSentenceMs !== undefined) parts.push(`first sentence +${sec(s.firstSentenceMs)}`);
   if (s.firstAudioMs !== undefined) parts.push(`first audio +${sec(s.firstAudioMs)}`);
   if (s.playingMs !== undefined) parts.push(`playing +${sec(s.playingMs)}`);

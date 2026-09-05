@@ -22,7 +22,13 @@ import { AudioBuffer, Utterance } from '../agent/buffer.js';
  * handled downstream by the wake grace window, so this can be tighter than it
  * looks.
  */
-const SILENCE_MS = 500;
+const SILENCE_MS = 250;
+// 250 rather than the 500 it started at: the speaker's own Discord client
+// decides when they stopped and sends silence frames, so there is no audio on
+// this side to analyse and the constant is the whole decision. The voice-agent
+// stacks sit at 200 to 500; this one has a merge downstream (the wake grace),
+// so it can sit low. The wake rate in `deploy/latency.sh` is the check that it
+// did not start splitting names in two.
 
 /**
  * Longest single utterance kept, in milliseconds.

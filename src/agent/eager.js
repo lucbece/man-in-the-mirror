@@ -11,15 +11,19 @@
  */
 import { EventEmitter } from 'node:events';
 
-import { createProvider, transcribeUtterance } from './stt.js';
+import { createProvider, transcribeUtterance, measureUtterance } from './stt.js';
 
 /** Enough to keep up with a lively channel without opening a socket per person. */
 const CONCURRENCY = 3;
+/** While music plays the room talks over it and the clips pile up; more sockets, not a longer queue. */
+export const CONCURRENCY_WITH_MUSIC = 6;
 
 export class EagerTranscriber extends EventEmitter {
-  constructor({ label = '' } = {}) {
+  constructor({ label = '', concurrency = CONCURRENCY, screen = measureUtterance } = {}) {
     super();
     this.label = label;
+    this.concurrency = concurrency;
+    this.screen = screen;
     this.queue = [];
     this.running = 0;
     this.stopped = false;
@@ -29,16 +33,36 @@ export class EagerTranscriber extends EventEmitter {
     this.failures = 0;
   }
 
+  /**
+   * Queue a clip, loudest-and-longest first.
+   *
+   * Measured here rather than when its turn comes, so a clip that was never a
+   * voice is dropped before it takes a place in the queue, and so the queue
+   * can be sorted by what it hears: a clip that sounds like a sentence goes
+   * before twenty half-second noises, which is where the clip with the bot's
+   * name used to wait.
+   */
   push(utterance) {
     if (this.stopped || this.fatalError) return;
-    this.queue.push(utterance);
+    let energy;
+    try {
+      energy = this.screen(utterance);
+    } catch (err) {
+      console.warn(`[eager${this.label}] could not decode a clip: ${err.message}`);
+      return;
+    }
+    if (!energy) return;
+    const score = energy.activeRatio * energy.ms;
+    const at = this.queue.findIndex((queued) => queued.score < score);
+    this.queue.splice(at === -1 ? this.queue.length : at, 0, { utterance, score });
     this.drain();
   }
 
   drain() {
-    while (!this.stopped && !this.fatalError && this.running < CONCURRENCY) {
-      const utterance = this.queue.shift();
-      if (!utterance) return;
+    while (!this.stopped && !this.fatalError && this.running < this.concurrency) {
+      const next = this.queue.shift();
+      if (!next) return;
+      const { utterance } = next;
 
       this.running += 1;
       this.transcribe(utterance).finally(() => {
