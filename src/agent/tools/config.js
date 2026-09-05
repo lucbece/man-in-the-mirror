@@ -155,7 +155,9 @@ export function configTools(turn) {
           const next = mergeMcpServer(config.get('mcpServers'), name, configuration);
 
           config.update({ mcpServers: next });
-          console.warn(`[mcp] ${asker.displayName} added server "${name}" by voice: ${configuration}`);
+          // The name only: a configuration carries commands, env and headers,
+          // which is where another service's secret lives.
+          console.warn(`[mcp] ${asker.displayName} added server "${name}" by voice`);
           return (
             `Added "${name}". Its tools are available from the next question — the session restarts to ` +
             'connect it, so this conversation is forgotten. Say that before they ask again.'

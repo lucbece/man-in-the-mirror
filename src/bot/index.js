@@ -143,7 +143,9 @@ class BotRunner extends EventEmitter {
   }
 
   async #stop() {
-    sessionManager.leaveAll();
+    // Stopping the client is not leaving the call on purpose: the channel is
+    // kept, and the next start puts the bot back if anyone is still there.
+    sessionManager.leaveAll({ comingBack: true });
     if (this.client) {
       await this.client.destroy().catch(() => {});
       this.client = null;

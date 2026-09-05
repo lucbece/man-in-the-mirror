@@ -368,6 +368,16 @@ describe('cutting it off', () => {
     assert.equal(s.fired.length, 0);
   });
 
+  test('"mirror" in one breath and "basta" in the next, while it talks, is a hush too', async () => {
+    const s = stubSession();
+    s.speech = {};
+    s.checkForWake(said('u1', 'Vero', 'mirror'));
+    s.checkForWake(said('u1', 'Vero', 'basta'));
+    await wait(OPEN + GRACE);
+    assert.equal(s.shushed, 1);
+    assert.equal(s.fired.length, 0, 'no question was asked out of "mirror basta"');
+  });
+
   test('the same words when it is silent are a question like any other', async () => {
     const s = stubSession();
     s.checkForWake(said('u1', 'Vero', 'mirror, basta'));

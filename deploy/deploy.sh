@@ -104,7 +104,11 @@ case "$verb" in
     if wait_healthy; then
       log_marker "$sha $tag"
       echo "deploy: healthy on $tag"
+      # Dangling layers, and the tags of every deploy but this one and the one
+      # before it: `prune` alone left each sha-* image on the disk for good.
       docker image prune -f >/dev/null 2>&1 || true
+      docker images --format '{{.Repository}}:{{.Tag}}' | grep -F "$IMAGE:sha-" \
+        | grep -v -F -e "$new" -e "$old" | xargs -r docker rmi >/dev/null 2>&1 || true
       exit 0
     fi
 
@@ -118,6 +122,13 @@ case "$verb" in
   status)
     echo "image  $(current_image)"
     echo "health $(health)"
+    # The container's health is Express answering; whether the bot is on
+    # Discord is a different question, and a rejected token would otherwise
+    # read as healthy here.
+    id=$(container)
+    if [ -n "$id" ]; then
+      docker exec "$id" node -e "fetch('http://127.0.0.1:3000/api/state').then((r)=>r.json()).then((s)=>console.log('bot    '+(s.bot?.state??'unknown')+(s.bot?.error?' — '+s.bot.error:'')+(s.bot?.user?.tag?' as '+s.bot.user.tag:''))).catch(()=>console.log('bot    unknown'))" 2>/dev/null || true
+    fi
     ;;
   *)
     echo "usage: deploy <sha> | status" >&2

@@ -298,8 +298,14 @@ export class AgentSession {
     turn?.reject(err);
   }
 
+  /** Closed for a reason every later question should hear: a rejected key. */
+  doom(err) {
+    this.fatal = err;
+    this.#fail(err);
+  }
+
   ask(text, { onToolUse, onSentence } = {}) {
-    if (this.closed) return Promise.reject(new AgentError('Agent session is closed.'));
+    if (this.closed) return Promise.reject(this.fatal ?? new AgentError('Agent session is closed.'));
     if (this.turn) return Promise.reject(new AgentError('Agent is mid-answer.'));
     trace('INPUT', `agent turn (${this.model ?? 'agent'})`, text);
     this.lastUsedAt = Date.now();
@@ -434,7 +440,7 @@ function buildSession(guildId) {
   if (provider === 'openai') {
     const openaiKey = config.get('openaiApiKey');
     if (!openaiKey) throw new AgentError('The agent brain needs an OpenAI API key.');
-    return new OpenAiAgentSession({
+    return Object.assign(new OpenAiAgentSession({
       signature: currentSignature(),
       guildId,
       model,
@@ -449,13 +455,13 @@ function buildSession(guildId) {
       toolNames: serverNames,
       maxTurns: config.get('agentMaxTurns'),
       turn,
-    });
+    }), { keyToVerify: { provider: 'openai', key: openaiKey } });
   }
 
   const apiKey = config.get('anthropicApiKey');
   if (!apiKey) throw new AgentError('The agent brain needs an Anthropic API key.');
 
-  return new AgentSession({
+  return Object.assign(new AgentSession({
     signature: currentSignature(),
     model,
     toolNames: serverNames,
@@ -491,7 +497,7 @@ function buildSession(guildId) {
       ...(directories.length ? { additionalDirectories: directories } : {}),
       env: { ...process.env, ANTHROPIC_API_KEY: apiKey },
     },
-  });
+  }), { keyToVerify: { provider: 'anthropic', key: apiKey } });
 }
 
 function getSession(guildId) {
@@ -505,7 +511,62 @@ function getSession(guildId) {
   }
   const session = buildSession(guildId);
   sessions.set(guildId, session);
+  preflightKey(session);
   return session;
+}
+
+/**
+ * Ask the provider whether the key works, without waiting for a question.
+ *
+ * Seen with a revoked key: the fast leg failed in under a second with a
+ * clear 401, and the agent leg then sat until its deadline, on every
+ * question, saying nothing about why. The SDK's own process owns that
+ * request, so the rejection is not ours to catch; a two-second look at the
+ * models endpoint with the same key is. A rejected key dooms the session,
+ * so the next question fails at once with the reason, and a fixed key in
+ * the panel changes the signature and builds a fresh one.
+ *
+ * Fire and forget, and never from a test: the runner's child processes have
+ * no business on the network.
+ */
+export const keyCheck = { verify: verifyKey, enabled: !process.env.NODE_TEST_CONTEXT };
+
+function preflightKey(session) {
+  if (!keyCheck.enabled || !session.keyToVerify) return;
+  const { provider, key } = session.keyToVerify;
+  keyCheck
+    .verify(provider, key)
+    .then((verdict) => {
+      if (verdict !== 'rejected') return;
+      const name = provider === 'openai' ? 'OpenAI' : 'Anthropic';
+      console.error(`[agent-brain] ${name} rejected the API key — the agent cannot answer until it is fixed in the panel under Keys`);
+      session.doom(new AgentError(`${name} rejected the API key. Fix it in the panel under Keys.`));
+    })
+    .catch(() => {});
+}
+
+/** 'ok', 'rejected', or 'unknown' when the provider could not be asked in time. */
+export async function verifyKey(provider, key, { fetchImpl = fetch, timeoutMs = 3000 } = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res =
+      provider === 'openai'
+        ? await fetchImpl('https://api.openai.com/v1/models?limit=1', {
+            headers: { Authorization: `Bearer ${key}` },
+            signal: controller.signal,
+          })
+        : await fetchImpl('https://api.anthropic.com/v1/models?limit=1', {
+            headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+            signal: controller.signal,
+          });
+    if (res.status === 401 || res.status === 403) return 'rejected';
+    return res.ok ? 'ok' : 'unknown';
+  } catch {
+    return 'unknown';
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
