@@ -9,7 +9,8 @@ benchmark runs inside the container against the real APIs.
 
 - **L0 items 1 and 2**: the `[latency]` line per answer, counted from the
   last word, with `deploy/latency.sh` reading it; deadlines with one retry
-  (STT 3 s plus 1 s per 5 s of clip, TTS first byte 3 s, fast model first
+  (STT 4 s plus 1 s per 5 s of clip, raised from 3 after the first day
+  showed 2.2% of requests passing 3 s under concurrent load; TTS first byte 3 s, fast model first
   block 5 s, agent first block 15 s ending the turn and keeping the
   session), a per-stage tally of misses on the line, and a spoken "I got
   stuck" line when the model gave nothing.
