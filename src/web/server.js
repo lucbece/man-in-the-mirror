@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { MAX_NOTES, MAX_NOTE_CHARS } from '../agent/notebook.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
@@ -119,6 +120,20 @@ export function createApp(deps = {}) {
           ok: false,
           error: `Instructions: ${list.length} lines, and ${MAX_INSTRUCTIONS} is the limit.`,
         });
+      }
+    }
+
+    if (typeof body.notebook === 'string' && body.notebook.trim()) {
+      const list = parseInstructions(body.notebook).map((line) => renderInstruction(line));
+      const long = list.find((line) => line.length > MAX_NOTE_CHARS);
+      if (long) {
+        return res.status(400).json({
+          ok: false,
+          error: `Notebook: one note is ${long.length} characters; keep each under ${MAX_NOTE_CHARS}.`,
+        });
+      }
+      if (list.length > MAX_NOTES) {
+        return res.status(400).json({ ok: false, error: `Notebook: ${list.length} notes, and ${MAX_NOTES} is the limit.` });
       }
     }
 

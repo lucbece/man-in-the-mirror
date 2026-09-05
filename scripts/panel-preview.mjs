@@ -69,6 +69,7 @@ function fakeConfig(overrides = {}) {
       'A <@111|Vero> decirle "tía Vero"',
       'Los jueves jugamos DayZ; el server es eu-3',
     ].join('\n'),
+    notebook: 'A Vero le gusta el jazz de los sesenta, sobre todo Coltrane\nEl viernes juegan al truco después de la partida\nFede odia que le recuerden el gol en contra del 2019',
     webSearch: true,
     ttsProvider: 'openai',
     ttsVoice: 'onyx',
