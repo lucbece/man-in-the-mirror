@@ -239,12 +239,19 @@ expected saving on the median path, and the risk.
    First sentence at 1.3 to 1.4 s against Sonnet's 1.9 s. The person running
    this bot found Haiku's answers poor; gpt-4.1 is the one to try, now that
    the fast leg runs on OpenAI. Saves ≈ 0.5 s when the fast leg answers.
-7. **Grace 900 → 600 ms, settle cap 1500 → 800 ms.** The grace exists for a
-   pause mid-question; 600 ms still covers a breath. Saves 0.3 s always,
-   0.7 s when others are talking. Risk: a slow speaker gets cut into two
-   questions slightly more often; the logs will say how often.
+7. **Settle cap 1500 → 800 ms; grace stays at 900 ms until item 8 lands.**
+   The settle wait hit its 1.5 s cap in ten of twenty-one waits; 800 ms
+   still lets a sentence finish. Saves 0.7 s when others are talking. The
+   grace is not cut here: once item 8 counts it from the end of the audio,
+   it runs under the transcription (0.7 s after item 4) and only the
+   remainder, 100 to 300 ms, is visible; cutting it to 600 then buys about
+   0.2 s at the cost of splitting slow speakers. The `[latency]` line logs
+   the exposed grace (`max(0, grace − STT)`) so that decision is made from
+   the residual, not the nominal 900.
 
-Together: ≈ 2.3 s off the median, 6.1 → about 3.8 s from the last word.
+Together: about 2.0 s off the median, 6.1 → about 4.1 s from the last
+word (STT 1.0, TTS 0.6, fast model 0.5 when it answers; the settle cut
+only when others talk).
 Items 6 and 15 pull against each other: a fast leg on gpt-4.1 forfeits the
 Anthropic cache saving on the highest-volume path. Measure both defaults
 with the bench before choosing; the cached Sonnet first sentence and the
@@ -254,7 +261,14 @@ gpt-4.1 one may land within a few hundred ms of each other.
 
 8a. **End the utterance sooner.** `SILENCE_MS` from 500 to 250 ms (the
    Discord library's own speaking-end fires at 100). Saves 250 ms on every
-   answer. The risk is not only more fragments: the grace merge only runs
+   answer. The value is where the voice-agent stacks sit: Pipecat's VAD
+   stops at 200 ms, AssemblyAI's minimum turn silence is 400, Deepgram
+   recommends 300 to 500, and LiveKit raises Silero's 100 to 550 because it
+   has no downstream merge; this bot has one, the grace. A local VAD cannot
+   do better than this constant: the speaker's own Discord client decides
+   when they stopped and sends silence frames, and the receiver only
+   compares packets against that frame, so there is no audio left to
+   analyse on this side. The risk is not only more fragments: the grace merge only runs
    once a wake has been recognised, so a micro-pause inside the name
    itself splits it into two fragments neither of which wakes the bot. L0
    therefore measures the wake-detection rate per candidate utterance at
@@ -293,8 +307,12 @@ gpt-4.1 one may land within a few hundred ms of each other.
     dropped and the full question asked. The tokens of a dropped request
     are still paid (about 2 k input tokens each), and the code has no
     cancel hook for a stream in flight, so this is text buffering, not
-    cancellation. Only after item 8 has shown how often the grace actually
-    restarts.
+    cancellation. LiveKit ships this on by default and Deepgram's eager
+    end-of-turn reports 150 to 250 ms gained for 50 to 70 percent more
+    model calls; budget that rate, not a rare case, and never speculate
+    the TTS (LiveKit keeps that off too). After item 8 has shown how often
+    the grace restarts, and after item 8's residual says what is left to
+    win.
 12. **An early acknowledgement sound.** A 300 ms "mm" from the filler
     cache, once per turn, when a tool that will speak has started
     (`onToolUse` for anything not in `SILENT_TOOLS`) or the fast leg has
@@ -303,10 +321,15 @@ gpt-4.1 one may land within a few hundred ms of each other.
     will end in a silent music command, and `play_music` takes 9 s, so a
     timer would pause the music to say "mm" for a command whose point is
     silence, the exact bug the mouth-taking guard in `ask()` exists to
-    prevent. Off in music mode, and a switch in the panel, because some
-    rooms will hate it.
+    prevent. The one documented analogue, ElevenLabs' soft timeout, ships
+    off and is recommended at 3 s as a rescue for slow turns, not a
+    preamble; if a timed rescue is added later it sits near the observed
+    p50 of "model asked to first word", about 2 s, behind the same guards
+    as the fillers that exist. Off in music mode, and a switch in the
+    panel, because some rooms will hate it.
 
-Together with L1: about 2.5 s median from the last word.
+Together with L1: about 2.6 s median from the last word (8a 0.25, 8 0.7,
+10 0.3, 11 up to 0.2 of what item 8 leaves).
 
 ### Package L3: the agent's own rounds
 
@@ -345,6 +368,18 @@ Together with L1: about 2.5 s median from the last word.
   first byte, no streaming. Off the plan for the server.
 - **Replacing the Agent SDK** for single rounds buys a few hundred
   milliseconds at most; not worth its blast radius.
+- **A semantic end-of-turn model** (LiveKit's turn detector, Pipecat's
+  Smart Turn v3.2) was researched (third pass): after item 8 the visible
+  grace is 100 to 300 ms, which is the whole ceiling such a model could
+  win here; LiveKit's Spanish-capable model is a hosted call, its local
+  sibling undisclosed, and Pipecat's open 8 MB model publishes no Spanish
+  accuracy. Deferred until the residual grace is measured.
+- **Silero VAD** cannot end an utterance sooner (see 8a). Where it would
+  earn its place is as the junk gate: a speech probability is a better
+  filter than active share for the 132 clips a week paid for and thrown
+  away, at under a millisecond per frame. The Node wrapper was
+  discontinued, so it means `onnxruntime-node` and the raw model; a
+  candidate for L1 item 4's guard if active share proves too coarse.
 
 ### Adversarial pass: what the review changed
 
