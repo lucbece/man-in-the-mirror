@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { describe, beforeEach } from 'node:test';
 
-import { CascadeBrain, resetCascade, withoutToolName } from '../src/agent/cascade.js';
+import { CascadeBrain, FAST_PROMPT_EXTRA, resetCascade, withoutToolName } from '../src/agent/cascade.js';
 
 /** A fast leg that answers, or defers, without an API call. */
 function fast(result) {
@@ -277,6 +277,8 @@ describe('music commands never reach the fast leg', () => {
       'espejo, qué opinás de los aviones?',
       'espejo, cuánto tarda un vuelo a Madrid?',
       'espejo, ponete las pilas',
+      'espejo, contame un chiste de músicos',
+      'espejo, qué modo de juego recomendás?',
     ]) {
       resetCascade();
       let fastRan = false;
@@ -288,6 +290,78 @@ describe('music commands never reach the fast leg', () => {
         },
       }).answer(ask(said));
       assert.equal(fastRan, true, `should have used the fast leg: "${said}"`);
+    }
+  });
+});
+
+describe('music mode never reaches the fast leg', () => {
+  beforeEach(resetCascade);
+
+  /** A fast leg that answers everything itself, the way gpt-4.1 did in the call. */
+  function chattyFast() {
+    const state = { ran: false };
+    state.run = async (_context, _memory, { onSentence } = {}) => {
+      state.ran = true;
+      onSentence?.('Acá estoy, qué onda.');
+      return { said: 'Acá estoy, qué onda.', escalate: false, reason: null };
+    };
+    return state;
+  }
+
+  test('while quiet, every turn goes to the agent', async () => {
+    // Found in use: asked to talk again while in music mode, the fast leg said
+    // "acá estoy" — written into the music channel, since nothing was spoken —
+    // and the mode stayed on, because leaving it is a tool it does not have.
+    // Nobody is waiting on the fast leg's speed while nothing is spoken, so in
+    // this state the agent takes everything, whatever the phrasing.
+    const agent = fakeAgent({ tools: ['mcp__bot__leave_music_mode'], text: 'Listo, vuelvo a hablar.' });
+    const fast = chattyFast();
+    const b = brain({ agent, runFast: fast.run });
+
+    const text = await b.answer({ ...ask('espejo, dale, hablá'), quiet: true });
+
+    assert.equal(fast.ran, false, 'the fast leg must not have been asked');
+    assert.equal(agent.calls.length, 1);
+    assert.equal(text, 'Listo, vuelvo a hablar.');
+    assert.equal(b.escalated, true);
+    assert.match(b.reason, /music mode/);
+  });
+
+  test('and an ordinary question in music mode goes there too', async () => {
+    const agent = fakeAgent();
+    const fast = chattyFast();
+    await brain({ agent, runFast: fast.run }).answer({ ...ask('espejo, de quién es este tema?'), quiet: true });
+    assert.equal(fast.ran, false);
+    assert.equal(agent.calls.length, 1);
+  });
+
+  test('the switch itself is a command, in either direction', async () => {
+    // Entering happens while talking, so the flag cannot help there; leaving
+    // is covered by the flag, and by this list for a caller that has none.
+    for (const said of [
+      'espejo, mutéate',
+      'espejo, modo música',
+      'espejo, callate hasta que te avise',
+      'espejo, no hables mientras suena',
+      'mirror, mute yourself',
+      'espejo, salí del modo música',
+      'espejo, desactivá el modo música',
+      'espejo, ya podés hablar',
+      'espejo, volvé a hablar',
+      'espejo, hablá de nuevo',
+      'espejo, desmuteate',
+      'mirror, you can talk again',
+    ]) {
+      resetCascade();
+      const fast = chattyFast();
+      await brain({ agent: fakeAgent(), runFast: fast.run }).answer(ask(said));
+      assert.equal(fast.ran, false, `should have skipped the fast leg: "${said}"`);
+    }
+  });
+
+  test('the fast prompt names the phrasings, for the ones the list misses', () => {
+    for (const phrase of ['mutéate', 'modo música', 'ya podés hablar', 'volvé a hablar', 'mute yourself', 'you can talk again']) {
+      assert.ok(FAST_PROMPT_EXTRA.includes(phrase), `the fast prompt never names "${phrase}"`);
     }
   });
 });

@@ -101,6 +101,14 @@ otherwise and keeps doing everything else. Four decisions shape it:
   to the voice and pauses the song. While quiet that handover is skipped, not
   compensated for afterwards: pausing a track to make room for a voice that
   will not come is the failure the mode exists to prevent.
+- **Every turn in the mode goes to the agent.** The cascade's fast leg exists
+  to get the first spoken word out sooner, which is nothing while nothing is
+  spoken, and it has no tool to end the mode with. Asked "ya podés hablar" it
+  answered "acá estoy" — written into the music channel, mode still on
+  (2026-09-05, measured afterwards at 0 of 8 escalations for that phrasing).
+  So `ask()` tells the brain the turn began quiet, and the cascade skips the
+  fast leg; the phrasings that switch the mode on are routed the same way by
+  a word list, since that request arrives while the bot is still talking.
 
 What would have been said is written into the music channel, one message per
 turn. A reminder that comes due while quiet is written there too, never said

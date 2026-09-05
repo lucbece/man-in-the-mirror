@@ -303,7 +303,10 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, ma
       // The return value is the whole reply, but everything sayable has
       // already gone out through onSentence by the time it resolves.
       await brain.answer(
-        { transcript, utterances, question, askedBy, askedById },
+        // `quiet` is a routing signal: in music mode the cascade skips its fast
+        // leg, which has no tool to end the mode with. Read once here, before
+        // the turn; the sentences below re-read the live flag as they arrive.
+        { transcript, utterances, question, askedBy, askedById, quiet: Boolean(session.quiet) },
         {
           onSentence: say,
           onToolUse: (name) => {

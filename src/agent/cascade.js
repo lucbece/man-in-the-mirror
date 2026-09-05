@@ -90,6 +90,7 @@ The rule that catches everything else: **if your answer would be that you can't 
 
 Call escalate, and say nothing else, whenever the answer would need any of it:
 - Anything asked of you as an action — remind me, move him, disconnect her, kick someone, mute someone, put a song on, skip this one, change your voice, add that server, leave. You cannot do any of it. Saying "listo" without escalating is a lie, and saying "no puedo" is a different lie.
+- Anything about your own voice being off or on — "mutéate", "modo música", "no hables mientras suena", "ya podés hablar", "volvé a hablar", "salí del modo música", "mute yourself", "you can talk again". These switch your voice off and back on, and only the other version has the switch. "Acá estoy" from you changes nothing: the voice stays off and the words are never heard.
 - Anything that could have changed since you were trained: scores, weather, prices, news, what is happening today, who currently holds a job or a title.
 - Anything about how this bot is configured, what it can reach, what it was told to remember, or what it is running on.
 - Anything referring back to something the other version did — "what did you find", "the one you mentioned", "read that again", "how much was it".
@@ -186,6 +187,33 @@ async function defaultGetSession(guildId) {
   const { sessionManager } = await import('../voice/manager.js');
   return sessionManager.get(guildId);
 }
+
+/**
+ * Requests to switch the bot's own voice off or back on, routed the same way.
+ *
+ * Found in use, 2026-09-05: in music mode the room asked the bot to talk
+ * again, and it kept writing into the music channel. Measured afterwards with
+ * the real fast prompt and gpt-4.1: "salí del modo música" escalated 4 of 4,
+ * "ya podés hablar" and "volvé a hablar" escalated 0 of 8 — the fast leg
+ * answered "acá estoy" itself, which in music mode was written down, and the
+ * switch it has no tool for was never touched. The prompt now names these
+ * phrasings too; this list is for the ones it will still miss.
+ */
+const MUSIC_MODE_COMMAND = [
+  /\bmodo\s+m[uú]sica\b/i,
+  /\bmusic\s+mode\b/i,
+  /(^|\s)(des)?mut[eé]ate(?=\s|$|[,.!?¡¿])/i,
+  /\b(un)?mute\s+yourself\b/i,
+  /(^|\s)(c[aá]llate|calláte)\s+(hasta|mientras|un\s+rato)(?=\s|$|[,.!?])/i,
+  /(^|\s)no\s+hables\b/i,
+  /\b(stay|be|keep)\s+quiet\b/i,
+  /\b(ya\s+)?pod[eé]s\s+(volver\s+a\s+)?hablar\b/i,
+  /\b(volv[eé]|habl[aá])\s+(a\s+hablar|de\s+nuevo)\b/i,
+  /\b(talk|speak)\s+again\b|\bstop\s+being\s+quiet\b/i,
+];
+
+const looksLikeMusicModeCommand = (text) =>
+  MUSIC_MODE_COMMAND.some((re) => re.test(String(text ?? '')));
 
 /**
  * The tool's own name, said out loud.
@@ -296,6 +324,25 @@ export class CascadeBrain {
     if (looksLikeMusicCommand(context.question)) {
       this.escalated = true;
       this.reason = 'a music command, which the fast leg has no tools for';
+      return this.#runAgent(context, memory, { onSearchStart, onSentence, onToolUse });
+    }
+
+    // Music mode: everything goes to the agent. The reason the fast leg is in
+    // front — the first spoken word arriving two seconds sooner — does not
+    // exist while nothing is spoken, and the one request that matters in this
+    // state, "you can talk again", needs a tool only the agent has. Handed to
+    // the fast leg it answered "acá estoy" in writing and the mode stayed on.
+    if (context.quiet) {
+      this.escalated = true;
+      this.reason = 'music mode: nothing is spoken, and the way out of it is a tool';
+      return this.#runAgent(context, memory, { onSearchStart, onSentence, onToolUse });
+    }
+
+    // Switching the voice off or on is a tool too, and the fast leg saying
+    // "dale, me callo" changes nothing about what the room hears next.
+    if (looksLikeMusicModeCommand(context.question)) {
+      this.escalated = true;
+      this.reason = 'a music mode switch, which the fast leg has no tools for';
       return this.#runAgent(context, memory, { onSearchStart, onSentence, onToolUse });
     }
 
