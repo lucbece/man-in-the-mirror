@@ -308,6 +308,17 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, ma
           onSentence: say,
           onToolUse: (name) => {
             if (!toolsUsed.includes(name)) toolsUsed.push(name);
+            // A tool that will speak has started and nothing has been said:
+            // the room is about to wait seconds. A short "mm" says it was
+            // heard. Once per turn, never over a search filler, never in
+            // music mode, never for a silent command.
+            // A search has its own, longer filler through onSearchStart.
+            if (isSilentTool(name) || /search/i.test(name) || session.quiet || speech || at.firstSentence !== undefined) return;
+            const ack = getFiller(guessLanguage(question), 'ack');
+            if (!ack) return;
+            timings.ack = ack.line;
+            mouth().push(toResource(ack.audio), null);
+            nudge();
           },
           // Only reached when nothing has been said yet — a canned clip on top
           // of the model's own words would be two fillers in a row.
@@ -427,6 +438,7 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, ma
         (timings.filler
           ? ` · searched at ${(timings.searchedAtMs / 1000).toFixed(1)}s, said "${timings.filler}"`
           : '') +
+        (timings.ack ? ` · said "${timings.ack}" when the tool started` : '') +
         (timings.waited ? ` · filled ${timings.waited} long silence(s)` : '') +
         (toolsUsed.length ? ` · tools: ${toolsUsed.join(', ')}` : ' · no tools') +
         (timings.beforeAskMs
