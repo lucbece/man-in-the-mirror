@@ -67,7 +67,11 @@ import { trace } from './trace.js';
  * side-call. The fast leg does no reasoning worth the name: it decides whether
  * it is out of its depth and, if not, says something conversational.
  */
-export const DEFAULT_FAST_MODEL = 'claude-haiku-4-5';
+// gpt-4.1 after the bench of 2026-09-05 from the server, real fast prompt and
+// escalate tool, four runs: first sentence gpt-4.1 0.79 s, Haiku 1.14 s,
+// Sonnet escalated three of four opinion questions and took 1.3 s to do so.
+// Needs an OpenAI key; without one the leg escalates and the agent answers.
+export const DEFAULT_FAST_MODEL = 'gpt-4.1';
 
 /** Enough for the answer, short enough that it cannot ramble past the cap. */
 const MAX_TOKENS = 1024;
@@ -75,7 +79,7 @@ const MAX_TOKENS = 1024;
 /** How many recent question-and-answer pairs either leg is reminded of. */
 const MAX_REMEMBERED = 6;
 
-const FAST_PROMPT_EXTRA = `
+export const FAST_PROMPT_EXTRA = `
 
 **Never write about yourself answering.** Not what you notice, not who said what, not whether something counts as a question, not what you have decided to do about it. Every word you produce is spoken aloud in a room full of people; there is no notepad. "I hear the setup to a joke, but they haven't finished asking" is thinking, and it was heard out loud. Either say the thing you would say to them, or say nothing.
 
@@ -94,7 +98,7 @@ Answer directly only when it is conversation, an opinion, a joke, an explanation
 
 If you escalate you may first say one short holding line in their language — "dame un segundo", "hold on" — and nothing more. Not even that for anything about music: putting a song on, skipping, stopping. Those are carried out without a word, and your holding line would be the only sound in an exchange that was meant to be silent. That line must make no claim about what you can or cannot do: it is spoken into the channel *before* the other version has done the thing, so "no puedo poner música" becomes a lie the moment it does. Never say what you are about to do, never mention the other version of yourself, and never say the word escalate out loud.`;
 
-const ESCALATE_TOOL = {
+export const ESCALATE_TOOL = {
   name: 'escalate',
   description:
     'Hand this question to the version of you that has tools and memory. Use it whenever the answer needs a tool, current information, or anything said earlier in the session.',
@@ -116,7 +120,7 @@ const ESCALATE_TOOL = {
  * `input_schema`. Built from `ESCALATE_TOOL` rather than typed out again, so
  * the two can never say something different about what escalating means.
  */
-const ESCALATE_TOOL_OPENAI = {
+export const ESCALATE_TOOL_OPENAI = {
   type: 'function',
   name: ESCALATE_TOOL.name,
   description: ESCALATE_TOOL.description,
