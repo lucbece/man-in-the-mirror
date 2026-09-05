@@ -38,6 +38,7 @@ ssh tunnel (see [running.md](running.md)), never a public port.
 | `webSearch` | — | `true` | Give the agent web search |
 | `mcpServers` | — | *(blank)* | MCP servers as JSON. See [MCP servers](#mcp-servers) |
 | `agentDirectories` | — | *(blank)* | Directories root-aware MCP servers may read, one absolute path per line. On a Claude agent they are the session's additional directories; on an OpenAI agent they reach local MCP servers as `MIRROR_AGENT_DIRECTORIES`, colon-separated |
+| `notebook` | — | *(blank)* | What the bot has learned about the group between calls, one note per line, up to 40 of 200 characters; facts, not rules. Edited in the panel under Instructions, and by the bot itself with `remember_fact` |
 | `customInstructions` | — | *(blank)* | Standing instructions, one per line. See [Standing instructions](#standing-instructions) |
 | `ttsProvider` | — | `openai` | `openai` or `local` (Piper) |
 | `ttsVoice` | — | `onyx` | OpenAI voice: `alloy`, `echo`, `fable`, `onyx`, `nova`, `shimmer` |
@@ -123,6 +124,7 @@ bar.
 | `leave_voice` | Leaves after the current reply | — |
 | `play_music`, `play_album`, `skip_song`, `pause_music`, `resume_music`, `stop_music`, `remove_from_queue`, `move_in_queue`, `set_volume`, `now_playing` | Plays music through the bot's own voice connection. Everything but `now_playing` is done without speaking; what happened is written to `musicChannel` | Can post in `musicChannel` |
 | `enter_music_mode`, `leave_music_mode` | Music mode: stop speaking until told otherwise. Nothing is spoken and the track is never paused for a voice; hearing, tools and answers keep working, and what would have been said is written to `musicChannel`. Leaving is confirmed out loud. Not persisted: it ends when the bot leaves the channel | — |
+| `remember_fact`, `list_facts`, `forget_fact` | The notebook: facts about the group kept between calls |
 | `remember_instruction`, `list_instructions`, `forget_instruction` | Standing instructions, effective immediately | — |
 | `set_names` | The names the bot answers to | — |
 | `describe_settings`, `change_setting` | Read or change one of the settings reachable by voice, below | Manage Server for `folders` |

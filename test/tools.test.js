@@ -4,6 +4,7 @@ import { PermissionFlagsBits } from 'discord.js';
 
 import { callTools, takePendingLeave } from '../src/agent/tools/call.js';
 import { configTools } from '../src/agent/tools/config.js';
+import { notebookTools } from '../src/agent/tools/notebook.js';
 import { reminderTools } from '../src/agent/tools/reminders.js';
 import { botToolsServer } from '../src/agent/tools/index.js';
 import { reminders } from '../src/agent/reminders.js';
@@ -65,13 +66,14 @@ describe('the catalogue the prompt refers to', () => {
     // produces an agent that says it cannot do something it can.
     const server = botToolsServer('g', fakeTurn());
     const names = new Set(
-      [...callTools(fakeTurn()), ...configTools(fakeTurn()), ...reminderTools('g')].map((t) => t.name),
+      [...callTools(fakeTurn()), ...configTools(fakeTurn()), ...notebookTools(fakeTurn()), ...reminderTools('g')].map((t) => t.name),
     );
 
     for (const name of [
       'who_is_in_voice', 'move_member', 'disconnect_member', 'set_member_mute', 'leave_voice',
       'describe_settings', 'change_setting', 'configure_mcp_server', 'list_mcp_servers',
       'set_names', 'remember_instruction', 'list_instructions', 'forget_instruction',
+      'remember_fact', 'list_facts', 'forget_fact',
       'set_reminder', 'list_reminders', 'cancel_reminder',
     ]) {
       assert.ok(names.has(name), `${name} is missing`);

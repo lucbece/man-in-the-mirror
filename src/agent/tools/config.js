@@ -46,7 +46,7 @@ import { discordTool, speakableTool } from './wrappers.js';
  * and they are also the only people an instruction said out loud is plausibly
  * about.
  */
-function peopleToLink(guild, explicit) {
+export function peopleToLink(guild, explicit) {
   const members = guild ? voiceMembers(guild) : [];
   const byId = new Map(members.map((m) => [m.id, m]));
   const list = [];
