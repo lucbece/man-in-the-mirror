@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { AGENT_FIRST_BLOCK_MS } from '../src/agent/deadline.js';
 import test, { describe } from 'node:test';
 
 import { AgentSession, TURN_TIMEOUT_MS } from '../src/agent/agent-brain.js';
@@ -212,17 +213,40 @@ describe('when the run does not finish cleanly', () => {
 
   test('a wedged run is killed rather than left wedged for the next question', async (t) => {
     // A hung MCP server or a runaway loop. Ending the session is the point:
-    // the wedge must not outlive the question that hit it.
+    // the wedge must not outlive the question that hit it. The run has begun
+    // answering, so the shorter first-block deadline does not apply.
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const sdk = fakeSdk();
     const s = session(sdk);
 
     const failed = s.ask('q').then(() => null, (err) => err);
+    await sdk.emit({ type: 'stream_event', event: { type: 'content_block_start', content_block: { type: 'text' } } });
     t.mock.timers.tick(TURN_TIMEOUT_MS);
 
     assert.match((await failed).message, /over two minutes/);
     assert.equal(s.closed, true);
     assert.equal(sdk.interrupted, 1, 'and the run in flight is interrupted');
+  });
+
+  test('no content block in fifteen seconds ends the turn, and the session lives on', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const sdk = fakeSdk();
+    const s = session(sdk);
+    t.after(() => s.end());
+
+    const failed = s.ask('q').then(() => null, (err) => err);
+    t.mock.timers.tick(AGENT_FIRST_BLOCK_MS);
+
+    assert.match((await failed).message, /no answer in 15s/);
+    assert.equal(s.closed, false, 'the conversation is kept');
+    assert.equal(sdk.interrupted, 1, 'the run in flight is interrupted');
+
+    // The interrupted run's own result arrives late and belongs to nobody;
+    // the next question gets its own answer, not that one.
+    const next = s.ask('q2');
+    await sdk.emit(result({ result: 'stale' }));
+    await sdk.emit(result({ result: 'fresh' }));
+    assert.equal(await next, 'fresh');
   });
 });
 

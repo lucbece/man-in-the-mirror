@@ -8,6 +8,7 @@
  * which is a collision waiting to happen.
  */
 import { Readable } from 'node:stream';
+import { withDeadline, TTS_FIRST_BYTE_MS } from './deadline.js';
 import { StreamType, createAudioResource } from '@discordjs/voice';
 import ffmpegPath from 'ffmpeg-static';
 
@@ -37,7 +38,9 @@ class OpenAiTts {
   }
 
   async request(text) {
-    const res = await fetch('https://api.openai.com/v1/audio/speech', {
+    // First byte within the deadline; the rest of the stream may take its time.
+    const res = await withDeadline('tts', TTS_FIRST_BYTE_MS, (signal, arrived) =>
+      fetch('https://api.openai.com/v1/audio/speech', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
@@ -50,7 +53,12 @@ class OpenAiTts {
         response_format: 'opus',
         stream_format: 'audio',
       }),
-    });
+      signal,
+    }).then((r) => {
+      arrived();
+      return r;
+    }),
+    );
 
     if (!res.ok) {
       const detail = await res.text().catch(() => '');

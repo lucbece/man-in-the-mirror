@@ -25,6 +25,7 @@
  * tokens. Sessions die with the voice session and after IDLE_MS of disuse.
  */
 import { query } from '@anthropic-ai/claude-agent-sdk';
+import { noteTimeout, AGENT_FIRST_BLOCK_MS } from './deadline.js';
 import { trace, BlockCollector } from './trace.js';
 
 import { bot } from '../bot/index.js';
@@ -178,6 +179,7 @@ export class AgentSession {
           // and in the agent's own words rather than a canned clip.
           const event = message.event;
           this.#traceEvent(event);
+          if (event?.type === 'content_block_start') this.turn?.arrived?.();
           if (
             event?.type === 'content_block_delta' &&
             event.delta?.type === 'text_delta' &&
@@ -225,6 +227,12 @@ export class AgentSession {
               `$${(message.total_cost_usd ?? 0).toFixed(4)} so far this session`,
           );
           this.spentUsd = message.total_cost_usd ?? this.spentUsd;
+          // The tail of a turn that timed out and was interrupted: nobody is
+          // waiting for it, and the next turn must not receive it.
+          if (this.discardResults > 0) {
+            this.discardResults -= 1;
+            continue;
+          }
           const turn = this.turn;
           this.turn = null;
           if (!turn) continue;
@@ -292,21 +300,39 @@ export class AgentSession {
         this.end();
         reject(new AgentError('The agent took over two minutes — gave up on that one.'));
       }, TURN_TIMEOUT_MS);
+      // Fifteen seconds to the first content block, text or tool call. This
+      // one ends the turn, not the session: the run is interrupted, its late
+      // result discarded, and the conversation's memory kept. A retry here
+      // would cost the room another fifteen seconds, so the caller's fallback
+      // line is the retry.
+      const firstBlock = setTimeout(() => {
+        if (this.turn?.reject !== fail) return;
+        noteTimeout('agent');
+        this.turn = null;
+        this.discardResults = (this.discardResults ?? 0) + 1;
+        Promise.resolve(this.stream.interrupt?.()).catch(() => {});
+        fail(new AgentError(`The agent gave no answer in ${AGENT_FIRST_BLOCK_MS / 1000}s — gave up on that one.`));
+      }, AGENT_FIRST_BLOCK_MS);
+      firstBlock.unref?.();
+      const fail = (e) => {
+        clearTimeout(timer);
+        clearTimeout(firstBlock);
+        reject(e);
+      };
 
       this.turn = {
         onToolUse,
         onSentence,
         splitter: new SentenceSplitter(),
         lastText: '',
+        arrived: () => clearTimeout(firstBlock),
         resolve: (v) => {
           clearTimeout(timer);
+          clearTimeout(firstBlock);
           this.lastUsedAt = Date.now();
           resolve(v);
         },
-        reject: (e) => {
-          clearTimeout(timer);
-          reject(e);
-        },
+        reject: fail,
       };
       this.queue.push(text);
       this.wakeInput?.();
