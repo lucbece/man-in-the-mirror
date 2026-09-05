@@ -47,6 +47,8 @@ import { DATA_DIR } from '../paths.js';
  * answer, they're wondering if the bot crashed.
  */
 const TURN_TIMEOUT_MS = 120_000;
+/** How long after an interrupted turn its late result may still show up. */
+const STALE_RESULT_MS = 60_000;
 
 /** An idle session is a gigabyte of RAM holding a conversation nobody is having. */
 const IDLE_MS = 30 * 60_000;
@@ -230,10 +232,17 @@ export class AgentSession {
           );
           this.spentUsd = message.total_cost_usd ?? this.spentUsd;
           // The tail of a turn that timed out and was interrupted: nobody is
-          // waiting for it, and the next turn must not receive it.
-          if (this.discardResults > 0) {
-            this.discardResults -= 1;
-            continue;
+          // waiting for it, and the next turn must not receive it. Told apart
+          // by its own duration: a stale run lasted at least the fifteen
+          // seconds it was given, a fresh one about as long as the current
+          // turn has been running. A counter alone would eat the next real
+          // result if the interrupted run never reported at all.
+          if (this.staleRunUntil) {
+            const running = this.turn ? Date.now() - this.turn.startedAt : 0;
+            const fresh = this.turn && typeof message.duration_ms === 'number' && message.duration_ms <= running + 1000;
+            const withinWindow = Date.now() < this.staleRunUntil;
+            this.staleRunUntil = null;
+            if (withinWindow && !fresh) continue;
           }
           const turn = this.turn;
           this.turn = null;
@@ -311,7 +320,7 @@ export class AgentSession {
         if (this.turn?.reject !== fail) return;
         noteTimeout('agent');
         this.turn = null;
-        this.discardResults = (this.discardResults ?? 0) + 1;
+        this.staleRunUntil = Date.now() + STALE_RESULT_MS;
         Promise.resolve(this.stream.interrupt?.()).catch(() => {});
         fail(new AgentError(`The agent gave no answer in ${AGENT_FIRST_BLOCK_MS / 1000}s — gave up on that one.`));
       }, AGENT_FIRST_BLOCK_MS);
@@ -327,6 +336,7 @@ export class AgentSession {
         onSentence,
         splitter: new SentenceSplitter(),
         lastText: '',
+        startedAt: Date.now(),
         arrived: () => clearTimeout(firstBlock),
         resolve: (v) => {
           clearTimeout(timer);
@@ -593,6 +603,10 @@ export class AgentBrain {
 
     let announced = false;
     let saidSomething = false;
+    // The mark that decides which lines of the room the next turn is shown
+    // moves only once this turn has succeeded: a turn that times out or
+    // crashes must not take with it everything the room said before it.
+    const askedAt = Date.now();
     const text = await this.session.ask(buildTurn(context, this.session, isFirstTurn), {
       onSentence: (chunk) => {
         saidSomething = true;
@@ -610,6 +624,8 @@ export class AgentBrain {
         if (!saidSomething) onSearchStart?.();
       },
     });
+
+    this.session.lastAnsweredAt = askedAt;
 
     if (!text) throw new AgentError('The agent returned nothing to say.');
     return text;
@@ -639,7 +655,6 @@ function buildTurn(context, session, isFirstTurn) {
       parts.push('Said in the channel since your last answer:', '', fresh, '');
     }
   }
-  session.lastAnsweredAt = Date.now();
 
   // Turns another model answered on your behalf. Without these the memory
   // forks the moment anything else answers: the room remembers a conversation

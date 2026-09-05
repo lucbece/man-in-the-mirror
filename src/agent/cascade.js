@@ -285,6 +285,27 @@ export class CascadeBrain {
   async answer(context, { onSearchStart, onSentence, onToolUse } = {}) {
     const memory = stateFor(this.guildId);
 
+    // A command that needs no model at all: skip, stop, pause, resume, the
+    // volume. Carried out here, in no time, with the same note in the music
+    // channel the tool writes; reported as that tool so the turn is silent.
+    // Anything the matcher is unsure of, or that has nothing to act on, goes
+    // on to the agent as before. First of all the routing, before the rule
+    // that sends follow-ups to a tool-using turn to the agent: "poné X" is a
+    // tool turn, and the "saltá" that follows it is the case this exists for.
+    const getSession = this.deps.getSession ?? defaultGetSession;
+    const carriedOut = await handleCommand(context, this.guildId, { getSession }).catch((err) => {
+      console.warn(`[cascade] command failed, asking the agent instead: ${err.message}`);
+      return null;
+    });
+    if (carriedOut) {
+      this.escalated = false;
+      this.reason = 'a music command, carried out without a model';
+      trace('ROUTE', 'carried out without a model', `${carriedOut} for: "${context.question}"`);
+      onToolUse?.(carriedOut);
+      memory.lastUsedTools = true;
+      return '';
+    }
+
     // The one free routing signal worth having. A follow-up to a turn that
     // used a tool almost always refers to what that tool returned, which only
     // the agent has — asking the fast leg to try is a guaranteed round trip
@@ -298,25 +319,6 @@ export class CascadeBrain {
       this.escalated = true;
       this.reason = 'the last answer used a tool, so this may be about what it found';
       return this.#runAgent(context, memory, { onSearchStart, onSentence, onToolUse });
-    }
-
-    // A command that needs no model at all: skip, stop, pause, resume, the
-    // volume. Carried out here, in no time, with the same note in the music
-    // channel the tool writes; reported as that tool so the turn is silent.
-    // Anything the matcher is unsure of, or that has nothing to act on, goes
-    // on to the agent as before.
-    const getSession = this.deps.getSession ?? defaultGetSession;
-    const carriedOut = await handleCommand(context, this.guildId, { getSession }).catch((err) => {
-      console.warn(`[cascade] command failed, asking the agent instead: ${err.message}`);
-      return null;
-    });
-    if (carriedOut) {
-      this.escalated = false;
-      this.reason = 'a music command, carried out without a model';
-      trace('ROUTE', 'carried out without a model', `${carriedOut} for: "${context.question}"`);
-      onToolUse?.(carriedOut);
-      memory.lastUsedTools = true;
-      return '';
     }
 
     // A command, not a question. The fast leg cannot carry it out and cannot
@@ -374,9 +376,9 @@ export class CascadeBrain {
   async #runAgent(context, memory, handlers) {
     // Handed over once and then forgotten: the session keeps its own memory of
     // everything it is told, so repeating these next turn would be the same
-    // conversation twice.
+    // conversation twice. Forgotten after the hand-over succeeds, not before:
+    // a turn that fails would otherwise take them with it.
     const asides = memory.owed.slice();
-    memory.owed.length = 0;
 
     let usedTools = false;
     const text = await this.agent.answer(
@@ -395,6 +397,7 @@ export class CascadeBrain {
         },
       },
     );
+    memory.owed.splice(0, asides.length);
     memory.lastUsedTools = usedTools;
     remember(memory, context.question, text, { byAgent: true });
     return text;
