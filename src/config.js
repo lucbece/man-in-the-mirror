@@ -84,6 +84,9 @@ const DEFAULTS = {
   // customInstructionBlock in agent/instructions.js for what that means and
   // why the split exists.
   customInstructions: '',
+  // What it has learned about the group between calls, one note per line.
+  // Facts, not rules; see notebookBlock in agent/notebook.js.
+  notebook: '',
 
   // Let it look things up. Costs a second or two per answer. Both providers
   // support it: OpenAI through its search-capable models, Anthropic through a
@@ -220,6 +223,7 @@ function clampConfig(cfg) {
   // on length and count are enforced where there is somewhere to report them:
   // the panel's save handler and the voice tool.
   out.customInstructions = serialiseInstructions(parseInstructions(out.customInstructions));
+  out.notebook = serialiseInstructions(parseInstructions(String(out.notebook ?? '')));
   out.agentMaxTurns = Math.min(25, Math.max(1, Math.round(out.agentMaxTurns)));
   if (!VOICES.includes(out.ttsVoice)) out.ttsVoice = 'onyx';
   if (!TTS_MODELS.includes(out.ttsModel)) out.ttsModel = DEFAULTS.ttsModel;

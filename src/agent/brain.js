@@ -13,6 +13,7 @@ import { CascadeBrain } from './cascade.js';
 import { SentenceSplitter } from './sentences.js';
 import { readSse } from './sse.js';
 import { customInstructionBlock } from './instructions.js';
+import { notebookBlock } from './notebook.js';
 
 /**
  * Hard ceiling on what gets spoken, in characters.
@@ -74,7 +75,12 @@ How to answer:
  * `resolve` is injectable so this can be exercised without a Discord client.
  */
 export function promptWithInstructions(guildId, extra = '', resolve = guildNameResolver(guildId)) {
-  return SYSTEM_PROMPT + extra + customInstructionBlock(config.get('customInstructions'), resolve);
+  return (
+    SYSTEM_PROMPT +
+    extra +
+    customInstructionBlock(config.get('customInstructions'), resolve) +
+    notebookBlock(config.get('notebook'), resolve)
+  );
 }
 
 class BrainError extends Error {}

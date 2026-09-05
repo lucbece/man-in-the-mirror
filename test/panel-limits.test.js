@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { MAX_INSTRUCTIONS, MAX_INSTRUCTION_CHARS } from '../src/agent/instructions.js';
+import { MAX_NOTES, MAX_NOTE_CHARS } from '../src/agent/notebook.js';
 
 const SECTION = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -29,6 +30,11 @@ describe('the panel Instructions section limits', () => {
     const match = text.match(/const MAX_INSTRUCTIONS\s*=\s*(\d+)/);
     assert.ok(match, 'MAX_INSTRUCTIONS not found in the section');
     assert.equal(Number(match[1]), MAX_INSTRUCTIONS);
+  });
+
+  test('MAX_NOTES and MAX_NOTE_CHARS match src/agent/notebook.js', () => {
+    assert.equal(Number(text.match(/const MAX_NOTES\s*=\s*(\d+)/)[1]), MAX_NOTES);
+    assert.equal(Number(text.match(/const MAX_NOTE_CHARS\s*=\s*(\d+)/)[1]), MAX_NOTE_CHARS);
   });
 
   test('MAX_INSTRUCTION_CHARS matches src/agent/instructions.js', () => {
