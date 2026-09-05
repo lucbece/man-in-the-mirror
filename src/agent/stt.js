@@ -9,7 +9,8 @@
 import { config } from '../config.js';
 import { decodeToMono16k, pcmToWav } from './audio.js';
 import { withDeadline, sttDeadlineMs } from './deadline.js';
-import { describeEnergy, measureEnergy, tooQuiet } from './energy.js';
+import { measureEnergy, tooQuiet } from './energy.js';
+import { ClipLog } from './clip-log.js';
 import { MODELS, ensureModel, ensureWhisper, transcribeWav } from './whisper.js';
 
 /** Below this an "utterance" is a cough or a mic bump. Not worth a request. */
@@ -428,6 +429,9 @@ export function transcribeUtterance(utterance, stt) {
   return run;
 }
 
+/** One tally for the process: clips from every channel land in one log. */
+const clipLog = new ClipLog();
+
 async function runTranscription(utterance, stt) {
   const prompt = namePrompt();
   if (utterance.durationMs < MIN_UTTERANCE_MS) {
@@ -441,7 +445,7 @@ async function runTranscription(utterance, stt) {
   const pcm = decodeToMono16k(utterance.packets);
   const energy = measureEnergy(pcm);
   if (tooQuiet(energy)) {
-    console.log(`[stt] clip ${describeEnergy(energy)} → too quiet, not sent`);
+    clipLog.quiet(energy);
     utterance.text = '';
     utterance.energy = energy;
     return { spoken: false, failed: false, skipped: true };
@@ -457,13 +461,8 @@ async function runTranscription(utterance, stt) {
       echoesPrompt(text, prompt) ||
       namedByNoise(text, prompt, energy) ||
       looksHallucinated(text, utterance.durationMs);
-    if (junk && text.trim()) {
-      console.log(
-        `[stt] clip ${describeEnergy(energy)} → discarded, nobody said this: "${text.trim().slice(0, 80)}"`,
-      );
-    } else if (text.trim()) {
-      console.log(`[stt] clip ${describeEnergy(energy)} → kept`);
-    }
+    if (junk && text.trim()) clipLog.discarded(energy, text);
+    else if (text.trim()) clipLog.kept(energy);
     utterance.text = junk ? '' : text;
     return { spoken: Boolean(utterance.text), failed: false };
   } catch (err) {

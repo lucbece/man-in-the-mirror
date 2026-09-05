@@ -43,6 +43,22 @@ docker compose logs | grep -A 12 THINKING   # only what the model reasoned
 docker compose logs | grep '\[trace\]'      # only the trace
 ```
 
+The stream has two layers. The operational log says what the bot did:
+`[wake]` who called it and with what, `[stt]` what was heard and what was
+dropped, `[voice]` and `[music]` the connection, `[agent] answered in …` how
+long the turn took and through which model, `[config]` and `[deploy]` what
+changed. The trace, prefixed `[trace]`, is the conversation with the model:
+`INPUT` what it was given and by which model (`agent turn (claude-sonnet-5)`,
+`fast leg (claude-haiku-4-5)`), `THINKING` its reasoning blocks when the
+model produces any, `TOOL` and `TOOL ←` each call and what came back, `OUTPUT`
+what it said, `TURN` rounds, time and cost, `ROUTE` the cascade's decision.
+
+For a live view of a conversation alone, `deploy/logs.sh trace` follows the
+stream keeping only those two kinds of lines and dropping the clip and
+connection chatter; `mirror logs trace` opens it in a window. Dozzle's
+search box takes a regular expression and does the same filtering in the
+browser.
+
 ### The UDP smoke test
 
 Discord voice is UDP, and it is the one thing a hosting provider can silently

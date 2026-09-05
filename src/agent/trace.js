@@ -16,7 +16,8 @@
  * Every entry is classified by a fixed vocabulary so the file can be grepped
  * by kind:
  *
- *   INPUT     what a model was given (the agent's turn, the fast leg's message)
+ *   INPUT     what a model was given; the label names the model ("agent turn
+ *             (claude-sonnet-5)", "fast leg (claude-haiku-4-5)")
  *   THINKING  the agent's extended-thinking blocks, as they stream
  *   OUTPUT    text a model produced to be spoken
  *   TOOL      a call the agent made, with its full input
