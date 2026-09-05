@@ -377,8 +377,23 @@ export class VoiceSession extends EventEmitter {
    */
   extendWake(utterance) {
     const pending = this.pendingWake;
-    if (utterance.userId !== pending.userId) return; // someone else talking over
+    if (utterance.userId !== pending.userId) {
+      // Someone else talking over the question: not part of it. If they were
+      // calling the bot too, that call is lost, and the log should say so.
+      if (detectAddress(utterance.text, config.get('agentNames')).matched) {
+        console.log(`[wake] ${utterance.displayName} also called it while ${pending.askedBy}'s question was pending — dropped: "${utterance.text}"`);
+      }
+      return;
+    }
     if (!utterance.text.trim()) return;
+    // "Mirror" … "basta", in two breaths, while it talks: the second one is
+    // the hush, not more of a question.
+    if (this.speech && matchHush(utterance.text)) {
+      console.log(`[wake] hushed by ${utterance.displayName}: "${utterance.text}"`);
+      this.cancelWake();
+      this.shush();
+      return;
+    }
 
     pending.parts.push(utterance.text.trim());
     pending.heard += ` ${utterance.text.trim()}`;
@@ -612,6 +627,13 @@ export class VoiceSession extends EventEmitter {
 
   startSpeech() {
     this.speech?.cancel();
+    // Torn down while an answer was still being thought up: the sentences
+    // have nowhere to go, and a queue born cancelled drops them quietly.
+    if (this.destroyed) {
+      const gone = new SpeechQueue(this.player, () => true);
+      gone.cancel();
+      return gone;
+    }
     this.player.stop(true);
 
     // Answering a question should not cost you the song. The track pauses

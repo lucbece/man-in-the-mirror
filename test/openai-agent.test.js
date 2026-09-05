@@ -328,3 +328,34 @@ describe('the key', () => {
     );
   });
 });
+
+describe('the first-output deadline', () => {
+  test('a stream that opens but never produces output is given up on, and the session lives', async () => {
+    // response.created arrives the moment the connection is up, long before
+    // the model has said anything; it must not count as arrival.
+    // A body that, like a real one, errors when the request is aborted.
+    const fetchStalled = async (_url, init) => {
+      const body = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('data: {"type":"response.created"}\n\n'));
+          // and then nothing, for ever, unless the caller gives up
+          init?.signal?.addEventListener('abort', () => controller.error(init.signal.reason), { once: true });
+        },
+      });
+      return new Response(body, { status: 200 });
+    };
+    const s = new OpenAiAgentSession({
+      guildId: 'g1',
+      model: 'gpt-4.1',
+      apiKey: 'sk-test',
+      instructions: 'You are Mirror.',
+      mcp: fakeMcp(),
+      fetch: fetchStalled,
+      firstBlockMs: 40,
+    });
+    const started = Date.now();
+    await assert.rejects(s.ask('q'), /no answer in 0\.0s/);
+    assert.ok(Date.now() - started < 2000, 'gave up on the deadline, not on the two-minute wall');
+    assert.equal(s.closed, false, 'the turn failed, the session stayed');
+  });
+});

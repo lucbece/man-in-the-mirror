@@ -46,6 +46,15 @@ export const DIRECTORIES_ENV = 'MIRROR_AGENT_DIRECTORIES';
  * cut from the middle of the *tool* half — the server half is short and is
  * what makes the name unambiguous.
  */
+/** Longest tool result handed to the model. About two thousand words. */
+export const MAX_TOOL_OUTPUT_CHARS = 8000;
+
+export function clampToolOutput(text) {
+  const s = String(text ?? '');
+  if (s.length <= MAX_TOOL_OUTPUT_CHARS) return s;
+  return `${s.slice(0, MAX_TOOL_OUTPUT_CHARS)}\n[…${s.length - MAX_TOOL_OUTPUT_CHARS} more characters cut; ask for a narrower result]`;
+}
+
 export function exposedName(server, name) {
   const raw = `${server}__${name}`;
   if (NAME_OK.test(raw)) return raw;
@@ -183,7 +192,11 @@ export async function connectMcpServers({ servers, allow = {}, directories = [],
       const parts = (result?.content ?? []).map((part) =>
         part?.type === 'text' ? part.text : JSON.stringify(part),
       );
-      const text = parts.join('\n').trim();
+      // Capped: the OpenAI agent keeps every tool result in the conversation
+      // through previous_response_id, so a file read in full is paid for on
+      // every later turn of the session, and a big one ends the session at
+      // the context limit.
+      const text = clampToolOutput(parts.join('\n').trim());
       if (result?.isError) return text || 'The tool reported an error.';
       return text;
     },
