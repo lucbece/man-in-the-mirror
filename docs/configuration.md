@@ -38,7 +38,7 @@ ssh tunnel (see [running.md](running.md)), never a public port.
 | `webSearch` | — | `true` | Give the agent web search |
 | `mcpServers` | — | *(blank)* | MCP servers as JSON. See [MCP servers](#mcp-servers) |
 | `agentDirectories` | — | *(blank)* | Directories root-aware MCP servers may read, one absolute path per line. On a Claude agent they are the session's additional directories; on an OpenAI agent they reach local MCP servers as `MIRROR_AGENT_DIRECTORIES`, colon-separated |
-| `notebook` | — | *(blank)* | What the bot has learned about the group between calls, one note per line, up to 40 of 200 characters; facts, not rules. Edited in the panel under Instructions, and by the bot itself with `remember_fact` |
+| `notebook` | — | *(blank)* | What the bot has learned about the group between calls, one note per line, up to 40 of 200 characters; facts, not rules. Edited in the panel under Instructions, by the bot itself with `remember_fact`, and at the end of every call with at least two exchanges a small model (`gpt-4.1-mini`, or Haiku without an OpenAI key) adds up to three notes from what was asked |
 | `customInstructions` | — | *(blank)* | Standing instructions, one per line. See [Standing instructions](#standing-instructions) |
 | `ttsProvider` | — | `openai` | `openai` or `local` (Piper) |
 | `ttsVoice` | — | `onyx` | OpenAI voice: `alloy`, `echo`, `fable`, `onyx`, `nova`, `shimmer` |
