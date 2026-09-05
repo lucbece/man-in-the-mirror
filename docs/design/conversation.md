@@ -28,12 +28,12 @@ person says "a Bariloche" and another "saliendo de noche". The question was
 finished by the room rather than by whoever said the bot's name.
 
 Because an utterance only reaches the buffer once its speaker has been quiet
-for 500ms, anyone still mid-sentence when the grace timer fires was not late to
+for 250ms, anyone still mid-sentence when the grace timer fires was not late to
 the answer — they were absent from it, and nothing downstream could tell the
 difference. The transcript the model read was simply missing a line.
 
 So the wake waits for anyone else who is still talking before it reads the
-buffer. The wait is bounded at 1.5 seconds and ends the instant they stop. A
+buffer. The wait is bounded at 800 milliseconds and ends the instant they stop. A
 question asked into a quiet room pays nothing, because the wait only happens
 when somebody else is genuinely speaking at that moment.
 
@@ -52,16 +52,24 @@ to hand one over is a bug in the conversation rather than a policy.
 So for 12 seconds afterwards, the next thing *that person* says counts as
 addressing the bot. No wake word, no model call, no guessing.
 
-The window is deliberately narrow, because the cost of being wrong is the one
-failure that gets a bot removed from a server: speaking when nobody asked. Four
-constraints keep it that way.
+After any other answer there is a second, smaller window: for 7 seconds the
+person who asked can follow up without the name, but only with something
+shaped like a follow-up. "Y en avión cuánto es", "pero cuándo fue eso",
+anything ending in a question mark. "Qué largo che", said to the room, is not
+one, and does not close the window for the follow-up that may still come.
 
-- It opens only when the bot's own reply actually ended in a question mark.
-- It belongs to the person who was asked. Two other people resuming their own
-  conversation is not an answer.
-- It is spent on the first thing that person says, so it cannot catch a
+Both windows are deliberately narrow, because the cost of being wrong is the
+one failure that gets a bot removed from a server: speaking when nobody asked.
+Four constraints keep them that way.
+
+- The wide one opens only when the bot's own reply actually ended in a
+  question mark; the narrow one accepts only a sentence that opens like a
+  continuation or ends like a question.
+- They belong to the person who was asked. Two other people resuming their
+  own conversation is not an answer.
+- They are spent on the first thing that counts, so they cannot catch a
   sentence a minute later.
-- It expires.
+- They expire.
 
 The wake cooldown that suppresses a second trigger within 4 seconds does not
 apply on this path, since a continuation the bot asked for is not somebody
@@ -70,6 +78,14 @@ setting it off twice.
 How often this path fires is recorded per answer as `followUpRate` and shown in
 the panel as "answered without its name", so it is a rate rather than a
 feeling — and a rate is the only way to notice it firing when it should not.
+
+## Cutting it off
+
+"Espejo, basta", "mirror, shh", "callate", "stop talking": while the bot is
+talking, these stop it on the spot, in the wake path, before the grace and
+without a model. The same words when it is silent are ordinary talk and go
+where talk goes. Something longer, "basta de hablar de fútbol", is a request
+about the subject and reaches the model too.
 
 ## The version that was not built
 

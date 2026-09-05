@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test, { before, describe } from 'node:test';
 import { EventEmitter } from 'node:events';
 
-import { VoiceSession, WAKE_TIMING, endsWithQuestion } from '../src/voice/session.js';
+import { VoiceSession, WAKE_TIMING, endsWithQuestion, looksLikeFollowUp } from '../src/voice/session.js';
 import { config } from '../src/config.js';
 
 /**
@@ -14,6 +14,7 @@ const GRACE = 30;
 const OPEN = 90;
 const SETTLE = 120;
 const REPLY = 300;
+const FOLLOW_UP = 150;
 
 before(() => {
   config.values.wakeEnabled = true;
@@ -23,6 +24,7 @@ before(() => {
   WAKE_TIMING.cooldownMs = 200;
   WAKE_TIMING.settleMs = SETTLE;
   WAKE_TIMING.replyMs = REPLY;
+  WAKE_TIMING.followUpMs = FOLLOW_UP;
 });
 
 /** A session with only the wake machinery wired up. */
@@ -40,6 +42,11 @@ function stubSession() {
   // the buffer yet.
   s.receiver = Object.assign(new EventEmitter(), { active: new Map() });
   s.awaitingReply = null;
+  s.speech = null;
+  s.shushed = 0;
+  s.shush = () => {
+    s.shushed += 1;
+  };
   return s;
 }
 
@@ -298,5 +305,83 @@ describe('the grace counts from the end of the audio', () => {
     await wait(GRACE * 3);
     assert.equal(s.fired.length, 1);
     assert.equal(s.fired[0].question, 'mirror what do you think about it');
+  });
+});
+
+describe('following up without the name', () => {
+  test('the person who asked can follow up for a few seconds, with something shaped like one', async () => {
+    const s = stubSession();
+    assert.equal(s.expectReply('u1', 'Son unas dieciocho horas de ruta.'), false, 'not a question, so no log-worthy window');
+
+    s.checkForWake(said('u1', 'Vero', 'y en avión cuánto es'));
+    await wait(GRACE * 3);
+
+    assert.equal(s.fired.length, 1);
+    assert.equal(s.fired[0].question, 'y en avión cuánto es');
+    assert.equal(s.fired[0].viaFollowUp, true);
+  });
+
+  test('a remark to the room in that window is not a follow-up, and does not close it', async () => {
+    const s = stubSession();
+    s.expectReply('u1', 'Son unas dieciocho horas de ruta.');
+
+    s.checkForWake(said('u1', 'Vero', 'qué largo che'));
+    await wait(GRACE * 3);
+    assert.equal(s.fired.length, 0);
+
+    s.checkForWake(said('u1', 'Vero', 'pero en auto, no?'));
+    await wait(GRACE * 3);
+    assert.equal(s.fired.length, 1, 'the window was still there for the real follow-up');
+  });
+
+  test('somebody else cannot use it, and it expires sooner than the reply window', async () => {
+    const s = stubSession();
+    s.expectReply('u1', 'Son unas dieciocho horas de ruta.');
+
+    s.checkForWake(said('u2', 'Marco', 'y por qué tanto?'));
+    await wait(GRACE * 3);
+    assert.equal(s.fired.length, 0);
+
+    await wait(FOLLOW_UP);
+    s.checkForWake(said('u1', 'Vero', 'y por qué tanto?'));
+    await wait(GRACE * 3);
+    assert.equal(s.fired.length, 0, 'expired');
+  });
+
+  test('looksLikeFollowUp: openers and question marks, nothing else', () => {
+    for (const yes of ['y por qué', 'pero cuándo fue', 'entonces conviene el sábado', 'cuánto sale?', 'Why though', 'en serio?']) {
+      assert.equal(looksLikeFollowUp(yes), true, yes);
+    }
+    for (const no of ['qué largo che', 'bueno me voy a comer', 'jaja', 'dale', '']) {
+      assert.equal(looksLikeFollowUp(no), false, no);
+    }
+  });
+});
+
+describe('cutting it off', () => {
+  test('"espejo, basta" while it talks stops it on the spot, with no wake', async () => {
+    const s = stubSession();
+    s.speech = {};
+    s.checkForWake(said('u1', 'Vero', 'mirror, basta'));
+    await wait(GRACE * 3);
+    assert.equal(s.shushed, 1);
+    assert.equal(s.fired.length, 0);
+  });
+
+  test('the same words when it is silent are a question like any other', async () => {
+    const s = stubSession();
+    s.checkForWake(said('u1', 'Vero', 'mirror, basta'));
+    await wait(GRACE * 3);
+    assert.equal(s.shushed, 0);
+    assert.equal(s.fired.length, 1);
+  });
+
+  test('"mirror, basta de hablar de fútbol" is a request, not a hush', async () => {
+    const s = stubSession();
+    s.speech = {};
+    s.checkForWake(said('u1', 'Vero', 'mirror, basta de hablar de fútbol'));
+    await wait(GRACE * 3);
+    assert.equal(s.shushed, 0);
+    assert.equal(s.fired.length, 1);
   });
 });
