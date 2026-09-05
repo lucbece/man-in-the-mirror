@@ -199,25 +199,39 @@ expected saving on the median path, and the risk.
    first token, first sentence, TTS first byte, first audio played, answer
    done. Today only three of these exist. Without this, every change below
    is a guess again.
-2. **Timeouts and one retry on the answer path.** STT 4 s, TTS first byte
-   3 s, the fast leg's first token 5 s, the agent's first token 15 s, each
-   with `AbortController`; on timeout, retry once (the agent: abandon the
-   turn and let the fast leg say it could not), then fail loudly. Removes
-   the 50 s and 43 s tails entirely. Expected: p90 down by seconds, median
-   unchanged.
+2. **Timeouts and one retry on the answer path.** Each request gets an
+   `AbortController`: STT at 3 s plus 1 s per 5 s of clip (the provider's
+   own 8.8 s tail on a 4 s clip was a slow completion, not a hang, and a
+   flat 4 s would drop it twice); TTS first byte 3 s; the fast leg's first
+   content block 5 s; the agent's first content block 15 s, where a block
+   is text or a tool call, since a music command legitimately never emits
+   text. On timeout, retry once. The agent has no per-turn abort today,
+   only `TURN_TIMEOUT_MS` (120 s) that ends the whole session and its
+   memory; the 15 s timer must abort the turn, not the session, or it
+   costs the conversation eight times more often. "Fail loudly" means the
+   room hears it: the filler line for "I could not", not silence, and a
+   count of timeouts per stage on the `[latency]` line so a change that
+   trades speed for failures is visible. Removes the 50 s and 43 s tails.
+   Expected: p90 down by seconds, median unchanged.
 3. **`scripts/latency-bench.mjs`** in the repo: the three benchmark scripts
    used here folded into one, runnable from the container with the real
    keys, so a provider change is measured before it is chosen.
 
 ### Package L1: the slowest option at each step, replaced
 
-4. **STT model: gpt-4o-transcribe** instead of whisper-1, configurable.
-   Saves ≈ 1.0 s on the median path, more on one-word clips. Same API,
-   same prompt bias. Two preconditions: item 2 (its tail latencies of
-   8.8 s and 41 s were seen), and the echo guard rewritten to use the
-   clip's active share, since with the prompt this model answers noise
-   with the bot's name (second pass, measured). Ship the guard first, with
-   the week of kept-clip texts from L0 behind the threshold.
+4. **STT model: gpt-4o-transcribe** instead of whisper-1, behind a new
+   `sttModel` key (the model is hard-coded in `src/agent/stt.js:143` and
+   the provider cache key has to include it). Saves ≈ 1.0 s on the median
+   path, more on one-word clips. Same API, same prompt bias. Three
+   preconditions, in order: item 2 (its 8.8 s and 41 s tails were seen);
+   the echo guard rewritten to use the clip's active share, folded into
+   the junk check at `stt.js:420` where the energy is already on the
+   utterance, since with the prompt this model answers noise with the
+   bot's name (second pass, measured); and the hallucination lists in
+   `stt.js` re-validated for this model's own junk (foreign-language
+   fragments rather than whisper's subtitle boilerplate). The guard ships
+   as a release gate before the model switch, with the week of kept-clip
+   texts from L0 behind its threshold.
 5. **TTS model: gpt-4o-mini-tts** instead of tts-1, configurable. Saves
    ≈ 0.6 s. Risk: voice character differs slightly; the "Hear it" button in
    the panel lets the person choose.
@@ -230,54 +244,84 @@ expected saving on the median path, and the risk.
    0.7 s when others are talking. Risk: a slow speaker gets cut into two
    questions slightly more often; the logs will say how often.
 
-Together: ≈ 2.3 s off the median, 5.6 → 3.3 s.
+Together: ≈ 2.3 s off the median, 6.1 → about 3.8 s from the last word.
+Items 6 and 15 pull against each other: a fast leg on gpt-4.1 forfeits the
+Anthropic cache saving on the highest-volume path. Measure both defaults
+with the bench before choosing; the cached Sonnet first sentence and the
+gpt-4.1 one may land within a few hundred ms of each other.
 
 ### Package L2: run stages in parallel instead of in sequence
 
-8a. **End the utterance sooner.** `SILENCE_MS` from 500 to 200 ms (the
-   Discord library's own speaking-end fires at 100). Saves 300 ms on every
-   answer. Measured risk: the number of fragments per question in the
-   `[latency]` line; the grace logic already merges a speaker who
-   continues, and a fragment that is not a question costs one small STT
-   call. Try 250 first.
-8. **Start the grace timer at end of utterance, not at end of
+8a. **End the utterance sooner.** `SILENCE_MS` from 500 to 250 ms (the
+   Discord library's own speaking-end fires at 100). Saves 250 ms on every
+   answer. The risk is not only more fragments: the grace merge only runs
+   once a wake has been recognised, so a micro-pause inside the name
+   itself splits it into two fragments neither of which wakes the bot. L0
+   therefore measures the wake-detection rate per candidate utterance at
+   each value, not fragments alone, and the value stays at 250 unless the
+   rate holds.
+8. **Count the grace from the end of the audio, not the end of the
    transcription.** Today: silence → transcribe (1.7 s) → detect the name →
    wait 900 ms → ask. The 900 ms wait only exists to see whether the speaker
-   continues, which is known from audio, not from text. Arm the timer when
-   the audio ends; when the transcript lands and the timer has already
-   elapsed, fire at once. Saves min(STT, grace) ≈ 0.6 to 0.9 s.
-9. **Priority in the eager queue.** Sort by the energy gate's active share
-   and length, so a clip that sounds like a sentence is transcribed before
-   twenty half-second noises; raise concurrency from 3 to 6 while music
-   plays. Removes the case where the clip with the name waits behind noise.
+   continues, which is known from audio, not from text. The deadline
+   becomes `stoppedAt + (onlyTheName ? openMs : graceMs)`, computed where
+   it is today, after transcription, because the bare-name case (6 s open
+   window) is only known from the text; if the deadline has already passed
+   when the transcript lands, fire at once. `stoppedAt` already exists on
+   the pending wake (`session.js:303`). Saves min(STT, grace) ≈ 0.6 to
+   0.9 s.
+9. **Priority in the eager queue.** Measure the energy once at push time,
+   keep it on the utterance for the gate to reuse, and sort the queue by
+   active share and length, so a clip that sounds like a sentence is
+   transcribed before twenty half-second noises; make the concurrency an
+   instance setting raised from 3 to 6 while music plays. No extra STT
+   calls: the gate still drops the quiet ones before any request. Removes
+   the case where the clip with the name waits behind noise.
 10. **Speak the first clause, not the first sentence.** The splitter waits
     for a full sentence (minimum 24 characters; first sentences run 47
     characters at the median, 73 at p75). Let the first chunk cut at the
-    first comma or 40 characters, later chunks as today. Saves ≈ 0.3 to
-    0.4 s, nearly all of it in TTS: tts-1 answers a short input 300 ms
-    sooner (measured), and the model reaches the cut a tenth or two
-    earlier.
+    first comma or 40 characters, later chunks as today, with the same
+    digit guard the period already has ("2,5 kilómetros" is one number in
+    Spanish). Saves ≈ 0.3 to 0.4 s, nearly all of it in TTS: tts-1 answers
+    a short input 300 ms sooner (measured). The splitter's own rule is that
+    a wrong split is worse than a late one, so this is judged by listening
+    to real answers as well as by the timing.
 11. **Speculative model start during the grace window.** When the name is
-    detected, ask the model immediately; if the speaker continues (the
-    grace timer restarts), abort the request and ask again with the full
-    question. Costs a wasted request in the "pause mid-question" case,
-    saves the whole grace wait otherwise. Only after item 8 has shown how
-    often the grace actually restarts.
-12. **An early acknowledgement sound.** A 300 ms "mm" or a breath, from the
-    filler cache, at 1.2 s of silence after the wake fires, once per turn.
-    Perceived latency, not measured latency; the wait that remains reads as
-    thinking rather than absence. Off by default in music mode, and worth a
-    switch in the panel, because some rooms will hate it.
+    detected, ask the fast leg immediately and buffer its text; the mouth
+    is not taken and no audio is queued until the grace timer resolves
+    with no continuation. If the speaker continues, the buffered text is
+    dropped and the full question asked. The tokens of a dropped request
+    are still paid (about 2 k input tokens each), and the code has no
+    cancel hook for a stream in flight, so this is text buffering, not
+    cancellation. Only after item 8 has shown how often the grace actually
+    restarts.
+12. **An early acknowledgement sound.** A 300 ms "mm" from the filler
+    cache, once per turn, when a tool that will speak has started
+    (`onToolUse` for anything not in `SILENT_TOOLS`) or the fast leg has
+    handed over: the moments the room is about to wait seconds. Not on a
+    free-running timer after the wake: a timer cannot know that the turn
+    will end in a silent music command, and `play_music` takes 9 s, so a
+    timer would pause the music to say "mm" for a command whose point is
+    silence, the exact bug the mouth-taking guard in `ask()` exists to
+    prevent. Off in music mode, and a switch in the panel, because some
+    rooms will hate it.
 
-Together with L1: ≈ 2.2 s median.
+Together with L1: about 2.5 s median from the last word.
 
 ### Package L3: the agent's own rounds
 
-13. **Commands without a model.** Play, pause, resume, skip, stop, volume,
-    music mode, leave, when the utterance is unmistakably one of them,
-    handled by a deterministic matcher before any model is asked: zero
-    seconds of thinking, and the escalation path (8.8 s today) never runs
-    for them. The model still handles anything ambiguous.
+13. **Commands without a model.** Pause, resume, skip, stop, volume, music
+    mode and leave, when the utterance is unmistakably one of them, handled
+    by a deterministic matcher: zero seconds of thinking, and the
+    escalation path (8.8 s today) never runs for them. Not "play": its query
+    needs the model's correction of what the transcriber mangled, so it
+    stays on the agent. The matcher plugs in where `looksLikeMusicCommand`
+    already sits, in `CascadeBrain.answer()`, after grace and settle have
+    produced the merged text, so "pausá... no, dale, seguí" is judged whole;
+    it uses a narrower pattern set than the routing one (bare "seguí" or
+    "continuá" is ordinary talk); it posts the same note to the music
+    channel the tools post; and it records the exchange like any answer so
+    the `[latency]` line sees it.
 14. **Parallel fast leg and agent** for the rest of the escalations: ask
     both at once, cancel the agent if the fast leg answers. Halves the
     escalated case; doubles its token cost. Measure how often it happens
@@ -292,17 +336,33 @@ Together with L1: ≈ 2.2 s median.
 
 ### Out of scope, considered
 
-- **Streaming transcription** was measured (second pass): OpenAI's
-  Realtime transcription returned the final transcript 2.05 s after the last
-  frame of speech, against about 1.2 s for the clip path once STT moves to
-  gpt-4o-transcribe. It also holds a WebSocket per speaker. Not worth a
-  spike until a vendor shows a final transcript under a second after the
-  last word; Deepgram and AssemblyAI claim that and were not measured.
-- **Local Piper TTS** was measured at 0.3 s on a laptop, against 1.5 s for
-  tts-1 from the server; on the CX23 without a GPU it would need measuring,
-  and the voice is the trade.
+- **Streaming transcription** through OpenAI was measured (second pass):
+  the final transcript 2.05 s after the last frame of speech, against
+  about 1.2 s for the clip path once STT moves to gpt-4o-transcribe. Two
+  vendors do better on an independent benchmark (third pass: Soniox and
+  Deepgram, about 250 ms); that is a spike after L2, described there.
+- **Local Piper TTS** was measured on the CX23 (second pass): 1 to 7 s to
+  first byte, no streaming. Off the plan for the server.
 - **Replacing the Agent SDK** for single rounds buys a few hundred
   milliseconds at most; not worth its blast radius.
+
+### Adversarial pass: what the review changed
+
+An agent read every L1 and L2 item against the code on 2026-09-04 and
+refuted or corrected six of them; the descriptions above are the corrected
+ones. What it added beyond the items:
+
+- **Three entry points, one mouth.** The normal cascade, the speculative
+  ask of item 11 and the matcher of item 13 can all reach "the bot is about
+  to act"; `ask()` allows one turn per guild and `startSpeech()` replaces
+  whatever is playing. The plan states the rule: the cascade owns the turn;
+  the matcher runs inside it; the speculative ask never touches the mouth.
+- **Every fast path records its answer.** The matcher and the speculative
+  ask go through the same `recordAnswer` and `recordExchange` as a normal
+  turn, or the turns the plan most wants to speed up disappear from the
+  measurement the plan rests on.
+- **Timeouts are counted, not only timed.** The `[latency]` line carries
+  the timeouts and retries per stage.
 
 ## Order of work
 
