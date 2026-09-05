@@ -24,6 +24,11 @@ export function mount(root) {
     label: t('speaking.voice.openai'),
     control: h('div.input-row', openaiVoice, openaiBtn),
   });
+  const model = seg({
+    name: 'ttsModel',
+    options: ['gpt-4o-mini-tts', 'tts-1'].map((value) => ({ value, label: t(`speaking.model.${value}`) })),
+  });
+  const modelField = field({ label: t('speaking.model'), control: model, help: t('speaking.model.help') });
 
   const localVoice = h('select.select', { name: 'ttsLocalVoice' });
   const localBtn = h('button.btn', { type: 'button' }, t('speaking.hearIt'));
@@ -32,7 +37,7 @@ export function mount(root) {
     control: h('div.input-row', localVoice, localBtn),
   });
 
-  const card = h('div.card', providerField, openaiField, localField, callout(t('speaking.callout')));
+  const card = h('div.card', providerField, openaiField, modelField, localField, callout(t('speaking.callout')));
   root.append(h('header', h('p', t('speaking.intro'))), card);
 
   async function hearIt(providerId, select, btn) {
@@ -40,7 +45,8 @@ export function mount(root) {
     if (!voice) return;
     btn.disabled = true;
     try {
-      const res = await fetch(`/api/tts/preview?provider=${providerId}&voice=${encodeURIComponent(voice)}`);
+      const query = `provider=${providerId}&voice=${encodeURIComponent(voice)}&model=${encodeURIComponent(selected(model))}`;
+      const res = await fetch(`/api/tts/preview?${query}`);
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || `${res.status} ${res.statusText}`);
@@ -65,6 +71,7 @@ export function mount(root) {
     const p = selected(provider);
     providerHelp.textContent = t(`speaking.provider.${p}.help`);
     openaiField.hidden = p !== 'openai';
+    modelField.hidden = p !== 'openai';
     localField.hidden = p !== 'local';
   }
   provider.addEventListener('change', layout);
@@ -78,12 +85,14 @@ export function mount(root) {
     return {
       ttsProvider: selected(provider),
       ttsVoice: openaiVoice.value,
+      ttsModel: selected(model),
       ttsLocalVoice: localVoice.value,
     };
   }
 
   function write(cfg) {
     for (const r of provider.querySelectorAll('input')) r.checked = r.value === cfg.ttsProvider;
+    for (const r of model.querySelectorAll('input')) r.checked = r.value === (cfg.ttsModel || 'gpt-4o-mini-tts');
     fillVoices(cfg);
     layout();
   }

@@ -71,6 +71,7 @@ function fakeConfig(overrides = {}) {
     webSearch: true,
     ttsProvider: 'openai',
     ttsVoice: 'onyx',
+    ttsModel: 'gpt-4o-mini-tts',
     ttsLocalVoice: 'es_ES-davefx-medium',
     musicChannel: 'music',
     webPort: 3000,

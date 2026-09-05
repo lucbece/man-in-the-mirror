@@ -236,9 +236,14 @@ function describeChanges(values, previous) {
       `[config] hearing → ${values.sttProvider === 'local' ? `whisper.cpp ${values.sttLocalModel} (this machine)` : 'OpenAI whisper-1 (API)'}`,
     );
   }
-  if (values.ttsProvider !== previous.ttsProvider || values.ttsVoice !== previous.ttsVoice || values.ttsLocalVoice !== previous.ttsLocalVoice) {
+  if (
+    values.ttsProvider !== previous.ttsProvider ||
+    values.ttsVoice !== previous.ttsVoice ||
+    values.ttsModel !== previous.ttsModel ||
+    values.ttsLocalVoice !== previous.ttsLocalVoice
+  ) {
     console.log(
-      `[config] speaking → ${values.ttsProvider === 'local' ? `Piper ${values.ttsLocalVoice} (this machine)` : `OpenAI tts-1 ${values.ttsVoice} (API)`}`,
+      `[config] speaking → ${values.ttsProvider === 'local' ? `Piper ${values.ttsLocalVoice} (this machine)` : `OpenAI ${values.ttsModel} ${values.ttsVoice} (API)`}`,
     );
   }
   if (
