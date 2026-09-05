@@ -139,6 +139,9 @@ The clip is decoded to 16 kHz mono before it is sent, so its loudness is
 known for free: the peak, the average level, and the share of 20 ms windows
 above a floor that breath does not reach. A clip whose peak never reaches
 -40 dBFS is not sent. The threshold is deliberately loose, well below any
-voice that meant to be heard, and every clip is logged with its numbers, kept
-or not, so it can be tightened from evidence rather than from a guess.
-`MIRROR_STT_GATE_DB` moves it without a release.
+voice that meant to be heard. Every clip that is sent is logged with its
+numbers, and the dropped ones are tallied into one line a minute with the
+loudest peak among them, so the threshold can be tightened from evidence
+rather than from a guess: a dropped peak sitting just under it is the case
+to listen to. `MIRROR_STT_GATE_DB` moves it without a release;
+`MIRROR_STT_CLIP_LOG=all` logs every dropped clip while tuning.
