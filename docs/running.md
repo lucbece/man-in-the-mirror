@@ -77,8 +77,15 @@ ready, outbound UDP is blocked; there is nothing to configure on our side.
 
 ### Measure
 
-The `[agent] answered in …` lines are the metric that matters: how long the
-room waited. `deploy/latency.sh` turns a log into medians and p90:
+Every answer leaves two lines. `[agent] answered in …` counts from the moment
+the pipeline began; `[latency]` counts every stage from the moment the person
+stopped talking, which is what the room actually waits:
+
+```
+[latency] silence 0.5s · transcript +1.7s · grace +2.6s (0.9s) · settle +2.6s (0.0s) · asked +2.6s · first sentence +4.1s · first audio +4.9s · playing +5.0s · done +9.8s · timeouts none
+```
+
+`deploy/latency.sh` turns a log into medians and p90 of both:
 
 ```bash
 deploy/latency.sh data/mirror.log                       # a laptop's log
@@ -87,6 +94,21 @@ docker compose logs --since 7d | deploy/latency.sh      # a week on a server
 
 Run it on the old machine before a move and on the new one after; the two
 tables are the before and after.
+
+To measure a provider or model before choosing it, `scripts/latency-bench.mjs`
+times each stage against the real APIs with the bot's own prompts: STT per
+model on a spoken clip, the fast leg's first sentence per candidate, TTS first
+byte, and what each transcription model makes of clips nobody spoke into. Run
+it from the server, in a throwaway container of the deployed image with the
+data volume read-only, so the keys never leave the machine:
+
+```bash
+docker run --rm -v mirror_data:/data:ro -e CFG=/data/config.json \
+  ghcr.io/lucbece/man-in-the-mirror:mirror node scripts/latency-bench.mjs --runs=3
+```
+
+`--only=stt,fast,tts,noise` picks stages; `--fast=gpt-4.1,claude-haiku-4-5`
+and the like pick models; `--json=out.json` keeps the rows.
 
 ## The server
 
