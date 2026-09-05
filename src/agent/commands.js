@@ -67,6 +67,30 @@ const fold = (s) =>
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '');
 
+/** Ways of telling it to stop talking, mid-sentence. */
+const HUSH = new Set([
+  'basta', 'callate', 'callese', 'shh', 'sh', 'shhh', 'silencio', 'suficiente', 'cortala', 'cortalo', 'corta',
+  'para', 'deja', 'hablar', 'hush', 'enough', 'quiet', 'be', 'shut', 'up', 'stop', 'talking', 'it',
+]);
+/** At least one of these has to be there: "de" and "be" alone are nothing. */
+const HUSH_CORE = new Set(['basta', 'callate', 'callese', 'shh', 'sh', 'shhh', 'silencio', 'suficiente', 'cortala', 'cortalo', 'corta', 'para', 'hablar', 'hush', 'enough', 'quiet', 'shut', 'stop']);
+
+/**
+ * "Espejo, basta": is this someone cutting the bot off?
+ *
+ * Only meaningful while it is talking, which the caller checks; the same
+ * words at any other time are ordinary talk and go to the model. The whole
+ * utterance, minus the names and fillers, has to be the request.
+ */
+export function matchHush(text) {
+  const all = words(text);
+  // "Pará la música" is about the music, not about the voice.
+  if (all.some((w) => MUSIC.has(w))) return false;
+  const rest = all.filter((w) => !FILLER.has(w));
+  if (!rest.length || rest.length > 4) return false;
+  return rest.every((w) => HUSH.has(w)) && rest.some((w) => HUSH_CORE.has(w));
+}
+
 /**
  * The command in an utterance, or null when it is anything else.
  *

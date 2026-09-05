@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { describe, before } from 'node:test';
 
-import { matchCommand, runCommand } from '../src/agent/commands.js';
+import { matchCommand, runCommand, matchHush } from '../src/agent/commands.js';
 import { config } from '../src/config.js';
 
 before(() => {
@@ -111,4 +111,13 @@ describe('runCommand: the same effect and note the tool has', () => {
     assert.equal(await runCommand({ kind: 'skip' }, { session: {}, ...turn }), null);
     assert.equal(await runCommand({ kind: 'skip' }, { session: null, ...turn }), null);
   });
+});
+
+describe('matchHush', () => {
+  for (const said of ['espejo, basta', 'mirror shh', 'espejo callate', 'espejo, pará de hablar', 'sombrero, silencio', 'mirror, stop talking', 'mirror shut up', 'espejo ya basta', 'espejo, cortala']) {
+    test(`hush: "${said}"`, () => assert.equal(matchHush(said), true));
+  }
+  for (const said of ['espejo, basta de hablar de fútbol', 'espejo, qué opinás', 'espejo, pará la música', 'espejo', 'stop the music please', '']) {
+    test(`not a hush: "${said}"`, () => assert.equal(matchHush(said), false));
+  }
 });

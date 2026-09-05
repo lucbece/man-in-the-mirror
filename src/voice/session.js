@@ -13,6 +13,7 @@ import { SpeechQueue } from './speech-queue.js';
 import { MusicPlayer } from './music.js';
 import { VoiceReceiver } from './receiver.js';
 import { EagerTranscriber, CONCURRENCY_WITH_MUSIC } from '../agent/eager.js';
+import { matchHush } from '../agent/commands.js';
 import { detectAddress, normalise, splitNames } from '../agent/wake.js';
 
 const READY_TIMEOUT_MS = 20_000;
@@ -81,6 +82,32 @@ const WAKE_SETTLE_MS = 800;
 const REPLY_WINDOW_MS = 12_000;
 
 /**
+ * How long the person who just asked can follow up without the name.
+ *
+ * Shorter than the reply window and narrower in what it accepts: only
+ * something shaped like a follow-up ("y por qué", "pero cuándo fue",
+ * anything ending in a question mark), from the person who asked, in the
+ * seconds after the answer. "Qué largo che" to the room is not one.
+ */
+const FOLLOW_UP_MS = 7_000;
+
+/** Openers that make the next thing a continuation rather than new talk. */
+const FOLLOW_UP_OPENERS = new Set([
+  'y', 'pero', 'entonces', 'o', 'osea', 'aunque',
+  'and', 'but', 'so', 'then', 'or', 'why', 'how', 'what', 'when', 'where', 'who',
+  'por', 'como', 'cuando', 'donde', 'quien', 'cuanto', 'cuanta', 'cuantos', 'cuantas', 'cual', 'cuales',
+]);
+
+/** Does this read as a follow-up to what was just said, rather than talk to the room? */
+export function looksLikeFollowUp(text) {
+  const raw = String(text ?? '').trim();
+  if (!raw) return false;
+  if (/\?\s*$/.test(raw)) return true;
+  const first = normalise(raw).split(' ').filter(Boolean)[0];
+  return Boolean(first && FOLLOW_UP_OPENERS.has(first));
+}
+
+/**
  * Exported as a mutable object so tests can shrink the waits. Everything below
  * reads through it rather than closing over the constants.
  */
@@ -90,6 +117,7 @@ export const WAKE_TIMING = {
   openMs: WAKE_OPEN_MS,
   settleMs: WAKE_SETTLE_MS,
   replyMs: REPLY_WINDOW_MS,
+  followUpMs: FOLLOW_UP_MS,
 };
 
 /** Did the bot's own reply end by asking something? */
@@ -240,20 +268,33 @@ export class VoiceSession extends EventEmitter {
       return false;
     }
     if (utterance.userId !== expected.userId || !utterance.text?.trim()) return false;
+    // After a plain answer only a follow-up-shaped sentence counts, and a
+    // sentence that is not one leaves the window open for one that is.
+    if (!expected.asked && !looksLikeFollowUp(utterance.text)) return false;
     this.awaitingReply = null;
-    return true;
+    return expected.asked ? 'reply' : 'follow-up';
   }
 
   /**
    * The bot has finished speaking. If it ended by asking something, the person
-   * it asked may answer without saying its name again.
+   * it asked may answer without saying its name again, for a while; after any
+   * other answer they may still follow up without it, for less time and only
+   * with something that reads as a follow-up.
+   *
+   * Returns whether it asked something, which is the case worth a log line.
    */
   expectReply(userId, spoken) {
-    this.awaitingReply =
-      userId && endsWithQuestion(spoken)
-        ? { userId, until: Date.now() + WAKE_TIMING.replyMs }
-        : null;
-    return Boolean(this.awaitingReply);
+    if (!userId || !String(spoken ?? '').trim()) {
+      this.awaitingReply = null;
+      return false;
+    }
+    const asked = endsWithQuestion(spoken);
+    this.awaitingReply = {
+      userId,
+      asked,
+      until: Date.now() + (asked ? WAKE_TIMING.replyMs : WAKE_TIMING.followUpMs),
+    };
+    return asked;
   }
 
   checkForWake(utterance) {
@@ -280,6 +321,15 @@ export class VoiceSession extends EventEmitter {
         }
         return;
       }
+      // Told to stop talking, while talking: done here and now, not after the
+      // grace and a model round. Only while speaking; the same words at any
+      // other time are talk, and go where talk goes.
+      if (this.speech && matchHush(utterance.text)) {
+        console.log(`[wake] hushed by ${utterance.displayName}: "${utterance.text}"`);
+        this.lastWakeAt = Date.now();
+        this.shush();
+        return;
+      }
       console.log(`[wake] addressed as "${name}" in: "${utterance.text}"`);
 
       // Someone saying the phrase twice in quick succession means one answer,
@@ -287,8 +337,11 @@ export class VoiceSession extends EventEmitter {
       const now = Date.now();
       if (now - this.lastWakeAt < WAKE_TIMING.cooldownMs) return;
       this.lastWakeAt = now;
-    } else {
+    } else if (answeringUs === 'reply') {
       console.log(`[wake] ${utterance.displayName} answered the question it asked: "${utterance.text}"`);
+      this.lastWakeAt = Date.now();
+    } else {
+      console.log(`[wake] ${utterance.displayName} followed up without the name: "${utterance.text}"`);
       this.lastWakeAt = Date.now();
     }
 
@@ -311,7 +364,7 @@ export class VoiceSession extends EventEmitter {
       heardAt: Date.now(),
       // Came from the bot's own question rather than from its name, so the
       // panel can show how often that path fires — and whether it fires wrongly.
-      viaFollowUp: answeringUs,
+      viaFollowUp: Boolean(answeringUs),
     };
     // Just its name and nothing else means they're winding up to ask.
     const onlyTheName = normalise(utterance.text).split(' ').length <= 2;
