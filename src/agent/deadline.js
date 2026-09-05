@@ -47,7 +47,6 @@ export async function withDeadline(stage, ms, attempt, { retries = 1 } = {}) {
     const timer = setTimeout(() => {
       if (!met) controller.abort(new DeadlineError(stage, ms));
     }, ms);
-    timer.unref?.();
     const arrived = () => {
       met = true;
       clearTimeout(timer);
