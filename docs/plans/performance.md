@@ -16,9 +16,10 @@ Last seven days, 28 answers with full timings:
 
 | Stage | Median | p90 |
 | --- | --- | --- |
-| Stopped talking → model asked | 2.8 s | 5.1 s |
+| Stopped talking → model asked (after Discord's 500 ms silence) | 2.8 s | 5.1 s |
+| Context transcription inside `ask()` ("heard") | 0.0 s | 1.9 s |
 | Model asked → first word audible | 2.8 s | 4.9 s |
-| **Stopped talking → first word** | **≈ 5.6 s** | **≈ 10 s** |
+| **Last word → first word**, row by row, silence included | **≈ 6.8 s** | **≈ 11.4 s** (16.5 s with the week's one hung request) |
 | Whole answer spoken | 10.5 s | 20.8 s |
 
 Two outliers in the week: one answer waited 50 s for a transcription, one
@@ -35,7 +36,7 @@ system prompt used was the bot's own (5.2 k characters, about 1.3 k tokens).
 | Discord end-of-utterance silence | 500 ms fixed | — |
 | Transcription of the last clip (4 s of Spanish) | whisper-1: **1.7 s** (1.15 to 2.1) | gpt-4o-transcribe: **0.7 s**; gpt-4o-mini-transcribe: 1.0 s |
 | Wake grace (has the speaker finished?) | 900 ms fixed, serial after transcription | — |
-| Settle (others still talking) | 0 to 1.5 s; hit the 1.5 s cap in 9 of 21 waits | — |
+| Settle (others still talking) | 0 to 1.5 s; hit the 1.5 s cap in 10 of 21 waits, and 16 of 37 wakes waited nothing | — |
 | Model, first token | claude-sonnet-5: 1.33 s; claude-haiku-4-5: 0.69 s; gpt-4.1: 1.18 s; gpt-4.1-mini: 2.1 s | — |
 | Model, first full sentence (what TTS waits for) | sonnet 1.9 s; haiku 1.3 s; gpt-4.1 1.4 s | — |
 | Agent SDK turn, single round | 1.6 to 5.1 s (first word lands ≈ 1 s after the SDK's own turn time) | — |
@@ -43,9 +44,12 @@ system prompt used was the bot's own (5.2 k characters, about 1.3 k tokens).
 | Escalation (fast leg → agent, two rounds) | 8.8 s to first word, both cases seen | — |
 
 Adding the serial stages as they run today: 0.5 + 1.7 + 0.9 (+ settle) +
-1.9 + 1.5 ≈ **6.5 s**, which is what the logs show. The pipeline is not
-doing anything wrong; it is doing everything one after the other, with the
-slowest option at each step.
+1.9 + 1.5 ≈ **6.5 s**, against a 6.8 s median measured row by row with the
+context transcription included. The pipeline is not doing anything wrong;
+it is doing everything one after the other, with the slowest option at
+each step. (The first version of this table summed two marginal medians
+and left out the context transcription; the adversarial pass below
+corrected it.)
 
 Findings that are not about speed but shape the plan:
 
@@ -62,6 +66,11 @@ Findings that are not about speed but shape the plan:
 - **The eager transcription queue is FIFO with concurrency 3.** While music
   plays, dozens of short clips a minute join it; the clip that carries the
   bot's name waits behind them.
+- **`ask()` transcribes the context before it asks.** Whatever landed in
+  the buffer and has not been transcribed yet, typically the other
+  speakers' clips that the settle wait let in, is transcribed first
+  (`src/agent/index.js:130`). Median zero, but 1.0 s at p75 and 1.9 s at
+  p90, and no item of the first two passes touched it.
 - **Fillers fire late**: the first "hold on" clip is only played after 7 s of
   silence (`QUIET_MS`), or on a tool call. The room hears nothing for the
   whole median wait.
@@ -77,14 +86,14 @@ noted, to test the assumptions the first plan rested on.
 
 | Question | Measured | Consequence |
 | --- | --- | --- |
-| Is the network from Falkenstein a cost? | TCP connect 8 ms, TLS handshake 15 to 22 ms to both APIs; a request 30 s after the previous one is no slower than one right after it | No. Connection reuse and region are not levers; a US server would not help the API legs |
-| Does Anthropic prompt caching cut time to first token? | claude-sonnet-5 with the 1.8 k-token prefix cached: 1141 and 1170 ms against 1602 and 1581 ms uncached, a 430 ms saving on every turn after the first. claude-haiku-4-5: the prefix (1414 tokens) is under its 2048-token minimum, so nothing was cached and nothing changed | Cache the fast leg's prompt when it runs on Sonnet; for Haiku the prompt would have to grow to qualify, which is not worth it |
+| Is the network from Falkenstein a cost? | TCP connect 8 ms, TLS handshake 15 to 22 ms to both APIs; five requests 0, 0, 5, 12 and 30 s apart ran 806, 685, 820, 690 and 859 ms, no trend with the gap | No. Connection reuse and region are not levers; a US server would not help the API legs |
+| Does Anthropic prompt caching cut time to first token? | claude-sonnet-5 with the 1.8 k-token prefix cached, three hits: 1667, 1141 and 1170 ms against 1602 and 1581 ms uncached; the median hit saves about 420 ms, and one hit was no faster than uncached. claude-haiku-4-5: nothing cached at 1414 tokens nor at 2077 (the real fast-leg prompt, bench5); Haiku 4.5's minimum cacheable prefix is 4096 tokens | Cache the fast leg's prompt when it runs on Sonnet, and expect the saving to vary; Haiku does not qualify at this prompt size |
 | Does the audio format sent to STT matter? | gpt-4o-transcribe on the same 4 s clip: WAV 16 kHz 754 ms, WAV 8 kHz 711 ms, Ogg Opus 16 kbps 724 ms, MP3 796 ms; transcripts identical | No. Keep WAV |
 | Does OpenAI's priority tier help? | gpt-4.1 first token 555, 1182, 525 ms default against 598, 1734, 567 ms priority | No |
 | Is there a faster small OpenAI model? | gpt-4.1-nano first token 1358, 1965, 578 ms | No; gpt-4.1 itself is as fast to first token and better |
 | Does a shorter first chunk reach TTS sooner? | tts-1 first byte for 29 characters: 810 to 1347 ms; for 129 characters: 1097 to 1439 ms. gpt-4o-mini-tts: 488 to 1112 ms and 388 to 1019 ms, high variance either way | About 300 ms on tts-1 from a short first chunk; gpt-4o-mini-tts is a little faster and much less predictable |
 | Is streaming transcription faster than sending the clip? | OpenAI Realtime transcription (GA protocol): session open 1.0 s, ready at 1.17 s; after the last frame of speech the first partial arrived at 1.78 s and the final transcript at 2.05 s, 500 ms of server VAD included | Not on this evidence: the clip path lands the transcript about 1.2 s after the last word (500 ms silence plus 700 ms gpt-4o-transcribe). Streaming keeps a socket per speaker open for a result that arrives later. Parked |
-| What is the floor of a model round trip? | claude-haiku-4-5, five output tokens, no system prompt: 685 to 860 ms | Any answer path pays at least 0.7 s to Anthropic before the first token; the fast leg cannot go under about 1.2 s to a first sentence with any current model |
+| What is the floor of a model round trip? | claude-haiku-4-5, five output tokens, no system prompt (the keep-alive test in `bench3.mjs`): 685 to 860 ms | Any answer path pays at least 0.7 s to Anthropic before the first token; the fast leg cannot go under about 1.2 s to a first sentence with any current model |
 
 Two more measurements the same evening:
 
@@ -104,8 +113,9 @@ and on three sentences that carry the bot's name:
 | gpt-4o-transcribe | **"espejo"** or "mirror, espejo": the prompt itself | Japanese, Arabic, Korean fragments | with the prompt all three right; without it "Mirrur", "Mira", "No seas espejo" |
 | gpt-4o-mini-transcribe | "espejo" | **empty**, all three | with the prompt "Che Mirror" right but "Hey Mira"; without it "Chemirror" and "Mira" |
 
-So gpt-4o-transcribe needs the prompt to hear the name, and with the prompt
-it answers noise with the name. The existing echo guard
+So gpt-4o-transcribe needs the prompt to hear "mirror" in English (the
+fuzzy wake match still takes "Mirrur" and "Chemirror"; "Mira" is the miss),
+and with the prompt it answers noise with the name. The existing echo guard
 (`echoesPrompt`, `src/agent/stt.js:236`) only catches the whole prompt
 coming back; a single name is treated as a call on purpose. The guard has
 to change before the model does: a transcript made only of prompt words is
@@ -172,17 +182,21 @@ server. The utterance boundary joins the plan as a lever of its own.
 
 | | Today | After the quick wins | After the structural work |
 | --- | --- | --- | --- |
-| Last word → first word, median | ≈ 6.1 s | ≈ 3.6 s | ≈ 2.4 s |
-| p90 | ≈ 10.5 s | ≈ 5.5 s | ≈ 3.8 s |
-| Hung request | up to 50 s | 4 s, then retried | same |
+| Last word → first word, median | ≈ 6.8 s | ≈ 4.7 s | ≈ 3.3 s |
+| p90 | ≈ 11.4 s (16.5 s with the hang) | not falsifiable at 28 answers; L0 reports it | same |
+| Hung request | up to 50 s | one timeout plus one retry, about 8 s worst case | same |
 
-Counted from the last word, which the log does not: the logged "before the
-model was asked" starts after Discord's 500 ms silence (second pass). The
-structural floor is set by three things that stay serial: the utterance
-boundary (150 to 250 ms after the last packet), transcription of the last
-clip (0.7 s), and the model's first clause plus the TTS first byte (about
-1.5 s together). Below about 2.2 s needs transcription that starts before
-the person has finished, which no measured vendor delivers yet.
+Counted from the last word, row by row, with the context transcription in
+(the adversarial pass recomputed it; the first two versions summed
+marginal medians from a baseline that excluded two real costs). The
+per-item savings are medians of three synthetic runs, good to ±30 to 50
+percent each, and the production percentiles rest on 28 answers, so these
+are the expected order of the result, not numbers to hold anyone to at one
+decimal. The structural floor is set by what stays serial: the utterance
+boundary (250 ms), transcription of the last clip (0.7 s), and the
+model's first clause plus the TTS first byte (about 1.5 s together), about
+2.5 s. Below that needs transcription that starts before the person has
+finished, which is the Soniox spike.
 
 The quick wins are each a config or a constant; the structural ones change
 the order in which stages run.
@@ -241,7 +255,9 @@ expected saving on the median path, and the risk.
    the fast leg runs on OpenAI. Saves ≈ 0.5 s when the fast leg answers.
 7. **Settle cap 1500 → 800 ms; grace stays at 900 ms until item 8 lands.**
    The settle wait hit its 1.5 s cap in ten of twenty-one waits; 800 ms
-   still lets a sentence finish. Saves 0.7 s when others are talking. The
+   still lets a sentence finish. Saves 0.7 s in the ten that hit the cap,
+   about 0.45 s at the median of the waits that were not zero, nothing at
+   the overall median. The
    grace is not cut here: once item 8 counts it from the end of the audio,
    it runs under the transcription (0.7 s after item 4) and only the
    remainder, 100 to 300 ms, is visible; cutting it to 600 then buys about
@@ -249,7 +265,7 @@ expected saving on the median path, and the risk.
    the exposed grace (`max(0, grace − STT)`) so that decision is made from
    the residual, not the nominal 900.
 
-Together: about 2.0 s off the median, 6.1 → about 4.1 s from the last
+Together: about 2.1 s off the median, 6.8 → about 4.7 s from the last
 word (STT 1.0, TTS 0.6, fast model 0.5 when it answers; the settle cut
 only when others talk).
 Items 6 and 15 pull against each other: a fast leg on gpt-4.1 forfeits the
@@ -291,15 +307,22 @@ gpt-4.1 one may land within a few hundred ms of each other.
    instance setting raised from 3 to 6 while music plays. No extra STT
    calls: the gate still drops the quiet ones before any request. Removes
    the case where the clip with the name waits behind noise.
+9b. **Ask with what is transcribed.** `ask()` waits for every untranscribed
+    clip in the buffer before the model is asked; those clips are context,
+    not the question, which is already text. Bound that wait to 400 ms
+    and hand the model what is ready. Removes the "heard" stage: 0 at the
+    median, 1.0 s at p75, 1.9 s at p90.
 10. **Speak the first clause, not the first sentence.** The splitter waits
     for a full sentence (minimum 24 characters; first sentences run 47
     characters at the median, 73 at p75). Let the first chunk cut at the
     first comma or 40 characters, later chunks as today, with the same
     digit guard the period already has ("2,5 kilómetros" is one number in
-    Spanish). Saves ≈ 0.3 to 0.4 s, nearly all of it in TTS: tts-1 answers
-    a short input 300 ms sooner (measured). The splitter's own rule is that
-    a wrong split is worse than a late one, so this is judged by listening
-    to real answers as well as by the timing.
+    Spanish). Worth ≈ 0.3 s on tts-1, which answers a short input 300 ms
+    sooner (measured); on gpt-4o-mini-tts, the default after item 5, the
+    three runs showed no such advantage, so the item is measured on the
+    engine actually running before it is counted. The splitter's own rule
+    is that a wrong split is worse than a late one, so this is judged by
+    listening to real answers as well as by the timing.
 11. **Speculative model start during the grace window.** When the name is
     detected, ask the fast leg immediately and buffer its text; the mouth
     is not taken and no audio is queued until the grace timer resolves
@@ -328,8 +351,9 @@ gpt-4.1 one may land within a few hundred ms of each other.
     as the fillers that exist. Off in music mode, and a switch in the
     panel, because some rooms will hate it.
 
-Together with L1: about 2.6 s median from the last word (8a 0.25, 8 0.7,
-10 0.3, 11 up to 0.2 of what item 8 leaves).
+Together with L1: about 3.3 s median from the last word (8a 0.25, 8 0.7,
+9b 0.4 on the mean and more in the tail, 10 only if measured, 11 up to
+0.2 of what item 8 leaves).
 
 ### Package L3: the agent's own rounds
 
@@ -348,7 +372,7 @@ Together with L1: about 2.6 s median from the last word (8a 0.25, 8 0.7,
 14. **Parallel fast leg and agent** for the rest of the escalations: ask
     both at once, cancel the agent if the fast leg answers. Halves the
     escalated case; doubles its token cost. Measure how often it happens
-    (3 of 28 answers this week) before paying for it.
+    (3 of 37 answers this week, 8 percent) before paying for it.
 15. **Prompt caching on the Anthropic side.** Measured: 430 ms off the
     time to first token on claude-sonnet-5 with the bot's prompt cached,
     on every turn after the first. `cache_control` on the system prompt in
@@ -398,6 +422,20 @@ ones. What it added beyond the items:
   measurement the plan rests on.
 - **Timeouts are counted, not only timed.** The `[latency]` line carries
   the timeouts and retries per stage.
+
+A second agent checked the arithmetic against the raw benchmarks and the
+week's log. What it changed: the baseline (the headline row summed two
+marginal medians and omitted the context transcription; row by row it is
+6.8 s, not 5.6 or 6.1); the Sonnet caching row (one of three cache hits
+was no faster than uncached, so the saving is a median with a wide
+spread); the Haiku caching claim (nothing cached at 2077 tokens either;
+the minimum is 4096); item 7's settle saving (0.7 s only in the ten waits
+that hit the cap); item 8's saving once items 4 and 7 land first; item
+10's saving, which was measured on the engine item 5 retires; the
+escalation rate's denominator (3 of 37); and the targets, which are now
+recomputed from the corrected baseline with the per-item savings
+sequenced, and stated with their uncertainty. It also found the stage no
+item addressed, the context transcription in `ask()`, which is item 9b.
 
 ## Order of work
 
@@ -473,9 +511,8 @@ from L1 item 4.
 
 ## What a wider second pass would still add
 
-Still open after the third pass: the remaining streaming STT vendors
-(Deepgram, AssemblyAI, Speechmatics, Gladia, Google), the turn-taking
-practice of voice-agent frameworks (semantic endpointing, acknowledgement
-timing, Silero VAD cost on two vCPUs), and an adversarial pass over L1 and
-L2 against the code and the arithmetic. None of it changes the order of L0
-to L2.
+Still open after the third pass: no vendor publishes a Spanish
+end-of-speech-to-final latency for streaming transcription, so the Soniox
+and Deepgram spikes measure it; Google's pricing and Rime's and Cartesia's
+EU regions were not retrievable; and every synthetic figure here is three
+runs. None of it changes the order of L0 to L2.
