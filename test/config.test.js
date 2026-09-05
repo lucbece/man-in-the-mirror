@@ -118,6 +118,12 @@ describe('clamping', () => {
       assert.equal(config.get('ttsModel'), 'tts-1');
       config.update({ ttsModel: 'not-a-model' });
       assert.equal(config.get('ttsModel'), 'gpt-4o-mini-tts');
+      config.update({ ttsSpeed: '1.25' });
+      assert.equal(config.get('ttsSpeed'), 1.25);
+      config.update({ ttsSpeed: 9 });
+      assert.equal(config.get('ttsSpeed'), 1.6);
+      config.update({ ttsSpeed: 'fast' });
+      assert.equal(config.get('ttsSpeed'), 1);
     });
   });
 });

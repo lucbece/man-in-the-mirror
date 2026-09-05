@@ -29,6 +29,11 @@ export function mount(root) {
     options: ['gpt-4o-mini-tts', 'tts-1'].map((value) => ({ value, label: t(`speaking.model.${value}`) })),
   });
   const modelField = field({ label: t('speaking.model'), control: model, help: t('speaking.model.help') });
+  const speed = seg({
+    name: 'ttsSpeed',
+    options: ['1', '1.25', '1.4'].map((value) => ({ value, label: t(`speaking.speed.${value}`) })),
+  });
+  const speedField = field({ label: t('speaking.speed'), control: speed, help: t('speaking.speed.help') });
 
   const localVoice = h('select.select', { name: 'ttsLocalVoice' });
   const localBtn = h('button.btn', { type: 'button' }, t('speaking.hearIt'));
@@ -37,7 +42,7 @@ export function mount(root) {
     control: h('div.input-row', localVoice, localBtn),
   });
 
-  const card = h('div.card', providerField, openaiField, modelField, localField, callout(t('speaking.callout')));
+  const card = h('div.card', providerField, openaiField, modelField, speedField, localField, callout(t('speaking.callout')));
   root.append(h('header', h('p', t('speaking.intro'))), card);
 
   async function hearIt(providerId, select, btn) {
@@ -45,7 +50,9 @@ export function mount(root) {
     if (!voice) return;
     btn.disabled = true;
     try {
-      const query = `provider=${providerId}&voice=${encodeURIComponent(voice)}&model=${encodeURIComponent(selected(model))}`;
+      const query =
+        `provider=${providerId}&voice=${encodeURIComponent(voice)}` +
+        `&model=${encodeURIComponent(selected(model))}&speed=${encodeURIComponent(selected(speed))}`;
       const res = await fetch(`/api/tts/preview?${query}`);
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -72,6 +79,7 @@ export function mount(root) {
     providerHelp.textContent = t(`speaking.provider.${p}.help`);
     openaiField.hidden = p !== 'openai';
     modelField.hidden = p !== 'openai';
+    speedField.hidden = p !== 'openai';
     localField.hidden = p !== 'local';
   }
   provider.addEventListener('change', layout);
@@ -86,6 +94,7 @@ export function mount(root) {
       ttsProvider: selected(provider),
       ttsVoice: openaiVoice.value,
       ttsModel: selected(model),
+      ttsSpeed: Number(selected(speed)),
       ttsLocalVoice: localVoice.value,
     };
   }
@@ -93,6 +102,9 @@ export function mount(root) {
   function write(cfg) {
     for (const r of provider.querySelectorAll('input')) r.checked = r.value === cfg.ttsProvider;
     for (const r of model.querySelectorAll('input')) r.checked = r.value === (cfg.ttsModel || 'gpt-4o-mini-tts');
+    const rate = String(cfg.ttsSpeed ?? 1);
+    const known = [...speed.querySelectorAll('input')].some((r) => r.value === rate);
+    for (const r of speed.querySelectorAll('input')) r.checked = known ? r.value === rate : r.value === '1';
     fillVoices(cfg);
     layout();
   }

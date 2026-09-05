@@ -94,6 +94,7 @@ const DEFAULTS = {
   ttsProvider: 'openai', // 'openai' | 'local' (Piper, runs on this machine)
   ttsVoice: 'onyx', // OpenAI voice
   ttsModel: 'gpt-4o-mini-tts', // OpenAI speech model: 'gpt-4o-mini-tts' | 'tts-1'
+  ttsSpeed: 1, // OpenAI speaking rate, 1 = the model's own pace; 1.25 is about a fifth faster
   ttsLocalVoice: 'es_ES-davefx-medium', // Piper voice
 
   // Where it writes down what it is playing.
@@ -127,6 +128,20 @@ const ENV_KEYS = {
 const VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 /** OpenAI speech models: the faster one first. Measured first byte 0.4 to 1.1 s against tts-1's 0.8 to 1.5 s. */
 export const TTS_MODELS = ['gpt-4o-mini-tts', 'tts-1'];
+/**
+ * Speaking-rate bounds. The API accepts 0.25 to 4; outside this band the
+ * voice is a caricature. Measured on the same sentence, gpt-4o-mini-tts at
+ * 1.0 took 6.6 s where tts-1 took 5.4, and 1.25 brought it to 5.5: the
+ * newer model's own pace is the slow one, and 1.25 is what "the old pace"
+ * means for it.
+ */
+export const TTS_SPEED_MIN = 0.8;
+export const TTS_SPEED_MAX = 1.6;
+export function clampSpeed(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 1;
+  return Math.round(Math.min(TTS_SPEED_MAX, Math.max(TTS_SPEED_MIN, n)) * 100) / 100;
+}
 
 /** whisper.cpp models, described for the panel. */
 /**
@@ -208,6 +223,7 @@ function clampConfig(cfg) {
   out.agentMaxTurns = Math.min(25, Math.max(1, Math.round(out.agentMaxTurns)));
   if (!VOICES.includes(out.ttsVoice)) out.ttsVoice = 'onyx';
   if (!TTS_MODELS.includes(out.ttsModel)) out.ttsModel = DEFAULTS.ttsModel;
+  out.ttsSpeed = clampSpeed(out.ttsSpeed);
   if (!['openai', 'local'].includes(out.ttsProvider)) out.ttsProvider = 'openai';
   out.agentNames = out.agentNames.trim().toLowerCase() || DEFAULTS.agentNames;
   if (!['openai', 'local'].includes(out.sttProvider)) out.sttProvider = 'openai';
