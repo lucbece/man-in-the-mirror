@@ -56,7 +56,9 @@ import Anthropic from '@anthropic-ai/sdk';
 import { config } from '../config.js';
 import { AgentBrain, DEFAULT_AGENT_MODEL } from './agent-brain.js';
 import { promptWithInstructions } from './brain.js';
+import { providerFor } from './models.js';
 import { SentenceSplitter } from './sentences.js';
+import { readSse } from './sse.js';
 import { trace } from './trace.js';
 
 /**
@@ -105,6 +107,19 @@ const ESCALATE_TOOL = {
     },
     required: ['reason'],
   },
+};
+
+/**
+ * The same tool, in the shape the OpenAI Responses API wants: flat rather
+ * than nested under a `function` key, and `parameters` rather than
+ * `input_schema`. Built from `ESCALATE_TOOL` rather than typed out again, so
+ * the two can never say something different about what escalating means.
+ */
+const ESCALATE_TOOL_OPENAI = {
+  type: 'function',
+  name: ESCALATE_TOOL.name,
+  description: ESCALATE_TOOL.description,
+  parameters: ESCALATE_TOOL.input_schema,
 };
 
 /**
@@ -212,7 +227,10 @@ export class CascadeBrain {
   }
 
   get label() {
-    return `${this.fastModel} in front of Claude agent ${this.agentModel}`;
+    // The agent behind the fast leg is whichever provider its model id names,
+    // so the label has to read it rather than assume Claude.
+    const provider = providerFor(this.agentModel) === 'openai' ? 'OpenAI' : 'Claude';
+    return `${this.fastModel} in front of ${provider} agent ${this.agentModel}`;
   }
 
   get agent() {
@@ -306,8 +324,26 @@ export class CascadeBrain {
    * It reports rather than decides, so that everything about routing — what
    * happens on a deferral, what the agent is told, what is remembered — lives
    * in one method above instead of being spread across whoever set a flag.
+   *
+   * Dispatched by `fastModel`'s provider rather than a separate setting: a
+   * room only ever has the one id to type in, and the id already says which
+   * account it needs a key for.
    */
   async #runFast(context, memory, { onSentence }) {
+    const provider = providerFor(this.fastModel);
+    if (provider === 'anthropic') return this.#runFastAnthropic(context, memory, { onSentence });
+    if (provider === 'openai') return this.#runFastOpenAI(context, memory, { onSentence });
+    // Neither a known id nor a recognisable prefix. Escalating rather than
+    // throwing keeps the turn alive — the agent is still Claude and can still
+    // answer it — the same reasoning as every other failure in this method.
+    return {
+      said: '',
+      escalate: true,
+      reason: `don't know how to run "${this.fastModel}" as the fast model`,
+    };
+  }
+
+  async #runFastAnthropic(context, memory, { onSentence }) {
     const apiKey = config.get('anthropicApiKey');
     if (!apiKey) {
       // Not an error: the agent needs the same key, so this fails loudly one
@@ -361,6 +397,100 @@ export class CascadeBrain {
       escalate: Boolean(call),
       reason: call?.input?.reason ?? null,
     };
+  }
+
+  /**
+   * Same job as `#runFastAnthropic`, over the OpenAI Responses API — the same
+   * one `brain.js`'s chat mode uses, streamed the same way. `escalate` is a
+   * function tool there rather than a built-in one: it arrives as a
+   * `function_call` output item, complete by the time `output_item.done`
+   * fires, so there is no need to accumulate its arguments delta by delta the
+   * way the streamed text is.
+   */
+  async #runFastOpenAI(context, memory, { onSentence }) {
+    const apiKey = config.get('openaiApiKey');
+    if (!apiKey) {
+      // Not an error, same as the Anthropic branch: the chat and agent modes
+      // need the same key, so this fails loudly one step later instead.
+      return { said: '', escalate: true, reason: 'no OpenAI key for the fast model' };
+    }
+
+    const fetchImpl = this.deps.fetch ?? fetch;
+    const message = buildFastMessage(context, memory);
+    trace('INPUT', `fast leg (${this.fastModel})`, message);
+
+    const splitter = new SentenceSplitter();
+    let said = '';
+    let escalateArgs = null;
+
+    try {
+      const res = await fetchImpl('https://api.openai.com/v1/responses', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: this.fastModel,
+          instructions: promptWithInstructions(this.guildId, FAST_PROMPT_EXTRA),
+          input: message,
+          tools: [ESCALATE_TOOL_OPENAI],
+          max_output_tokens: MAX_TOKENS,
+          stream: true,
+        }),
+      });
+
+      if (!res.ok) {
+        const detail = await res.text().catch(() => '');
+        throw new Error(`OpenAI returned ${res.status}: ${detail.slice(0, 200)}`);
+      }
+
+      // Sentences go out as they complete, exactly as the Anthropic leg does
+      // it, so an answer this leg keeps starts speaking with no routing cost.
+      for await (const event of readSse(res)) {
+        switch (event.type) {
+          case 'response.output_text.delta':
+            if (onSentence) {
+              for (const chunk of splitter.push(event.delta ?? '')) {
+                const clean = withoutToolName(chunk);
+                if (!clean) continue; // the tool name and nothing else
+                said += (said ? ' ' : '') + clean;
+                onSentence(clean);
+              }
+            }
+            break;
+          case 'response.output_item.done':
+            if (event.item?.type === 'function_call' && event.item?.name === 'escalate') {
+              escalateArgs = event.item.arguments ?? '{}';
+            }
+            break;
+          case 'response.failed':
+          case 'response.error':
+            throw new Error(event.response?.error?.message ?? 'OpenAI stream failed');
+          default:
+            break;
+        }
+      }
+    } catch (err) {
+      // A failure here must not lose the question, same as the Anthropic leg.
+      return { said, escalate: true, reason: `the fast model failed (${err?.message ?? err})` };
+    }
+
+    const rest = withoutToolName(splitter.flush());
+    if (rest) {
+      said += (said ? ' ' : '') + rest;
+      onSentence?.(rest);
+    }
+
+    if (!escalateArgs) return { said: said.trim(), escalate: false, reason: null };
+
+    let reason = null;
+    try {
+      reason = JSON.parse(escalateArgs).reason ?? null;
+    } catch {
+      /* malformed arguments; still hand over, just without a reason */
+    }
+    return { said: said.trim(), escalate: true, reason };
   }
 }
 

@@ -81,6 +81,17 @@ export class MusicPlayer extends EventEmitter {
     return Boolean(this.current);
   }
 
+  /** The compact summary the panel's "Now" card draws the music strip from. */
+  status() {
+    return {
+      playing: this.playing,
+      paused: this.pausedByUser,
+      title: this.current?.title ?? null,
+      queued: this.queue.length,
+      volume: this.volume,
+    };
+  }
+
   /**
    * Set the level, absolutely or by a step, and report where it landed.
    *

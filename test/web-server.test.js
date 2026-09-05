@@ -166,6 +166,12 @@ describe('the state the panel renders itself from', () => {
       assert.ok(field in view, `the panel needs ${field} to render`);
     }
   });
+
+  test('carries the known models, so the selects are not free text', async () => {
+    const { models } = await (await fetch(`${base}/api/state`)).json();
+    assert.ok(Array.isArray(models) && models.length > 0);
+    assert.ok(models.some((m) => m.id === 'claude-sonnet-5'));
+  });
 });
 
 describe('the music mode switch on a session card', () => {
@@ -197,5 +203,176 @@ describe('the music mode switch on a session card', () => {
   test('a guild the bot is not in is a 404, not a silent no-op', async () => {
     const res = await panel('/api/voice/quiet', { guildId: 'nowhere', quiet: true });
     assert.equal(res.status, 404);
+  });
+});
+
+describe('the music strip on a session card', () => {
+  const panel = (path, body) =>
+    post(path, { headers: { 'sec-fetch-site': 'same-origin' }, body });
+
+  /** A session whose player just records what it was asked to do. */
+  function fakeMusicSession(guildId = 'music-guild') {
+    const calls = [];
+    let current = null;
+    return {
+      guildId,
+      calls,
+      music: {
+        add: async (query, requestedBy) => {
+          calls.push(['add', query, requestedBy]);
+          current = { title: query };
+        },
+        skip: () => calls.push(['skip']),
+        pause: () => calls.push(['pause']),
+        resume: () => calls.push(['resume']),
+        stop: () => {
+          calls.push(['stop']);
+          current = null;
+        },
+        status: () => ({
+          playing: Boolean(current),
+          paused: false,
+          title: current?.title ?? null,
+          queued: 0,
+          volume: 100,
+        }),
+      },
+    };
+  }
+
+  test('play reaches the player with the query, and answers with the new status', async (t) => {
+    const { sessionManager } = await import('../src/voice/manager.js');
+    const session = fakeMusicSession();
+    sessionManager.sessions.set(session.guildId, session);
+    t.after(() => sessionManager.sessions.delete(session.guildId));
+
+    const res = await panel('/api/voice/music/play', { guildId: session.guildId, query: 'thriller' });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.music.title, 'thriller');
+    assert.deepEqual(session.calls, [['add', 'thriller', 'the control panel']]);
+  });
+
+  test('play with no query is a 400, not a call to the player', async (t) => {
+    const { sessionManager } = await import('../src/voice/manager.js');
+    const session = fakeMusicSession();
+    sessionManager.sessions.set(session.guildId, session);
+    t.after(() => sessionManager.sessions.delete(session.guildId));
+
+    const res = await panel('/api/voice/music/play', { guildId: session.guildId });
+    assert.equal(res.status, 400);
+    assert.deepEqual(session.calls, []);
+  });
+
+  test('skip, pause, resume and stop reach the player, no query needed', async (t) => {
+    const { sessionManager } = await import('../src/voice/manager.js');
+    const session = fakeMusicSession();
+    sessionManager.sessions.set(session.guildId, session);
+    t.after(() => sessionManager.sessions.delete(session.guildId));
+
+    for (const action of ['skip', 'pause', 'resume', 'stop']) {
+      const res = await panel(`/api/voice/music/${action}`, { guildId: session.guildId });
+      assert.equal(res.status, 200, action);
+    }
+    assert.deepEqual(session.calls.map((c) => c[0]), ['skip', 'pause', 'resume', 'stop']);
+  });
+
+  test('an action that is not one of the five is a 400', async () => {
+    const res = await panel('/api/voice/music/dance', { guildId: 'whatever' });
+    assert.equal(res.status, 400);
+  });
+
+  test('a guild the bot is not in is a 404, not a silent no-op', async () => {
+    const res = await panel('/api/voice/music/skip', { guildId: 'nowhere' });
+    assert.equal(res.status, 404);
+  });
+
+  test('the same-origin guard covers this route like every other mutating one', async () => {
+    const res = await post('/api/voice/music/skip', {
+      raw: '',
+      headers: { origin: 'https://evil.example', 'sec-fetch-site': 'cross-site' },
+    });
+    assert.equal(res.status, 403);
+  });
+});
+
+describe('the voice preview button', () => {
+  /** A second app, with its collaborators replaced, on its own ephemeral port. */
+  async function withServer(t, deps) {
+    const app = createApp(deps);
+    const srv = app.listen(0, '127.0.0.1');
+    await new Promise((resolve) => {
+      srv.once('listening', resolve);
+    });
+    t.after(() => new Promise((resolve) => {
+      srv.close(resolve);
+    }));
+    return `http://127.0.0.1:${srv.address().port}`;
+  }
+
+  test('an unknown provider is a 400', async (t) => {
+    const url = await withServer(t, {});
+    const res = await fetch(`${url}/api/tts/preview?provider=carrier-pigeon&voice=onyx`);
+    assert.equal(res.status, 400);
+  });
+
+  test('an unknown voice is a 400', async (t) => {
+    const url = await withServer(t, {});
+    const res = await fetch(`${url}/api/tts/preview?provider=openai&voice=not-a-real-voice`);
+    assert.equal(res.status, 400);
+  });
+
+  test('Piper missing is a 503, checked before the synthesiser is ever built', async (t) => {
+    let built = false;
+    const url = await withServer(t, {
+      isPiperInstalled: () => false,
+      createTts: () => {
+        built = true;
+        return { synthesize: async () => Buffer.from('x') };
+      },
+    });
+
+    const res = await fetch(`${url}/api/tts/preview?provider=local&voice=es_ES-davefx-medium`);
+    assert.equal(res.status, 503);
+    assert.equal(built, false, 'must never make a network call for it');
+  });
+
+  test('a synthesiser that refuses (no key) is a 503 carrying its message', async (t) => {
+    const url = await withServer(t, {
+      createTts: () => {
+        throw new Error('No OpenAI API key configured.');
+      },
+    });
+
+    const res = await fetch(`${url}/api/tts/preview?provider=openai&voice=onyx`);
+    assert.equal(res.status, 503);
+    assert.match((await res.json()).error, /No OpenAI API key/);
+  });
+
+  test('synthesises the fixed sentence once, serves the audio, and caches it', async (t) => {
+    let synthCount = 0;
+    const url = await withServer(t, {
+      isPiperInstalled: () => true,
+      createTts: ({ provider, voice }) => {
+        assert.equal(provider, 'local');
+        assert.equal(voice, 'es_ES-davefx-medium');
+        return {
+          synthesize: async (text) => {
+            synthCount += 1;
+            assert.match(text, /Hola, soy el espejo/);
+            return Buffer.from('fake audio bytes');
+          },
+        };
+      },
+    });
+
+    const first = await fetch(`${url}/api/tts/preview?provider=local&voice=es_ES-davefx-medium`);
+    assert.equal(first.status, 200);
+    assert.equal(first.headers.get('content-type'), 'audio/ogg');
+    assert.equal(Buffer.from(await first.arrayBuffer()).toString(), 'fake audio bytes');
+
+    const second = await fetch(`${url}/api/tts/preview?provider=local&voice=es_ES-davefx-medium`);
+    assert.equal(await second.text(), 'fake audio bytes');
+    assert.equal(synthCount, 1, 'the second request must be served from cache, not synthesised again');
   });
 });

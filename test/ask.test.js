@@ -102,6 +102,31 @@ describe('ask()', () => {
     assert.ok(result.timings.totalMs >= 0);
   });
 
+  test('records the exchange for the panel, once the answer is known', async () => {
+    // fakeSession() has no recordExchange of its own — added here to check
+    // what ask() hands it, the way the answers register is checked elsewhere.
+    const session = fakeSession();
+    const recorded = [];
+    session.recordExchange = (exchange) => recorded.push(exchange);
+
+    const d = deps({ sentences: ['La respuesta.'] });
+    const result = await ask(session, { question: 'hola', askedBy: 'Vero' }, d);
+
+    assert.equal(recorded.length, 1);
+    assert.deepEqual(recorded[0], {
+      askedBy: 'Vero',
+      question: 'hola',
+      answer: 'La respuesta.',
+      firstAudioMs: result.timings.firstAudioMs,
+      totalMs: result.timings.totalMs,
+    });
+  });
+
+  test('a session with no recordExchange is not a failure — most fakes in this file have none', async () => {
+    await ask(fakeSession(), { question: 'hola', askedBy: 'Vero' }, deps({ sentences: ['Ok.'] }));
+    assert.ok(true, 'reaching here at all is the assertion');
+  });
+
   test('one question at a time per guild', async () => {
     const session = fakeSession('busy');
     const first = ask(session, { question: 'a', askedBy: 'Vero' }, deps({ sentences: ['Una.'] }));

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Thinking — Man in the Mirror</title>
+  <link rel="stylesheet" href="../panel/components.css" />
+  <link rel="icon" href="../icon.svg" />
+</head>
+<body data-page="thinking">
+<div class="shell">
+  <main class="main">
+    <div class="topbar">
+      <h1>Thinking</h1>
+      <span class="pill" data-state="ok"><span class="dot"></span>Online · in #stellar-stream</span>
+    </div>
+
+    <div class="section">
+      <header>
+        <p>How it decides what to say, and with which model.</p>
+      </header>
+
+      <div class="card">
+        <div class="field">
+          <span class="label">Mode</span>
+          <div class="seg" role="radiogroup">
+            <label><input type="radio" name="brainKind" value="agent" />Agent</label>
+            <label><input type="radio" name="brainKind" value="cascade" checked />Fast model in front</label>
+            <label><input type="radio" name="brainKind" value="chat" />Chat</label>
+          </div>
+          <p class="help">A fast model answers what needs no tool and hands the rest to the agent, which keeps the conversation.</p>
+        </div>
+
+        <div class="fields-2">
+          <div class="field">
+            <label for="fastModel">Fast model</label>
+            <select class="select" id="fastModel">
+              <option>claude-haiku-4-5 · 2.4 s to first word</option>
+              <option selected>claude-sonnet-5 · about 3 s</option>
+              <option>Custom…</option>
+            </select>
+            <p class="help">Answers first. No tools, no memory of its own.</p>
+          </div>
+          <div class="field">
+            <label for="brainModel">Agent model</label>
+            <select class="select" id="brainModel">
+              <option selected>claude-sonnet-5 · 4.9 s to first word</option>
+              <option>claude-opus-5 · slower, deeper</option>
+              <option>Custom…</option>
+            </select>
+            <p class="help">Remembers the call and uses the tools.</p>
+          </div>
+        </div>
+
+        <label class="switch">
+          <span>Look things up on the web<span class="help">Adds a few seconds to the answers that use it.</span></span>
+          <input type="checkbox" checked />
+        </label>
+      </div>
+
+      <div class="savebar">
+        <span class="note">Unsaved changes. They apply as soon as you save; the agent starts a fresh session.</span>
+        <div class="row">
+          <button class="btn quiet">Discard</button>
+          <button class="btn primary">Save</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<script type="module" src="_mock.js"></script>
+</body>
+</html>

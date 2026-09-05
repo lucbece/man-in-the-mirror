@@ -1,0 +1,120 @@
+/*
+ * Every literal colour, size and duration the panel uses. Nothing outside this
+ * file names a colour; components.css composes these, and the sections use
+ * components. Dark by default; the light scheme at the bottom is a second
+ * block of the same tokens and nothing else. `data-theme` on the root forces
+ * one; without it the system preference decides.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* --- surfaces: one material at four depths --------------------------------- */
+  --hue: 265;
+  --bg-0: oklch(15% 0.016 var(--hue)); /* page */
+  --bg-1: oklch(19% 0.019 var(--hue)); /* sidebar, card */
+  --bg-2: oklch(23% 0.022 var(--hue)); /* field, inset, selected nav */
+  --bg-3: oklch(28% 0.024 var(--hue)); /* hover */
+
+  /* --- text: three tones with a job each -------------------------------------- */
+  --fg: oklch(95% 0.008 var(--hue)); /* content, labels */
+  --fg-2: oklch(74% 0.018 var(--hue)); /* help, secondary */
+  --fg-3: oklch(56% 0.02 var(--hue)); /* placeholders, disabled, group labels */
+
+  /* --- one accent, for the primary action and the selection ------------------- */
+  --accent: oklch(80% 0.135 88);
+  --accent-ink: oklch(20% 0.03 88); /* text on an accent fill */
+  --accent-soft: color-mix(in oklab, var(--accent) 14%, transparent);
+  --accent-line: color-mix(in oklab, var(--accent) 50%, transparent);
+
+  /* --- state, never decoration ------------------------------------------------ */
+  --ok: oklch(76% 0.15 155);
+  --warn: oklch(80% 0.14 75);
+  --danger: oklch(68% 0.17 22);
+
+  --line: color-mix(in oklab, var(--fg) 12%, transparent);
+  --line-strong: color-mix(in oklab, var(--fg) 22%, transparent);
+
+  /* --- type ------------------------------------------------------------------ */
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "Cascadia Code", Menlo, Consolas, monospace;
+  --fs-0: 0.85rem; /* 13.6px: help, meta */
+  --fs-1: 0.9375rem; /* 15px: labels, body, controls */
+  --fs-2: 1rem; /* 16px: card titles */
+  --fs-3: 1.25rem; /* 20px: section title */
+  --fs-4: 1.75rem; /* 28px: a number that matters */
+
+  /* --- space and shape --------------------------------------------------------- */
+  --s-1: 0.25rem;
+  --s-2: 0.5rem;
+  --s-3: 0.75rem;
+  --s-4: 1rem;
+  --s-5: 1.5rem;
+  --s-6: 2rem;
+  --s-7: 3rem;
+
+  --r-1: 6px;
+  --r-2: 10px;
+  --r-3: 14px;
+  --r-full: 999px;
+
+  --shadow-1: 0 1px 2px oklch(0% 0 0 / 0.3), 0 1px 3px oklch(0% 0 0 / 0.15);
+  --shadow-2: 0 4px 12px oklch(0% 0 0 / 0.35), 0 12px 40px oklch(0% 0 0 / 0.35);
+
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --t-1: 130ms;
+  --t-2: 220ms;
+
+  --measure: 60ch;
+  --nav-w: 15rem;
+  --main-w: 80rem; /* the content column on a wide screen */
+  --label-w: 16rem; /* the label column of a settings row */
+}
+
+/* --- the light scheme ------------------------------------------------------- */
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --bg-0: oklch(97% 0.006 var(--hue));
+    --bg-1: oklch(99.4% 0.003 var(--hue));
+    --bg-2: oklch(95% 0.008 var(--hue));
+    --bg-3: oklch(91% 0.012 var(--hue));
+    --fg: oklch(22% 0.03 var(--hue));
+    --fg-2: oklch(46% 0.03 var(--hue));
+    --fg-3: oklch(62% 0.025 var(--hue));
+    --accent: oklch(64% 0.135 80);
+    --accent-ink: oklch(99% 0.01 80);
+    --accent-soft: color-mix(in oklab, var(--accent) 14%, transparent);
+    --accent-line: color-mix(in oklab, var(--accent) 55%, transparent);
+    --ok: oklch(58% 0.16 155);
+    --warn: oklch(62% 0.15 75);
+    --danger: oklch(56% 0.19 22);
+    --line: color-mix(in oklab, var(--fg) 12%, transparent);
+    --line-strong: color-mix(in oklab, var(--fg) 24%, transparent);
+    --shadow-1: 0 1px 2px oklch(0% 0 0 / 0.06), 0 1px 3px oklch(0% 0 0 / 0.04);
+    --shadow-2: 0 4px 12px oklch(0% 0 0 / 0.1), 0 12px 40px oklch(0% 0 0 / 0.08);
+  }
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg-0: oklch(97% 0.006 var(--hue));
+  --bg-1: oklch(99.4% 0.003 var(--hue));
+  --bg-2: oklch(95% 0.008 var(--hue));
+  --bg-3: oklch(91% 0.012 var(--hue));
+  --fg: oklch(22% 0.03 var(--hue));
+  --fg-2: oklch(46% 0.03 var(--hue));
+  --fg-3: oklch(62% 0.025 var(--hue));
+  --accent: oklch(64% 0.135 80);
+  --accent-ink: oklch(99% 0.01 80);
+  --accent-soft: color-mix(in oklab, var(--accent) 14%, transparent);
+  --accent-line: color-mix(in oklab, var(--accent) 55%, transparent);
+  --ok: oklch(58% 0.16 155);
+  --warn: oklch(62% 0.15 75);
+  --danger: oklch(56% 0.19 22);
+  --line: color-mix(in oklab, var(--fg) 12%, transparent);
+  --line-strong: color-mix(in oklab, var(--fg) 24%, transparent);
+  --shadow-1: 0 1px 2px oklch(0% 0 0 / 0.06), 0 1px 3px oklch(0% 0 0 / 0.04);
+  --shadow-2: 0 4px 12px oklch(0% 0 0 / 0.1), 0 12px 40px oklch(0% 0 0 / 0.08);
+}

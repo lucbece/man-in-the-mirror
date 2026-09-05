@@ -1,8 +1,8 @@
 /**
- * The agent brain: a persistent Claude session that can actually do things.
+ * The agent brain: a persistent session that can actually do things.
  *
  * The chat brain answers one question per API call and forgets it ever spoke.
- * This one keeps a session process alive per voice channel: the conversation
+ * This one keeps a session alive per voice channel: the conversation
  * accumulates inside it (memory past the 90-second buffer, no transcript
  * re-sent cold every turn), and it can use whatever MCP tools the user
  * configured in the panel — which is the point of the whole exercise.
@@ -12,9 +12,17 @@
  * faster. The filler ("dame un segundo") fires on the first tool call to
  * cover the silence honestly.
  *
- * Costs to know about: one session holds roughly a gigabyte of RAM while
- * alive, and an agentic answer spends a multiple of a chat answer in tokens.
- * Sessions die with the voice session and after IDLE_MS of disuse.
+ * Which model runs it is the panel's `brainModel`, and its id decides the
+ * provider. A Claude id gets `AgentSession` — the Agent SDK, a subprocess,
+ * the SDK's own tool loop. An OpenAI id gets `OpenAiAgentSession`, which
+ * reaches the same tools over MCP and runs the loop itself. Everything below
+ * the constructor — the brain wrapper, the status, the reaper, the cascade —
+ * treats the two the same.
+ *
+ * Costs to know about: a Claude session holds roughly a gigabyte of RAM while
+ * alive (the OpenAI one holds almost nothing, since the conversation lives at
+ * OpenAI), and an agentic answer spends a multiple of a chat answer in
+ * tokens. Sessions die with the voice session and after IDLE_MS of disuse.
  */
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { trace, BlockCollector } from './trace.js';
@@ -25,6 +33,9 @@ import { promptWithInstructions } from './brain.js';
 import { displayNameLookup } from './discord-tools.js';
 import { formatTranscript } from './stt.js';
 import { allowedToolsFor, parseDirectories, parseMcpServers } from './mcp.js';
+import { connectMcpServers } from './mcp-client.js';
+import { providerFor } from './models.js';
+import { OpenAiAgentSession } from './openai-agent.js';
 import { SentenceSplitter } from './sentences.js';
 import { botToolsServer } from './tools/index.js';
 import { DATA_DIR } from '../paths.js';
@@ -332,15 +343,15 @@ function currentSignature() {
     // panel instead reaches the prompt when the session next starts.
     String(config.get('webSearch')),
     config.get('anthropicApiKey').slice(0, 8),
+    // The agent can run on either provider now, so a key change on either one
+    // has to recycle the session — not only the Anthropic one.
+    config.get('openaiApiKey').slice(0, 8),
   ].join(' ');
 }
 
 
 
 function buildSession(guildId) {
-  const apiKey = config.get('anthropicApiKey');
-  if (!apiKey) throw new AgentError('The agent brain needs an Anthropic API key.');
-
   const { servers, allow } = parseMcpServers(config.get('mcpServers'));
   // Same reasoning as the bot's own server: pay the tokens, skip the round
   // trip. A handful of servers is what people configure, not hundreds.
@@ -362,9 +373,11 @@ function buildSession(guildId) {
   allowed.push('mcp__bot__*');
   const model = config.get('brainModel') || DEFAULT_AGENT_MODEL;
 
+  const provider = providerFor(model);
   const serverNames = Object.keys(servers);
   console.log(
-    `[agent-brain] starting session for guild ${guildId} — ${model}, ` +
+    `[agent-brain] starting ${provider === 'openai' ? 'OpenAI' : 'Claude'} session ` +
+      `for guild ${guildId} — ${model}, ` +
       (serverNames.length ? `MCP: ${serverNames.join(', ')}` : 'no MCP servers') +
       `${config.get('webSearch') ? ', web search' : ''}`,
   );
@@ -376,6 +389,33 @@ function buildSession(guildId) {
   if (directories.length) {
     console.log(`[agent-brain]   folders: ${directories.join(', ')}`);
   }
+
+  // The provider is read off the model id rather than a switch of its own:
+  // there is one box in the panel, and the id already says which account it
+  // needs a key for — the same reasoning the cascade's fast leg uses.
+  if (provider === 'openai') {
+    const openaiKey = config.get('openaiApiKey');
+    if (!openaiKey) throw new AgentError('The agent brain needs an OpenAI API key.');
+    return new OpenAiAgentSession({
+      signature: currentSignature(),
+      guildId,
+      model,
+      apiKey: openaiKey,
+      webSearch: config.get('webSearch'),
+      // The same prompt the Claude session gets, word for word. Two agents
+      // told different things would be two different bots wearing one name.
+      instructions: promptWithInstructions(guildId, AGENT_PROMPT_EXTRA),
+      // Started now, awaited on the first question: connecting is the slow
+      // part and the bot is usually still joining the channel at this point.
+      mcp: connectMcpServers({ servers, allow, directories }),
+      toolNames: serverNames,
+      maxTurns: config.get('agentMaxTurns'),
+      turn,
+    });
+  }
+
+  const apiKey = config.get('anthropicApiKey');
+  if (!apiKey) throw new AgentError('The agent brain needs an Anthropic API key.');
 
   return new AgentSession({
     signature: currentSignature(),
@@ -506,7 +546,8 @@ export class AgentBrain {
 
   get label() {
     // "bot" (reminders etc.) is always served; user MCP servers join it.
-    return `Claude agent ${this.model} (MCP: ${['bot', ...this.tools].join(', ')})`;
+    const provider = providerFor(this.model) === 'openai' ? 'OpenAI' : 'Claude';
+    return `${provider} agent ${this.model} (MCP: ${['bot', ...this.tools].join(', ')})`;
   }
 
   async answer(context, { onSearchStart, onSentence, onToolUse } = {}) {
