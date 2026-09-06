@@ -50,10 +50,22 @@ benchmark runs inside the container against the real APIs.
   3 → 6 while music plays.
 - **L2 item 9b**: `ask()` waits at most 400 ms for the room's clips; the
   line says `context cut short` when it did not wait for all of them.
-- **L2 item 10**: the first chunk ends at the first comma past 40
-  characters (decimal guard) or at a space after 80 with no comma; later
-  chunks as before. To be judged by listening as well as by the timing, as
-  the item says.
+- **L2 item 10**: shipped, then reverted on 2026-09-06 after the listening
+  test it asked for. The same reply rendered in one request and in three
+  (as the bot did it: a clause, the rest of the sentence, the next
+  sentence) was, to the ear, the difference between a voice and a robot:
+  each request gets the falling tone of a finished thought, and each join
+  is about half a second of dead air (trailing silence of one piece plus
+  leading silence of the next). The splitter now waits for the first
+  sentence, and after it only cuts at a sentence end once a piece is 160
+  characters long. Over 156 production answers: pieces per answer 2 → 1 at
+  the median, 3 → 2 at p90, answers in three or more pieces 28 → 1; the
+  first piece grows from 46 to 62 characters at the median (about 0.1 s of
+  generation). Bench for the ear: gpt-4o-mini-tts ignores `instructions`
+  for pace (10–12 s for the same text whatever it is told) and its `speed`
+  saturates (×1.25 8.6 s, ×1.4 8.4 s, ×1 10.2 s); tts-1's speed is a true
+  stretch (×1.4 6.9 s). Luc preferred the mini model at ×1.4 in one request
+  over every alternative.
 - **L2 item 12**: a short "mm" once per turn when a tool that will speak
   has started and nothing has been said; not for searches, not in music
   mode, never on a timer.
