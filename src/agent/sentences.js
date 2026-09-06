@@ -16,6 +16,14 @@
  * A wrong split is worse than a late one — "dos punto" then "cinco por ciento"
  * is a stutter no listener forgives — so the boundary rules below are
  * deliberately conservative.
+ *
+ * And every split has a price even when it lands right. Each chunk is its own
+ * request to the synthesiser, which reads the end of its text as the end of a
+ * thought and starts the next one afresh; each join is half a second of dead
+ * air (the trailing silence of one piece, the leading silence of the next).
+ * Listened to side by side, the same reply in one request and in three was
+ * the difference between a voice and a robot. So the first sentence goes
+ * alone, to start early, and what follows goes in as few pieces as possible.
  */
 
 /**
@@ -46,37 +54,15 @@ const MIN_CHUNK = 24;
 const MAX_CHUNK = 240;
 
 /**
- * The first chunk may end at a clause, not only at a sentence.
+ * Shortest later chunk.
  *
- * Every later chunk is rendered while the previous one is still being said,
- * so only the first one is ever waited for, and first sentences run 47
- * characters at the median and 73 at p75. A comma after this many characters
- * is enough to start the voice; the sentence finishes in the next chunk, back
- * to back, as every chunk does. With no comma coming, twice this many
- * characters is enough too, cut where a phrase can end (see NEVER_CUT_AFTER).
+ * Only the first chunk is ever waited for: every later one is rendered while
+ * the previous one is still being said. So once the voice has started there
+ * is no hurry to cut, and a bigger piece is one fewer join. Two or three
+ * short sentences go to the synthesiser together; a reply of one to three
+ * sentences (the prompt's own limit) is two requests at most.
  */
-const FIRST_CLAUSE = 40;
-
-/**
- * Words a clause is never cut after.
- *
- * Each chunk is a separate request to the synthesiser, which reads the end of
- * its text as the end of a thought: "…bastante bien, aunque" comes out with
- * the falling tone of a full stop, and "la segunda mitad…" starts fresh. A cut
- * at a comma lands where a person would have paused anyway. A cut at a bare
- * space has to land after a word that can close a phrase, never after one
- * that only opens the next — an article, a preposition, a conjunction.
- */
-const NEVER_CUT_AFTER = new Set([
-  'que', 'de', 'del', 'al', 'a', 'en', 'con', 'por', 'para', 'sin', 'sobre', 'entre',
-  'hasta', 'desde', 'y', 'e', 'o', 'u', 'ni', 'pero', 'aunque', 'si', 'como', 'cuando',
-  'donde', 'porque', 'el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas', 'lo', 'le',
-  'les', 'se', 'me', 'te', 'nos', 'mi', 'mis', 'tu', 'tus', 'su', 'sus', 'ese', 'esa',
-  'eso', 'esos', 'esas', 'este', 'esta', 'esto', 'estos', 'estas', 'aquel', 'muy', 'más',
-  'menos', 'no', 'es', 'son', 'está', 'están', 'ser', 'hay', 'the', 'an', 'of', 'to', 'in',
-  'on', 'at', 'by', 'for', 'with', 'and', 'or', 'but', 'if', 'as', 'that', 'this', 'these',
-  'those', 'is', 'are', 'was', 'were', 'be', 'not', 'very', 'than', 'from', 'into',
-]);
+const LATER_CHUNK = 160;
 
 /**
  * Could this character open a sentence?
@@ -117,11 +103,11 @@ function isBoundary(text, index) {
  * for the tail that never got its full stop.
  */
 export class SentenceSplitter {
-  constructor({ minChunk = MIN_CHUNK, maxChunk = MAX_CHUNK, firstClause = FIRST_CLAUSE } = {}) {
+  constructor({ minChunk = MIN_CHUNK, maxChunk = MAX_CHUNK, laterChunk = LATER_CHUNK } = {}) {
     this.buffer = '';
     this.minChunk = minChunk;
     this.maxChunk = maxChunk;
-    this.firstClause = firstClause;
+    this.laterChunk = laterChunk;
     this.taken = 0;
   }
 
@@ -151,28 +137,10 @@ export class SentenceSplitter {
       const end = match.index + match[0].replace(/\s+\S$/, '').length;
       if (!isBoundary(this.buffer, match.index)) continue;
       if (!startsSentence(match[1])) continue;
-      if (end < this.minChunk) continue; // too short to stand alone
+      // Too short to stand alone; or, once the voice has started, too short
+      // to be worth a join.
+      if (end < (this.taken === 0 ? this.minChunk : this.laterChunk)) continue;
       return this.#cut(end);
-    }
-
-    // The first chunk: a clause is enough to start talking. At the first
-    // comma past the clause length, with the same guard the full stop has
-    // for decimals ("2,5 kilómetros" is one number in Spanish); or, with no
-    // comma in sight, at the first space past it.
-    if (this.taken === 0 && this.firstClause && this.buffer.length > this.firstClause) {
-      const comma = /,\s+(?=\S)/g;
-      let m;
-      while ((m = comma.exec(this.buffer))) {
-        if (m.index + 1 < this.firstClause) continue;
-        if (/\d$/.test(this.buffer.slice(0, m.index)) && /^\d/.test(this.buffer.slice(m.index + m[0].length))) continue;
-        return this.#cut(m.index + 1);
-      }
-      // A comma may still be coming: wait for the sentence to run on a little
-      // before settling for something else, unless it has already run on a lot.
-      if (this.buffer.length >= this.firstClause * 2) {
-        const at = this.#clauseCut();
-        if (at) return this.#cut(at);
-      }
     }
 
     // Nothing punctuated, and it's gone on long enough — break at the last
@@ -183,29 +151,6 @@ export class SentenceSplitter {
       return this.#cut(at);
     }
 
-    return null;
-  }
-
-  /**
-   * Where to end a first clause that has no comma past the clause length.
-   *
-   * The last comma there is, if it leaves a chunk worth saying: the pause a
-   * person would have made, even a little short of the clause length. Failing
-   * that, the first space past the clause length that does not follow a word
-   * the next phrase depends on. Failing that too, nothing: the sentence is
-   * waited for, and the length rule below still bounds the wait.
-   */
-  #clauseCut() {
-    const commas = [...this.buffer.matchAll(/,\s+(?=\S)/g)];
-    for (const m of commas.reverse()) {
-      if (m.index + 1 < this.minChunk) break;
-      if (/\d$/.test(this.buffer.slice(0, m.index)) && /^\d/.test(this.buffer.slice(m.index + m[0].length))) continue;
-      return m.index + 1;
-    }
-    for (let space = this.buffer.indexOf(' ', this.firstClause); space !== -1; space = this.buffer.indexOf(' ', space + 1)) {
-      const word = this.buffer.slice(0, space).match(/([\p{L}]+)$/u)?.[1]?.toLowerCase();
-      if (word && !NEVER_CUT_AFTER.has(word)) return space;
-    }
     return null;
   }
 
@@ -224,4 +169,4 @@ export class SentenceSplitter {
   }
 }
 
-export { MIN_CHUNK, MAX_CHUNK, FIRST_CLAUSE, ABBREVIATIONS };
+export { MIN_CHUNK, MAX_CHUNK, LATER_CHUNK, ABBREVIATIONS };
