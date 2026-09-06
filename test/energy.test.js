@@ -3,7 +3,8 @@ import test, { describe } from 'node:test';
 import OpusScript from 'opusscript';
 
 import { DEFAULT_GATE_DB, describeEnergy, gateThreshold, measureEnergy, tooQuiet } from '../src/agent/energy.js';
-import { transcribeUtterance } from '../src/agent/stt.js';
+import { transcribeUtterance, onlyTheNames, hearsAName } from '../src/agent/stt.js';
+import { config } from '../src/config.js';
 import { Utterance } from '../src/agent/buffer.js';
 
 /** 16 kHz mono PCM: a sine at the given amplitude, or silence. */
@@ -109,5 +110,62 @@ describe('in front of the transcriber', () => {
     assert.equal(stt.calls.length, 1);
     assert.equal(result.spoken, true);
     assert.ok(u.energy.peakDb > -20, `peak ${u.energy.peakDb}`);
+  });
+});
+
+describe('a lone name from a GPT-4o transcriber is confirmed by whisper-1', () => {
+  function utteranceOf(amplitude, frames = 50) {
+    const encoder = new OpusScript(48_000, 2, OpusScript.Application.AUDIO);
+    const u = new Utterance({ userId: 'u1', displayName: 'Vero', startedAt: Date.now() });
+    for (let f = 0; f < frames; f += 1) {
+      const frame = Buffer.alloc(960 * 2 * 2);
+      for (let i = 0; i < 960; i += 1) {
+        const sample = Math.round(Math.sin((2 * Math.PI * 440 * (f * 960 + i)) / 48_000) * amplitude);
+        frame.writeInt16LE(sample, i * 4);
+        frame.writeInt16LE(sample, i * 4 + 2);
+      }
+      u.push(Buffer.from(encoder.encode(frame, 960)));
+    }
+    return u;
+  }
+  const gpt4o = (says) => ({ label: 'fake gpt-4o', model: 'gpt-4o-transcribe', calls: 0, async transcribe() { this.calls += 1; return says; } });
+  const whisper = (says) => ({ calls: 0, async transcribe() { this.calls += 1; return says; } });
+
+  test('kept when whisper-1 hears a name too, dropped when it hears boilerplate', async (t) => {
+    const names = config.values.agentNames;
+    config.values.agentNames = 'mirror, espejo';
+    t.after(() => { config.values.agentNames = names; });
+
+    const agree = whisper('Espejo.');
+    const u1 = utteranceOf(9000);
+    u1.secondOpinion = () => agree;
+    const r1 = await transcribeUtterance(u1, gpt4o('espejo'));
+    assert.equal(r1.spoken, true);
+    assert.equal(agree.calls, 1);
+
+    const disagree = whisper('Subtítulos realizados por la comunidad de Amara.org');
+    const u2 = utteranceOf(9000);
+    u2.secondOpinion = () => disagree;
+    const r2 = await transcribeUtterance(u2, gpt4o('mirror'));
+    assert.equal(r2.spoken, false, 'noise the model named, and the other model did not');
+    assert.equal(u2.text, '');
+  });
+
+  test('a sentence with the name in it needs no second opinion', async () => {
+    const second = whisper('x');
+    const u = utteranceOf(9000);
+    u.secondOpinion = () => second;
+    const r = await transcribeUtterance(u, gpt4o('espejo, qué hora es'));
+    assert.equal(r.spoken, true);
+    assert.equal(second.calls, 0);
+  });
+
+  test('helpers: what counts as only the names, and as hearing one', () => {
+    assert.equal(onlyTheNames('Espejo.', 'mirror, espejo'), true);
+    assert.equal(onlyTheNames('mirror, espejo', 'mirror, espejo'), true);
+    assert.equal(onlyTheNames('espejo qué hora es', 'mirror, espejo'), false);
+    assert.equal(hearsAName('espejito', 'mirror, espejo'), true);
+    assert.equal(hearsAName('espero', 'mirror, espejo'), true, 'near enough to count as agreement');
+    assert.equal(hearsAName('Gracias por ver el video', 'mirror, espejo'), false);
   });
 });
