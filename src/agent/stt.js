@@ -7,6 +7,7 @@
  * no per-minute cost, audio never leaves the box).
  */
 import { config } from '../config.js';
+import { detectAddress } from './wake.js';
 import { decodeToMono16k, pcmToWav } from './audio.js';
 import { withDeadline, sttDeadlineMs } from './deadline.js';
 import { measureEnergy, tooQuiet } from './energy.js';
@@ -257,6 +258,47 @@ export const NOISE_ACTIVE_RATIO = 0.1;
 export const namesNoise = (model) => /^gpt-4o/.test(String(model ?? ''));
 
 /**
+ * Is the text nothing but the bot's names?
+ *
+ * The one shape a GPT-4o transcriber gives noise: not a sentence with the
+ * name in it, the name and nothing else.
+ */
+export function onlyTheNames(text, prompt) {
+  const words = normaliseForMatch(text).split(' ').filter(Boolean);
+  if (!words.length) return false;
+  const names = new Set(normaliseForMatch(prompt ?? '').split(' ').filter(Boolean));
+  return words.every((w) => names.has(w));
+}
+
+/**
+ * A second model's opinion on a clip the first said was just the name.
+ *
+ * Energy cannot tell a loud breath from a quietly spoken name: measured over
+ * a day, a twentieth of the short clips people really spoke into peaked under
+ * -34 dB, which is where the bench's breath sat. Two models do not
+ * hallucinate the same thing, though: whisper-1 answers noise with subtitle
+ * boilerplate, never with the name. So a lone name from a GPT-4o model is
+ * confirmed by asking whisper-1 about the same audio, and kept only if it
+ * heard something near a name too. One extra request, only on the rare clip
+ * that is nothing but the name, on a path that then waits up to six seconds
+ * for the rest of the sentence anyway.
+ */
+let secondOpinionProvider = null;
+export function secondOpinionFor(stt) {
+  if (stt?.constructor?.name !== 'OpenAiWhisper' || stt.model === 'whisper-1') return null;
+  if (!secondOpinionProvider || secondOpinionProvider.apiKey !== stt.apiKey) {
+    secondOpinionProvider = new OpenAiWhisper({ apiKey: stt.apiKey, model: 'whisper-1' });
+  }
+  return secondOpinionProvider;
+}
+
+/** Does a transcript carry anything that could be one of the names? */
+export function hearsAName(text, names) {
+  const { matched, closest } = detectAddress(text, names);
+  return matched || (closest?.score ?? 0) >= 0.5;
+}
+
+/**
  * Did the model name the bot because the prompt told it to expect the name?
  *
  * gpt-4o-transcribe, given the names as a prompt, answers a clip of breath or
@@ -484,10 +526,28 @@ async function runTranscription(utterance, stt) {
     });
     // The prompt echo has to go before anything else reads the text: it
     // contains the bot's names, so it reads as someone calling the bot.
-    const junk =
+    let junk =
       echoesPrompt(text, prompt) ||
       (namesNoise(stt.model) && namedByNoise(text, prompt, energy)) ||
       looksHallucinated(text, utterance.durationMs);
+    // A lone name from a GPT-4o model: real, or noise it dressed up? Ask the
+    // other model before waking the bot on it.
+    if (!junk && namesNoise(stt.model) && onlyTheNames(text, prompt)) {
+      const second = (utterance.secondOpinion ?? secondOpinionFor)(stt);
+      if (second) {
+        try {
+          const heard = await second.transcribe(pcmToWav(pcm), { prompt });
+          if (!hearsAName(heard, config.get('agentNames'))) {
+            junk = true;
+            console.log(`[stt] lone "${text.trim()}" not confirmed by whisper-1 (it heard "${String(heard).trim().slice(0, 60)}") → treated as noise`);
+          }
+        } catch (err) {
+          // Unconfirmed either way: the first opinion stands rather than a
+          // network hiccup costing a real call.
+          console.warn(`[stt] second opinion failed: ${err.message}`);
+        }
+      }
+    }
     if (junk && text.trim()) clipLog.discarded(energy, text);
     else if (text.trim()) clipLog.kept(energy);
     utterance.text = junk ? '' : text;
