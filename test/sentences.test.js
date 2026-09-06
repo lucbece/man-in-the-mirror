@@ -115,8 +115,30 @@ describe('the first chunk is a clause', () => {
     assert.deepEqual(splitter.push('Yo creo que lo mejor que podés hacer en ese caso es'), []);
     const out = splitter.push(' esperar a que el pronóstico cambie y decidir el jueves por la mañana');
     assert.equal(out.length, 1);
-    // The first space past the clause length, once the text has run on twice that far.
-    assert.equal(out[0], 'Yo creo que lo mejor que podés hacer en ese');
+    // The first space past the clause length, once the text has run on twice
+    // that far — but not after "en" or "ese", which only open what follows.
+    assert.equal(out[0], 'Yo creo que lo mejor que podés hacer en ese caso');
+  });
+
+  test('a comma short of the clause length beats a bare space', () => {
+    // Heard in production: cut after "aunque", the synthesiser gave it the
+    // falling tone of a full stop and started the next chunk as a new sentence.
+    const out = drip('Sí, la película está bastante bien, aunque la segunda mitad se hace un poco larga. Si querés, después te cuento.');
+    assert.deepEqual(out, ['Sí, la película está bastante bien,', 'aunque la segunda mitad se hace un poco larga.', 'Si querés, después te cuento.']);
+  });
+
+  test('a first clause never ends on a word the next phrase depends on', () => {
+    const out = drip('Lo que pasa es que el pronóstico para el fin de semana cambió bastante y ahora da lluvia para el sábado a la tarde.');
+    assert.ok(out[0].length >= 40, out[0]);
+    assert.ok(!/(?:que|el|de|para|y|a|la)$/.test(out[0]), out[0]);
+    assert.equal(out.join(' '), 'Lo que pasa es que el pronóstico para el fin de semana cambió bastante y ahora da lluvia para el sábado a la tarde.');
+  });
+
+  test('with nothing to cut at, the sentence is waited for', () => {
+    const splitter = new SentenceSplitter({ firstClause: 10, minChunk: 8 });
+    assert.deepEqual(splitter.push('Es que en la de los que a la'), []);
+    assert.deepEqual(splitter.push(' del y.'), []);
+    assert.equal(splitter.flush(), 'Es que en la de los que a la del y.');
   });
 
   test('a short first sentence is still taken whole', () => {

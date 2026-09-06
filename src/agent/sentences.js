@@ -50,11 +50,33 @@ const MAX_CHUNK = 240;
  *
  * Every later chunk is rendered while the previous one is still being said,
  * so only the first one is ever waited for, and first sentences run 47
- * characters at the median and 73 at p75. A comma after this many characters,
- * or this many characters at all, is enough to start the voice; the sentence
- * finishes in the next chunk, back to back, as every chunk does.
+ * characters at the median and 73 at p75. A comma after this many characters
+ * is enough to start the voice; the sentence finishes in the next chunk, back
+ * to back, as every chunk does. With no comma coming, twice this many
+ * characters is enough too, cut where a phrase can end (see NEVER_CUT_AFTER).
  */
 const FIRST_CLAUSE = 40;
+
+/**
+ * Words a clause is never cut after.
+ *
+ * Each chunk is a separate request to the synthesiser, which reads the end of
+ * its text as the end of a thought: "…bastante bien, aunque" comes out with
+ * the falling tone of a full stop, and "la segunda mitad…" starts fresh. A cut
+ * at a comma lands where a person would have paused anyway. A cut at a bare
+ * space has to land after a word that can close a phrase, never after one
+ * that only opens the next — an article, a preposition, a conjunction.
+ */
+const NEVER_CUT_AFTER = new Set([
+  'que', 'de', 'del', 'al', 'a', 'en', 'con', 'por', 'para', 'sin', 'sobre', 'entre',
+  'hasta', 'desde', 'y', 'e', 'o', 'u', 'ni', 'pero', 'aunque', 'si', 'como', 'cuando',
+  'donde', 'porque', 'el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas', 'lo', 'le',
+  'les', 'se', 'me', 'te', 'nos', 'mi', 'mis', 'tu', 'tus', 'su', 'sus', 'ese', 'esa',
+  'eso', 'esos', 'esas', 'este', 'esta', 'esto', 'estos', 'estas', 'aquel', 'muy', 'más',
+  'menos', 'no', 'es', 'son', 'está', 'están', 'ser', 'hay', 'the', 'an', 'of', 'to', 'in',
+  'on', 'at', 'by', 'for', 'with', 'and', 'or', 'but', 'if', 'as', 'that', 'this', 'these',
+  'those', 'is', 'are', 'was', 'were', 'be', 'not', 'very', 'than', 'from', 'into',
+]);
 
 /**
  * Could this character open a sentence?
@@ -145,10 +167,12 @@ export class SentenceSplitter {
         if (/\d$/.test(this.buffer.slice(0, m.index)) && /^\d/.test(this.buffer.slice(m.index + m[0].length))) continue;
         return this.#cut(m.index + 1);
       }
-      const space = this.buffer.indexOf(' ', this.firstClause);
       // A comma may still be coming: wait for the sentence to run on a little
-      // before settling for a bare space, unless it has already run on a lot.
-      if (space !== -1 && this.buffer.length >= this.firstClause * 2) return this.#cut(space);
+      // before settling for something else, unless it has already run on a lot.
+      if (this.buffer.length >= this.firstClause * 2) {
+        const at = this.#clauseCut();
+        if (at) return this.#cut(at);
+      }
     }
 
     // Nothing punctuated, and it's gone on long enough — break at the last
@@ -159,6 +183,29 @@ export class SentenceSplitter {
       return this.#cut(at);
     }
 
+    return null;
+  }
+
+  /**
+   * Where to end a first clause that has no comma past the clause length.
+   *
+   * The last comma there is, if it leaves a chunk worth saying: the pause a
+   * person would have made, even a little short of the clause length. Failing
+   * that, the first space past the clause length that does not follow a word
+   * the next phrase depends on. Failing that too, nothing: the sentence is
+   * waited for, and the length rule below still bounds the wait.
+   */
+  #clauseCut() {
+    const commas = [...this.buffer.matchAll(/,\s+(?=\S)/g)];
+    for (const m of commas.reverse()) {
+      if (m.index + 1 < this.minChunk) break;
+      if (/\d$/.test(this.buffer.slice(0, m.index)) && /^\d/.test(this.buffer.slice(m.index + m[0].length))) continue;
+      return m.index + 1;
+    }
+    for (let space = this.buffer.indexOf(' ', this.firstClause); space !== -1; space = this.buffer.indexOf(' ', space + 1)) {
+      const word = this.buffer.slice(0, space).match(/([\p{L}]+)$/u)?.[1]?.toLowerCase();
+      if (word && !NEVER_CUT_AFTER.has(word)) return space;
+    }
     return null;
   }
 
