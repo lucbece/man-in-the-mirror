@@ -24,10 +24,9 @@ describe('SentenceSplitter', () => {
   test('never splits a decimal', () => {
     const text = 'La inflación fue de 2.5 por ciento el mes pasado, bastante alta.';
     const chunks = drip(text);
-    // The first clause may be cut at the comma; the number never is.
     assert.equal(chunks.join(' '), text);
     assert.ok(chunks.every((c) => !/\d\.$/.test(c)), JSON.stringify(chunks));
-    assert.equal(chunks[0], 'La inflación fue de 2.5 por ciento el mes pasado,');
+    assert.deepEqual(chunks, [text]);
   });
 
   test('never splits an abbreviation or an initial', () => {
@@ -87,62 +86,38 @@ describe('SentenceSplitter', () => {
     const splitter = new SentenceSplitter();
     assert.deepEqual(splitter.push('El total fue de 3'), []);
     assert.deepEqual(splitter.push('.'), []);
-    // The clause rule cuts at the comma, once the number is safely whole.
-    assert.deepEqual(splitter.push('7 por ciento este mes, bastante.'), ['El total fue de 3.7 por ciento este mes,']);
-    assert.equal(splitter.flush(), 'bastante.');
+    assert.deepEqual(splitter.push('7 por ciento este mes, bastante. Y'), ['El total fue de 3.7 por ciento este mes, bastante.']);
+    assert.equal(splitter.flush(), 'Y');
   });
 });
 
-describe('the first chunk is a clause', () => {
-  test('cuts at the first comma past the clause length, and only the first time', () => {
-    // Dripped, as a token stream arrives: the comma is there before the stop is.
-    const out = drip('Mirá, yo diría que conviene esperar hasta el jueves, porque el pronóstico da lluvia. Después vemos, no hay apuro.');
-    assert.equal(out[0], 'Mirá, yo diría que conviene esperar hasta el jueves,');
-    // The rest of that sentence, then a whole sentence: commas no longer cut.
-    assert.deepEqual(out.slice(1), ['porque el pronóstico da lluvia.', 'Después vemos, no hay apuro.']);
-    // Handed the whole sentence at once, the sentence wins over the clause.
-    const whole = new SentenceSplitter().push('Mirá, yo diría que conviene esperar hasta el jueves, porque el pronóstico da lluvia. Y');
-    assert.deepEqual(whole, ['Mirá, yo diría que conviene esperar hasta el jueves, porque el pronóstico da lluvia.']);
+describe('after the first sentence, as few pieces as possible', () => {
+  test('the first sentence goes alone, the next ones together', () => {
+    const out = drip('Mirá, yo diría que conviene esperar hasta el jueves, porque el pronóstico da lluvia. Después vemos, no hay apuro. Y traé algo más para la parrilla.');
+    assert.deepEqual(out, [
+      'Mirá, yo diría que conviene esperar hasta el jueves, porque el pronóstico da lluvia.',
+      'Después vemos, no hay apuro. Y traé algo más para la parrilla.',
+    ]);
   });
 
-  test('a comma inside a number is not a clause', () => {
-    const out = drip('La distancia hasta el pueblo es de unos 2,5 kilómetros, así que se puede ir caminando.');
-    assert.equal(out[0], 'La distancia hasta el pueblo es de unos 2,5 kilómetros,');
-  });
-
-  test('with no comma coming, a long enough clause is cut at a space', () => {
-    const splitter = new SentenceSplitter();
-    assert.deepEqual(splitter.push('Yo creo que lo mejor que podés hacer en ese caso es'), []);
-    const out = splitter.push(' esperar a que el pronóstico cambie y decidir el jueves por la mañana');
-    assert.equal(out.length, 1);
-    // The first space past the clause length, once the text has run on twice
-    // that far — but not after "en" or "ese", which only open what follows.
-    assert.equal(out[0], 'Yo creo que lo mejor que podés hacer en ese caso');
-  });
-
-  test('a comma short of the clause length beats a bare space', () => {
+  test('a first sentence is never cut at a comma', () => {
     // Heard in production: cut after "aunque", the synthesiser gave it the
     // falling tone of a full stop and started the next chunk as a new sentence.
     const out = drip('Sí, la película está bastante bien, aunque la segunda mitad se hace un poco larga. Si querés, después te cuento.');
-    assert.deepEqual(out, ['Sí, la película está bastante bien,', 'aunque la segunda mitad se hace un poco larga.', 'Si querés, después te cuento.']);
+    assert.deepEqual(out, ['Sí, la película está bastante bien, aunque la segunda mitad se hace un poco larga.', 'Si querés, después te cuento.']);
   });
 
-  test('a first clause never ends on a word the next phrase depends on', () => {
-    const out = drip('Lo que pasa es que el pronóstico para el fin de semana cambió bastante y ahora da lluvia para el sábado a la tarde.');
-    assert.ok(out[0].length >= 40, out[0]);
-    assert.ok(!/(?:que|el|de|para|y|a|la)$/.test(out[0]), out[0]);
-    assert.equal(out.join(' '), 'Lo que pasa es que el pronóstico para el fin de semana cambió bastante y ahora da lluvia para el sábado a la tarde.');
-  });
-
-  test('with nothing to cut at, the sentence is waited for', () => {
-    const splitter = new SentenceSplitter({ firstClause: 10, minChunk: 8 });
-    assert.deepEqual(splitter.push('Es que en la de los que a la'), []);
-    assert.deepEqual(splitter.push(' del y.'), []);
-    assert.equal(splitter.flush(), 'Es que en la de los que a la del y.');
+  test('a long rest is still cut, at a sentence end, once it is worth a join', () => {
+    const first = 'Primero lo primero, como siempre.';
+    const second = 'La segunda oración es bastante más larga que la primera y llega hasta acá sin problema.';
+    const third = 'La tercera también es larga, para que las dos juntas pasen el largo de un pedazo.';
+    const fourth = 'Y una cuarta, corta.';
+    const out = drip([first, second, third, fourth].join(' '));
+    assert.deepEqual(out, [first, `${second} ${third}`, fourth]);
+    assert.ok(`${second} ${third}`.length >= 160);
   });
 
   test('a short first sentence is still taken whole', () => {
-    // Under the clause length, so the comma does not cut; the stop does.
     const out = drip('Sí, claro que podés venir. Y traé algo más para la parrilla.');
     assert.deepEqual(out, ['Sí, claro que podés venir.', 'Y traé algo más para la parrilla.']);
   });
