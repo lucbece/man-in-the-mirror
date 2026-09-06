@@ -34,13 +34,17 @@ export class EagerTranscriber extends EventEmitter {
   }
 
   /**
-   * Queue a clip, loudest-and-longest first.
+   * Queue a clip, in the order it was spoken.
    *
    * Measured here rather than when its turn comes, so a clip that was never a
-   * voice is dropped before it takes a place in the queue, and so the queue
-   * can be sorted by what it hears: a clip that sounds like a sentence goes
-   * before twenty half-second noises, which is where the clip with the bot's
-   * name used to wait.
+   * voice is dropped before it takes a place in the queue. Not sorted by
+   * loudness or length, which it was for a day: "Espejo" and the question
+   * after it arrive as two clips, the longer question scored higher and was
+   * transcribed first, and the wake then saw the name alone, waited its six
+   * seconds for a continuation that had already gone by, and asked "¿qué
+   * pasó?". A third of that day's wakes were that. The wake logic assumes a
+   * speaker's clips reach it in the order they were said, and this is the
+   * one place that could break the assumption.
    */
   push(utterance) {
     if (this.stopped || this.fatalError) return;
@@ -52,9 +56,7 @@ export class EagerTranscriber extends EventEmitter {
       return;
     }
     if (!energy) return;
-    const score = energy.activeRatio * energy.ms;
-    const at = this.queue.findIndex((queued) => queued.score < score);
-    this.queue.splice(at === -1 ? this.queue.length : at, 0, { utterance, score });
+    this.queue.push({ utterance });
     this.drain();
   }
 

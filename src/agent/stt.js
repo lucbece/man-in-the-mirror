@@ -239,11 +239,22 @@ export function namePrompt() {
 
 /**
  * Below this share of loud windows, a clip that came back as nothing but the
- * bot's name was noise the model named. A spoken name fills roughly half its
- * clip even with the 500 ms silence tail that closes every utterance, so
- * this sits well under a real call.
+ * bot's name was noise the model named.
+ *
+ * 0.1, down from 0.25: measured over a day, a quarter of the clips people
+ * actually spoke into were under 34% active and a tenth under 20%, so the
+ * first threshold was throwing away real calls said quietly or from a
+ * distance. The noise that the guard exists for measured 0% active on the
+ * bench, so the bar can sit low.
  */
-export const NOISE_ACTIVE_RATIO = 0.25;
+export const NOISE_ACTIVE_RATIO = 0.1;
+
+/**
+ * Only the GPT-4o transcription models answer noise with the bot's name;
+ * whisper-1 answers it with subtitle boilerplate the lists already catch.
+ * Whisper-1 had the guard for a day and lost real calls to it.
+ */
+export const namesNoise = (model) => /^gpt-4o/.test(String(model ?? ''));
 
 /**
  * Did the model name the bot because the prompt told it to expect the name?
@@ -475,7 +486,7 @@ async function runTranscription(utterance, stt) {
     // contains the bot's names, so it reads as someone calling the bot.
     const junk =
       echoesPrompt(text, prompt) ||
-      namedByNoise(text, prompt, energy) ||
+      (namesNoise(stt.model) && namedByNoise(text, prompt, energy)) ||
       looksHallucinated(text, utterance.durationMs);
     if (junk && text.trim()) clipLog.discarded(energy, text);
     else if (text.trim()) clipLog.kept(energy);
