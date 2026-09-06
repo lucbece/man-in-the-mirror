@@ -313,7 +313,10 @@ export class VoiceSession extends EventEmitter {
       if (!matched) {
         // A near miss is almost always transcription mangling the name, which is
         // invisible otherwise — the bot just sits there saying nothing.
-        if (closest && closest.score >= 0.55) {
+        // 0.4 rather than 0.55: a day of "casi nunca me escucha" showed the
+        // mangled forms that matter ("respiro", "aspecto", "espacio") sitting
+        // at 0.57, and the ones below that were invisible. Logging only.
+        if (closest && closest.score >= 0.4) {
           console.log(
             `[wake] near miss: heard "${closest.heard}" vs "${closest.name}" ` +
               `(${closest.score.toFixed(2)}) in: "${utterance.text}"`,

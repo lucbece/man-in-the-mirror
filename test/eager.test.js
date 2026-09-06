@@ -59,13 +59,14 @@ describe('the queue', () => {
     return eager;
   }
 
-  test('a clip that sounds like a sentence goes before the noises already waiting', () => {
+  test('clips are transcribed in the order they were said, whatever their length', () => {
+    // "Espejo" then the question: reordering them by length once made the
+    // wake see the name alone and ask what they wanted.
     const eager = stuck(1);
     eager.push({ ...utterance('busy'), durationMs: 3000 }); // takes the one worker
-    eager.push({ ...utterance('short'), durationMs: 400 });
-    eager.push({ ...utterance('short2'), durationMs: 500 });
-    eager.push({ ...utterance('sentence'), durationMs: 2500 });
-    assert.deepEqual(eager.queue.map((q) => q.utterance.id), ['sentence', 'short2', 'short']);
+    eager.push({ ...utterance('name'), durationMs: 400 });
+    eager.push({ ...utterance('question'), durationMs: 2500 });
+    assert.deepEqual(eager.queue.map((q) => q.utterance.id), ['name', 'question']);
     eager.stop();
   });
 
