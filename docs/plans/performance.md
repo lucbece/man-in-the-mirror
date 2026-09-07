@@ -24,9 +24,13 @@ benchmark runs inside the container against the real APIs.
   clips nobody spoke into, whisper-1 says the subtitle boilerplate the lists
   already catch; both GPT-4o models say "mirror", "espejo" or "mirror,
   espejo". The whole-prompt echo is caught by `echoesPrompt`; the lone name
-  is caught by the new guard only when the clip sat mostly under the energy
-  gate, so a breath loud enough to fill its clip still gets through. That is
-  the case to watch in the `discarded` lines before flipping the default.
+  is caught by transcribing the clip once more with no prompt and keeping it
+  only if the name survives. **Tried in production on 2026-09-06 and reverted
+  the next morning**: over 1645 clips gpt-4o-transcribe returned nothing but
+  the bot's name for 55% of them (whisper-1: 11%), so real speech was being
+  replaced by "espejo" wholesale, and the wake rate per clip doubled (7.6%
+  against 3.7%) with a third of the wakes a bare name. whisper-1 is the
+  default again and the prompt-free check now covers both models.
 - **L1 item 5**: `ttsModel` key, gpt-4o-mini-tts by default. Bench: first
   byte 1.10 s against tts-1's 1.30 s this morning, 0.4 to 1.1 against 0.8 to
   1.5 the night before; the gap is real but varies with the hour.

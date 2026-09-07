@@ -271,25 +271,24 @@ export function onlyTheNames(text, prompt) {
 }
 
 /**
- * A second model's opinion on a clip the first said was just the name.
+ * The same model's opinion on a lone-name clip, asked without the bias prompt.
  *
  * Energy cannot tell a loud breath from a quietly spoken name: measured over
  * a day, a twentieth of the short clips people really spoke into peaked under
- * -34 dB, which is where the bench's breath sat. Two models do not
- * hallucinate the same thing, though: whisper-1 answers noise with subtitle
- * boilerplate, never with the name. So a lone name from a GPT-4o model is
- * confirmed by asking whisper-1 about the same audio, and kept only if it
- * heard something near a name too. One extra request, only on the rare clip
- * that is nothing but the name, on a path that then waits up to six seconds
+ * -34 dB, which is where the bench's breath sat. What separates the two is the
+ * prompt. Measured on both models: given noise and a prompt naming the bot,
+ * gpt-4o-transcribe answers "espejo" and whisper-1 answers subtitle
+ * boilerplate; given the same noise and no prompt, neither produces anything
+ * resembling the name. Given real speech with the name in it, both write the
+ * name with or without the prompt.
+ *
+ * So a clip that came back as nothing but the name is transcribed once more
+ * with no prompt, and only wakes the bot if the name survives. One extra
+ * request, only on that rare clip, on a path that then waits up to six seconds
  * for the rest of the sentence anyway.
  */
-let secondOpinionProvider = null;
-export function secondOpinionFor(stt) {
-  if (stt?.constructor?.name !== 'OpenAiWhisper' || stt.model === 'whisper-1') return null;
-  if (!secondOpinionProvider || secondOpinionProvider.apiKey !== stt.apiKey) {
-    secondOpinionProvider = new OpenAiWhisper({ apiKey: stt.apiKey, model: 'whisper-1' });
-  }
-  return secondOpinionProvider;
+export async function saidWithoutTheHint(stt, wav) {
+  return stt.transcribe(wav, {});
 }
 
 /** Does a transcript carry anything that could be one of the names? */
@@ -530,22 +529,18 @@ async function runTranscription(utterance, stt) {
       echoesPrompt(text, prompt) ||
       (namesNoise(stt.model) && namedByNoise(text, prompt, energy)) ||
       looksHallucinated(text, utterance.durationMs);
-    // A lone name from a GPT-4o model: real, or noise it dressed up? Ask the
-    // other model before waking the bot on it.
-    if (!junk && namesNoise(stt.model) && onlyTheNames(text, prompt)) {
-      const second = (utterance.secondOpinion ?? secondOpinionFor)(stt);
-      if (second) {
-        try {
-          const heard = await second.transcribe(pcmToWav(pcm), { prompt });
-          if (!hearsAName(heard, config.get('agentNames'))) {
-            junk = true;
-            console.log(`[stt] lone "${text.trim()}" not confirmed by whisper-1 (it heard "${String(heard).trim().slice(0, 60)}") → treated as noise`);
-          }
-        } catch (err) {
-          // Unconfirmed either way: the first opinion stands rather than a
-          // network hiccup costing a real call.
-          console.warn(`[stt] second opinion failed: ${err.message}`);
+    // Nothing but the name: real, or the prompt talking? Ask again without it.
+    if (!junk && onlyTheNames(text, prompt)) {
+      try {
+        const heard = await (utterance.withoutTheHint ?? saidWithoutTheHint)(stt, pcmToWav(pcm));
+        if (!hearsAName(heard, config.get('agentNames'))) {
+          junk = true;
+          console.log(`[stt] lone "${text.trim()}" is gone without the name hint (it heard "${String(heard).trim().slice(0, 60)}") → treated as noise`);
         }
+      } catch (err) {
+        // Unconfirmed either way: the first answer stands rather than a
+        // network hiccup costing a real call.
+        console.warn(`[stt] prompt-free check failed: ${err.message}`);
       }
     }
     if (junk && text.trim()) clipLog.discarded(energy, text);
