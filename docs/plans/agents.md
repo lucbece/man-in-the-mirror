@@ -105,23 +105,51 @@ with `--allowedTools` narrowed, and revisit once it has been used for a week.
 ### WP2 — the tunnel
 
 The bridge listens on `127.0.0.1` and never on a public interface. The bot
-reaches it through a tunnel opened *from* `lucpc`, which is also what makes
-NAT a non-issue:
+reaches it through a tunnel opened *from* `lucpc`, which is what makes NAT a
+non-issue, and the same ssh connection carries the reply channel of WP4:
 
 ```
-ssh -N -R 127.0.0.1:9100:127.0.0.1:9100 deploy@128.140.81.3 -i ~/.ssh/mirror-admin
+ssh -N -i ~/.ssh/mirror-admin deploy@128.140.81.3 \
+    -R 172.18.0.1:9100:127.0.0.1:9100 \   # bot → bridge (MCP)
+    -L 3000:127.0.0.1:3000                 # bridge → bot (/api/say)
 ```
 
-The container reaches it at `http://host.docker.internal:9100` (or the compose
-gateway address), with a bearer token in the MCP headers as the second lock.
-A systemd user unit with `Restart=always` keeps the tunnel up; when the desktop
-is off, the tools simply are not there, and the bot says so.
+**The bind address is the part that will eat an afternoon if it is guessed.**
+Measured on the server: the compose stack runs on the default bridge network
+whose gateway is `172.18.0.1`, and the container's traffic arrives at that
+address, not at the host's loopback. A reverse tunnel bound to `127.0.0.1`,
+which is what `-R 9100:…` does by default, is therefore invisible to the bot.
+And `sshd -T` reports `gatewayports no`, so binding `172.18.0.1` is refused as
+things stand. Two ways out, neither hard:
 
-The alternative is ngrok — Luc already has a domain — which is fewer moving
-parts and one more third party in the path of a channel that can run code on
-his machine. The ssh tunnel is the recommendation.
+- `GatewayPorts clientspecified` in `/etc/ssh/sshd_config.d/`, which permits
+  exactly the bind address the client names and nothing else (`permitlisten`
+  is already `any`, so it can be narrowed at the same time). One line, one
+  reload, no extra daemon. **Recommended.**
+- Or leave sshd alone and put a forwarder on the host:
+  `socat TCP-LISTEN:9100,bind=172.18.0.1,fork TCP:127.0.0.1:9101` as a systemd
+  unit, with the tunnel landing on 9101. One more moving part, nothing to
+  change on the ssh daemon.
 
-**Status:** not started.
+The other direction needs nothing new: the panel is already published on the
+host's `127.0.0.1:3000`, which is what `mirror panel` tunnels to, so a plain
+`-L` on the same connection gives the bridge a way to call the bot back.
+
+A bearer token in the MCP headers is the second lock, and the tunnel is the
+first. A systemd user unit with `Restart=always` keeps it up; when the desktop
+is off the tools are simply not there, and the bot says so rather than failing
+silently. First thing to test when this is built: whether the container can
+reach `172.18.0.1` at all, before anything else is written.
+
+**The alternative worth considering: never let the server reach `lucpc`.**
+Invert it, and have the bridge long-poll the bot for queued work over the `-L`
+side only. Nothing on the desktop is ever addressable from the internet, which
+is a real security gain for a channel whose whole purpose is running code
+there. The cost is that the tools stop being MCP and become a bespoke queue in
+this repo, which is the property WP1 exists to avoid. Recommended only if the
+tunnel turns out to be fragile in practice.
+
+**Status:** not started. The bind-address finding is measured; the rest is design.
 
 ### WP3 — only Luc may dispatch
 
@@ -132,30 +160,42 @@ Manage Server is a Discord role several friends have, and this is "run code on
 my desktop".
 
 Add `ownerOnly: true` to an entry in the `mcpServers` map, checked against a
-new `ownerId` config key holding one Discord user id. The check belongs where
-the tool is called — `mcp-client.js` for the OpenAI path, and the SDK path
-needs its own hook, which is the part to look at first because it may not have
-one. Everyone else asking gets a spoken refusal, not silence.
+new `ownerId` config key holding one Discord user id. Both brains have a place
+to check it, which was the open risk and is now closed:
 
-Worth having anyway: it is the general answer to "this MCP server is mine".
+- The OpenAI path calls tools itself in `mcp-client.js`, so the check goes
+  where the call is dispatched.
+- The Claude path hands the servers to the Agent SDK, and the SDK takes a
+  `canUseTool(toolName, input, { signal })` permission handler in its options —
+  called before every tool execution, returning allow or deny. The session is
+  built once per guild in `agent-brain.js` while the asker changes per turn,
+  so the handler reads the same `turn` object the bot's own tools already use
+  for `askerId`.
+
+Everyone else asking gets a spoken refusal, not silence. Worth having anyway:
+it is the general answer to "this MCP server is mine".
 
 **Status:** not started.
 
 ### WP4 — the bot says when something finishes
 
-The direction that makes it feel alive. `POST /api/say` on the bot's web
-server, bearer-authenticated, `{ "text": "…", "guildId": "…" }`, which pushes
-a line through the session's speech queue exactly as a reminder does — the
-plumbing already exists in `reminders.js` and `session.startSpeech()`.
+The direction that makes it feel alive, and the cheapest of the four: the
+bot already speaks unprompted, for reminders, and that handler in `manager.js`
+has solved every hard part of it. It drops the line when the bot is no longer
+in a channel; in music mode it writes it into the music text channel instead
+of talking over the song; if the bot is mid-answer it waits for the sentence
+to finish; and it goes out through `session.startSpeech()`, which pauses the
+music and hands the connection back afterwards.
 
-The bridge calls it when a dispatched agent exits, with a one-line summary of
-what happened. Two things to get right: nothing is said into an empty channel
-(hold it for the next call, as reminders do), and nothing is said over an
-answer in progress.
+So this is an endpoint that reuses that path rather than a new one:
+`POST /api/say`, bearer-authenticated, `{ "text": "…", "guildId": "…" }`. The
+bridge calls it when a dispatched agent exits, with one line about what
+happened. An agent that finishes while a song is playing writes itself into
+the music channel, which is exactly right and comes free.
 
-The web server binds `127.0.0.1` and has no auth today, so this endpoint is
-the first thing on it that needs a token. It travels the same ssh tunnel in
-reverse.
+The web server binds `127.0.0.1` and has no authentication by design, so this
+is the first endpoint on it that needs a token — and the reason the token
+matters is that the tunnel now carries a second party.
 
 **Status:** not started.
 
@@ -169,6 +209,16 @@ reverse.
 - **It does not report progress continuously.** A dispatched agent runs for
   minutes; a bot narrating it would be unbearable. One line when it starts,
   one when it ends, and "¿en qué anda?" for everything in between.
+
+## What was measured, and when
+
+`claude --version` 2.1.263 on `lucpc`, 2026-09-07. `claude agents --json`
+returns the live sessions with `name`, `cwd`, `status` and `kind`. The Agent
+SDK in this repo's `node_modules` exports `canUseTool` in its query options.
+The server's `sshd -T` says `gatewayports no`; the compose network's gateway
+is `172.18.0.1`; the panel is published on the host's `127.0.0.1:3000`. The
+`/run/user/1000/cc-socks/*.sock` sockets exist and are undocumented for
+anything that is not Claude Code itself.
 
 ## Open questions for Luc
 
