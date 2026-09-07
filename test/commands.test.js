@@ -48,7 +48,7 @@ describe('matchCommand: the commands a person says in one breath', () => {
     'bajá al canal de al lado',
     'espejo, subí una foto',
     'espejo, cuánto es 30 más 80',
-    'They said your name but nothing else. Ask what they want, in a few words.',
+    'espejo',
     '',
   ];
   for (const said of notCommands) {

@@ -105,12 +105,20 @@ describe('hearing out a question', () => {
     assert.equal(s.fired[0].question, 'mirror who is right');
   });
 
-  test('prompts back when nobody follows up', async () => {
+  test('stays quiet when only the name arrives and nobody follows up', async () => {
+    // Half of these are the transcriber writing the name over a short word it
+    // half-heard; answering them is how the bot ends up talking to itself.
     const s = stubSession();
     s.checkForWake(said('u1', 'Vero', 'mirror'));
     await wait(OPEN * 1.6);
-    assert.equal(s.fired.length, 1);
-    assert.match(s.fired[0].question, /ask what they want/i);
+    assert.equal(s.fired.length, 0);
+  });
+
+  test('a mangled bare name stays quiet too', async () => {
+    const s = stubSession();
+    s.checkForWake(said('u1', 'Vero', 'mirrow'));
+    await wait(OPEN * 1.6);
+    assert.equal(s.fired.length, 0);
   });
 
   test('a rapid repeat produces one answer, not two', async () => {
