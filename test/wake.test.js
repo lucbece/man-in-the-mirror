@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { describe } from 'node:test';
 
-import { detectAddress } from '../src/agent/wake.js';
+import { detectAddress, onlyTheName } from '../src/agent/wake.js';
 
 const NAMES = 'mirror, espejo';
 
@@ -193,5 +193,19 @@ describe('talked about, not talked to', () => {
   test('the name said plainly later in the sentence still counts', () => {
     const heard = 'el espejo este no anda, espejo, ¿estás ahí?';
     assert.equal(detectAddress(heard, NAMES).matched, true);
+  });
+});
+
+describe('onlyTheName', () => {
+  const NAMES = 'mirror, espejo';
+  test('the name alone, however the transcriber spelt it', () => {
+    for (const heard of ['espejo', 'Espejo.', 'espelho', 'mirr', 'mirror', 'Espejo, espejo.', 'espejito']) {
+      assert.equal(onlyTheName(heard, NAMES), true, heard);
+    }
+  });
+  test('anything else beside it is a request', () => {
+    for (const heard of ['espejo, ¿qué hora es?', 'che espejo', 'hola espejo', 'dale', '']) {
+      assert.equal(onlyTheName(heard, NAMES), false, heard);
+    }
   });
 });

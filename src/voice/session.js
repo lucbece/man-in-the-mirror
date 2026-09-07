@@ -14,7 +14,7 @@ import { MusicPlayer } from './music.js';
 import { VoiceReceiver } from './receiver.js';
 import { EagerTranscriber, CONCURRENCY_WITH_MUSIC } from '../agent/eager.js';
 import { matchHush } from '../agent/commands.js';
-import { detectAddress, normalise, splitNames } from '../agent/wake.js';
+import { detectAddress, normalise, onlyTheName } from '../agent/wake.js';
 
 const READY_TIMEOUT_MS = 20_000;
 
@@ -370,8 +370,8 @@ export class VoiceSession extends EventEmitter {
       viaFollowUp: Boolean(answeringUs),
     };
     // Just its name and nothing else means they're winding up to ask.
-    const onlyTheName = normalise(utterance.text).split(' ').length <= 2;
-    this.armWake(onlyTheName ? WAKE_TIMING.openMs : WAKE_TIMING.graceMs);
+    const windingUp = normalise(utterance.text).split(' ').length <= 2;
+    this.armWake(windingUp ? WAKE_TIMING.openMs : WAKE_TIMING.graceMs);
   }
 
   /**
@@ -478,20 +478,19 @@ export class VoiceSession extends EventEmitter {
 
     const question = pending.parts.join(' ').trim();
 
-    // Someone said its name and nothing else. Handing the model the single
-    // word "mirror" as a question invites it to invent one, so say plainly
-    // that there wasn't one.
-    const bareSummon = normalise(question)
-      .split(' ')
-      .filter((word) => !splitNames(config.get('agentNames')).some((n) => normalise(n) === word))
-      .join('')
-      .length === 0;
+    // Its name and nothing else, then silence. Half of these are not calls at
+    // all: with the name in its prompt the transcriber writes "espejo" over a
+    // short word it half-heard, forty-odd times a day, and a bot answering
+    // each of those with "¿qué pasó?" is a bot that talks to itself. A real
+    // call comes with a question, either in the same breath or in the next
+    // one, and that is waited for above. Nothing came, so nothing is said.
+    if (!question || onlyTheName(question, config.get('agentNames'))) {
+      console.log(`[wake] ${pending.askedBy} said only the name and nothing followed — staying quiet`);
+      return;
+    }
 
     this.emit('wake', {
-      question:
-        bareSummon || !question
-          ? 'They said your name but nothing else. Ask what they want, in a few words.'
-          : question,
+      question,
       askedBy: pending.askedBy,
       stoppedAt: pending.stoppedAt,
       // The stages between the last word and the pipeline, as clock times,

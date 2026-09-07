@@ -194,6 +194,31 @@ export function detectAddress(text, names) {
 }
 
 /**
+ * Was this nothing but the name — said plainly, or as the transcriber
+ * mangles it ("espelho", "mirr", "espejito")?
+ *
+ * A bare name is the one transcript that cannot be trusted on its own. With
+ * the name in its prompt, gpt-4o-transcribe writes "espejo" over short words
+ * it half-heard: measured, "dale", "sí", "bueno" and "eso" all came back as
+ * the name. Nothing in the audio or the model's confidence tells a real bare
+ * "espejo" from that (both score the same). What does tell them apart is what
+ * happens next: someone calling the bot goes on to ask it something, while a
+ * misheard "dale" is followed by more of the conversation the bot was never
+ * part of. So the caller waits for the question, and a name that nothing
+ * follows is left alone.
+ */
+export function onlyTheName(text, names) {
+  const words = normalise(text).split(' ').filter(Boolean);
+  if (!words.length) return false;
+  const needles = splitNames(names).map(normalise).filter(Boolean);
+  return words.every((word) =>
+    needles.some((needle) =>
+      needle.length < FUZZY_MIN_LENGTH ? word === needle : similarity(word, needle) >= SIMILARITY_THRESHOLD,
+    ),
+  );
+}
+
+/**
  * The nearest thing to one of its names in this utterance, for logging.
  *
  * When it silently fails to notice it's being addressed, the useful question

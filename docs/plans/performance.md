@@ -24,13 +24,20 @@ benchmark runs inside the container against the real APIs.
   clips nobody spoke into, whisper-1 says the subtitle boilerplate the lists
   already catch; both GPT-4o models say "mirror", "espejo" or "mirror,
   espejo". The whole-prompt echo is caught by `echoesPrompt`; the lone name
-  is caught by transcribing the clip once more with no prompt and keeping it
-  only if the name survives. **Tried in production on 2026-09-06 and reverted
-  the next morning**: over 1645 clips gpt-4o-transcribe returned nothing but
-  the bot's name for 55% of them (whisper-1: 11%), so real speech was being
-  replaced by "espejo" wholesale, and the wake rate per clip doubled (7.6%
-  against 3.7%) with a third of the wakes a bare name. whisper-1 is the
-  default again and the prompt-free check now covers both models.
+  is caught by asking whisper-1 about the same audio (#32). **Tried in
+  production on 2026-09-06**: over 1645 clips gpt-4o-transcribe returned
+  nothing but the bot's name for 55% of them (whisper-1: 11%). Bench of the
+  cause, 2026-09-07: with "mirror, espejo" as its prompt it writes "espejo"
+  over short real words — "dale", "sí", "bueno", "eso" — 5 to 12 times in
+  12; with no prompt 0 in 12, but then it hears a lone real "espejo" 2
+  times in 14. A diluted prompt and a context prompt sit in between, the
+  latter echoing itself; the model's logprobs do not separate a real
+  "espejo" from a false one. So there is no transcriber setting that hears
+  the name alone and never invents it; the 47 lone names a day that pass
+  the whisper-1 check are handled by what follows them: a question is
+  answered, silence is met with silence (fireWake). Hearing stays on
+  gpt-4o-transcribe, which is the model that hears the name in the first
+  place.
 - **L1 item 5**: `ttsModel` key, gpt-4o-mini-tts by default. Bench: first
   byte 1.10 s against tts-1's 1.30 s this morning, 0.4 to 1.1 against 0.8 to
   1.5 the night before; the gap is real but varies with the hour.
