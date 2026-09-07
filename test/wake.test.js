@@ -148,3 +148,50 @@ describe('words a real call proved were missing', () => {
     }
   });
 });
+
+describe('talked about, not talked to', () => {
+  const NAMES = 'mirror, espejo, sombrero';
+
+  test('an article before the name means the room is discussing it', () => {
+    // Every one of these woke the bot in a live call, and none of them was
+    // addressed to it — which is what made it look like it talks to itself.
+    for (const heard of [
+      'lo que hace el espejo no me incumbe',
+      'picante encima del espejo',
+      'pintan mal las cosas para el espejo, pintan mal',
+      'este espejo está re raro, amigo',
+      'sí, comienzo a ver un sombrero',
+      'me voy a quitar mis sombreros',
+    ]) {
+      assert.equal(detectAddress(heard, NAMES).matched, false, `false positive: ${heard}`);
+    }
+  });
+
+  test('a vocative takes no article, and negation is not an article', () => {
+    // The near misses of the rule: all of these are people talking to it.
+    for (const heard of [
+      'no, espejo, ponelo de nuevo',
+      'de una, espejo, yo te aviso',
+      'qué frío que hace, ¿no, espejo?',
+      'espejo, poné música',
+      'che espejo, qué opinás',
+    ]) {
+      assert.equal(detectAddress(heard, NAMES).matched, true, `missed: ${heard}`);
+    }
+  });
+
+  test('speaking to someone lets an article through', () => {
+    // Around here an article before a name is ordinary — "el Diego", "la
+    // Vero" — so a second person anywhere in the sentence keeps the wake.
+    // The cost is a line like "vos tenés un espejo también", which talks to a
+    // person about a mirror and still wakes it; rarer than the alternative.
+    for (const heard of ['el mirror, estás escuchando?', 'ah, vos tenés un espejo también, mirá vos']) {
+      assert.equal(detectAddress(heard, NAMES).matched, true, `missed: ${heard}`);
+    }
+  });
+
+  test('the name said plainly later in the sentence still counts', () => {
+    const heard = 'el espejo este no anda, espejo, ¿estás ahí?';
+    assert.equal(detectAddress(heard, NAMES).matched, true);
+  });
+});

@@ -113,7 +113,7 @@ describe('in front of the transcriber', () => {
   });
 });
 
-describe('a lone name from a GPT-4o transcriber is confirmed by whisper-1', () => {
+describe('a lone name only wakes the bot if it survives without the hint', () => {
   function utteranceOf(amplitude, frames = 50) {
     const encoder = new OpusScript(48_000, 2, OpusScript.Application.AUDIO);
     const u = new Utterance({ userId: 'u1', displayName: 'Vero', startedAt: Date.now() });
@@ -128,44 +128,71 @@ describe('a lone name from a GPT-4o transcriber is confirmed by whisper-1', () =
     }
     return u;
   }
-  const gpt4o = (says) => ({ label: 'fake gpt-4o', model: 'gpt-4o-transcribe', calls: 0, async transcribe() { this.calls += 1; return says; } });
-  const whisper = (says) => ({ calls: 0, async transcribe() { this.calls += 1; return says; } });
+  const hearing = (says, model = 'whisper-1') => ({
+    label: `fake ${model}`,
+    model,
+    prompts: [],
+    async transcribe(_wav, { prompt } = {}) {
+      this.prompts.push(prompt ?? null);
+      return says;
+    },
+  });
 
-  test('kept when whisper-1 hears a name too, dropped when it hears boilerplate', async (t) => {
+  test('kept when the name is still there without the hint, dropped when it is not', async (t) => {
     const names = config.values.agentNames;
     config.values.agentNames = 'mirror, espejo';
     t.after(() => { config.values.agentNames = names; });
 
-    const agree = whisper('Espejo.');
     const u1 = utteranceOf(9000);
-    u1.secondOpinion = () => agree;
-    const r1 = await transcribeUtterance(u1, gpt4o('espejo'));
+    let asked = 0;
+    u1.withoutTheHint = async () => { asked += 1; return 'Espejo.'; };
+    const r1 = await transcribeUtterance(u1, hearing('espejo'));
     assert.equal(r1.spoken, true);
-    assert.equal(agree.calls, 1);
+    assert.equal(asked, 1);
 
-    const disagree = whisper('Subtítulos realizados por la comunidad de Amara.org');
     const u2 = utteranceOf(9000);
-    u2.secondOpinion = () => disagree;
-    const r2 = await transcribeUtterance(u2, gpt4o('mirror'));
-    assert.equal(r2.spoken, false, 'noise the model named, and the other model did not');
+    u2.withoutTheHint = async () => 'ورقة.';
+    const r2 = await transcribeUtterance(u2, hearing('mirror', 'gpt-4o-transcribe'));
+    assert.equal(r2.spoken, false, 'noise the prompt named, and nothing without it');
     assert.equal(u2.text, '');
   });
 
-  test('a sentence with the name in it needs no second opinion', async () => {
-    const second = whisper('x');
+  test('the re-check is the same model asked with no prompt', async (t) => {
+    const names = config.values.agentNames;
+    config.values.agentNames = 'mirror, espejo';
+    t.after(() => { config.values.agentNames = names; });
+
+    const stt = hearing('espejo');
     const u = utteranceOf(9000);
-    u.secondOpinion = () => second;
-    const r = await transcribeUtterance(u, gpt4o('espejo, qué hora es'));
-    assert.equal(r.spoken, true);
-    assert.equal(second.calls, 0);
+    await transcribeUtterance(u, stt);
+    assert.equal(stt.prompts.length, 2, 'asked twice');
+    assert.ok(stt.prompts[0], 'the first ask carries the name hint');
+    assert.ok(!stt.prompts[1], 'the second does not');
   });
 
-  test('helpers: what counts as only the names, and as hearing one', () => {
+  test('a sentence with the name in it is not asked twice', async () => {
+    const stt = hearing('Espejo, ¿qué hora es?');
+    const u = utteranceOf(9000);
+    u.withoutTheHint = async () => { throw new Error('should not be called'); };
+    const r = await transcribeUtterance(u, stt);
+    assert.equal(r.spoken, true);
+    assert.equal(stt.prompts.length, 1);
+  });
+
+  test('a failed re-check leaves the first answer standing', async (t) => {
+    const names = config.values.agentNames;
+    config.values.agentNames = 'mirror, espejo';
+    t.after(() => { config.values.agentNames = names; });
+    const u = utteranceOf(9000);
+    u.withoutTheHint = async () => { throw new Error('network'); };
+    const r = await transcribeUtterance(u, hearing('espejo'));
+    assert.equal(r.spoken, true);
+  });
+
+  test('what counts as a name in the re-check', () => {
     assert.equal(onlyTheNames('Espejo.', 'mirror, espejo'), true);
-    assert.equal(onlyTheNames('mirror, espejo', 'mirror, espejo'), true);
-    assert.equal(onlyTheNames('espejo qué hora es', 'mirror, espejo'), false);
-    assert.equal(hearsAName('espejito', 'mirror, espejo'), true);
-    assert.equal(hearsAName('espero', 'mirror, espejo'), true, 'near enough to count as agreement');
-    assert.equal(hearsAName('Gracias por ver el video', 'mirror, espejo'), false);
+    assert.equal(onlyTheNames('Espejo, ¿qué hora es?', 'mirror, espejo'), false);
+    assert.equal(hearsAName('Espejo.', 'mirror, espejo'), true);
+    assert.equal(hearsAName('Subtítulos realizados por la comunidad de Amara.org', 'mirror, espejo'), false);
   });
 });

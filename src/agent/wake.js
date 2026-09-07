@@ -61,6 +61,45 @@ const COMMON_WORDS = new Set([
 // the collision was considered. Remove it so the name still matches itself.
 COMMON_WORDS.delete('mirror');
 
+/**
+ * Words that turn the name into something being talked *about*.
+ *
+ * A vocative takes no article: you say "espejo, poné música", never "el
+ * espejo, poné música". So "el espejo" and "un espejo" and "del espejo" are
+ * the room discussing the bot (or an actual mirror), not addressing it — and
+ * the bot answering those is the thing that makes it look like it talks to
+ * itself. Real lines from live calls: "Lo que hace el espejo no me incumbe",
+ * "picante encima del espejo", "Pintan mal las cosas para el espejo".
+ *
+ * Two ways out, both needed. The name said plainly anywhere else in the same
+ * sentence still wakes it ("el espejo este… espejo, ¿estás?"), and so does a
+ * sentence that speaks to someone in the second person: around here an article
+ * before a name is ordinary ("el Diego", "la Vero"), and "el mirror, estás
+ * escuchando?" is a real line from a live call. What the discounted lines have
+ * in common is that they are all in the third person.
+ */
+const DETERMINERS = new Set([
+  // Spanish. Deliberately missing: "no", "a", "una" and "lo", which are
+  // negation, preposition and Rioplatense filler far more often than they are
+  // determiners — "no, espejo, ponelo de nuevo" and "de una, espejo" are both
+  // people talking to it, and both were in the log.
+  'el', 'la', 'los', 'las', 'un', 'unos', 'unas', 'del',
+  'este', 'esta', 'estos', 'estas', 'ese', 'esa', 'esos', 'esas',
+  'aquel', 'aquella', 'aquellos', 'aquellas', 'mi', 'mis', 'tu', 'tus', 'su',
+  'sus', 'nuestro', 'nuestra', 'otro', 'otra', 'otros', 'otras', 'cada',
+  'algun', 'alguna', 'ningun', 'ninguna', 'cualquier',
+  // English
+  'the', 'an', 'this', 'that', 'these', 'those', 'my', 'your', 'his',
+  'her', 'its', 'their', 'our', 'another', 'every',
+]);
+
+/**
+ * Is this sentence speaking to someone, rather than about them?
+ *
+ * Only used to let an article-plus-name through, so it errs toward yes.
+ */
+const SECOND_PERSON = /\b(vos|tu|ti|te|usted|ustedes|sos|estas|estabas|podes|puedes|tenes|tienes|queres|quieres|sabes|hacer?s|decis|dijiste|decime|contame|explicame|deci|mira|mirame|escucha|escuchas|escuchame|anda|dale|you|your|youre|are)\b/;
+
 /** Very short names match too loosely, so they need to be exact. */
 const FUZZY_MIN_LENGTH = 5;
 
@@ -142,6 +181,9 @@ export function detectAddress(text, names) {
           ? window === needle
           : similarity(window, needle) >= SIMILARITY_THRESHOLD;
 
+      // "el espejo" is the room talking about it, not to it.
+      if (matched && DETERMINERS.has(words[i - 1] ?? '') && !SECOND_PERSON.test(haystack)) continue;
+
       if (matched && (!best || i < best.at)) {
         best = { at: i, name: rawName };
       }
@@ -173,4 +215,4 @@ function closestOf(words, names) {
   return best;
 }
 
-export { SIMILARITY_THRESHOLD, FUZZY_MIN_LENGTH, COMMON_WORDS };
+export { SIMILARITY_THRESHOLD, FUZZY_MIN_LENGTH, COMMON_WORDS, DETERMINERS, SECOND_PERSON };
