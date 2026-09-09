@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { after, before, beforeEach, describe } from 'node:test';
 
-import { DEFAULT_PERSONA, MODES, describeModes, findMode, looksLikeModeCommand, modeByName, modePrompt } from '../src/agent/modes.js';
+import { DEFAULT_PERSONA, characters, describeModes, findMode, looksLikeModeCommand, modeByName, modePrompt } from '../src/agent/modes.js';
 import { VOICES } from '../src/config.js';
 import { botTools } from '../src/agent/tools/index.js';
 import { DoorMissing, describeServer, describeSilence, splitAddress, sshArgs, zomboidTools } from '../src/agent/tools/zomboid.js';
@@ -9,16 +9,45 @@ import { promptWithInstructions } from '../src/agent/brain.js';
 import { config } from '../src/config.js';
 import { CascadeBrain, resetCascade } from '../src/agent/cascade.js';
 
+/**
+ * A character invented for these tests.
+ *
+ * The repository ships none: a character names a Discord role, a channel and a
+ * job, which are facts about one group of people. So the tests write their own
+ * rather than borrowing anybody's, which also proves the thing worth proving —
+ * that the framework has no favourite character built into it.
+ */
+const CHARACTER = {
+  name: 'faro',
+  displayName: 'el bot del faro',
+  spoken: ['bot del faro', 'modo faro', 'lighthouse mode'],
+  enterRole: 'guardianes',
+  actRole: 'guardianes',
+  detailChannel: 'sala-de-maquinas',
+  voice: 'echo',
+  tools: ['zomboid', 'quiet'],
+  entering: 'Soy el bot del faro.',
+  leaving: 'Listo, vuelve espejo.',
+  prompt: '\n\n# This mode\n\nYou look after a lighthouse. Say what is true and stop.',
+};
+
+before(() => {
+  config.values.characters = JSON.stringify([CHARACTER]);
+});
+after(() => {
+  config.values.characters = '';
+});
+
 describe('finding the mode somebody asked for', () => {
   test('the phrasings people use, inside a whole sentence', () => {
     for (const said of [
-      'espejo, activá el modo zomboid',
-      'poné el modo admin',
-      'ponete en modo servidor dale',
-      'switch to server mode',
-      'MODO ZOMBOID',
+      'espejo, activá el modo faro',
+      'poné el bot del faro',
+      'ponete en modo faro dale',
+      'switch to lighthouse mode',
+      'MODO FARO',
     ]) {
-      assert.equal(findMode(said)?.name, 'zomboid', said);
+      assert.equal(findMode(said)?.name, 'faro', said);
     }
   });
 
@@ -29,13 +58,13 @@ describe('finding the mode somebody asked for', () => {
   });
 
   test('by name, for when the agent passes the name back', () => {
-    assert.equal(modeByName('zomboid')?.name, 'zomboid');
+    assert.equal(modeByName('faro')?.name, 'faro');
     assert.equal(modeByName('nope'), undefined);
-    assert.match(describeModes(), /"zomboid"/);
+    assert.match(describeModes(), /"faro"/);
   });
 
   test('every mode declares what the framework needs from it', () => {
-    for (const mode of MODES) {
+    for (const mode of characters()) {
       assert.ok(mode.name && mode.spoken?.length, `${mode.name}: name and phrasings`);
       assert.ok(mode.prompt?.trim(), `${mode.name}: its own rules`);
       assert.ok(mode.entering && mode.leaving, `${mode.name}: what it says on the way in and out`);
@@ -48,7 +77,7 @@ describe('finding the mode somebody asked for', () => {
 
 describe('asking to change character never reaches the fast leg', () => {
   test('both directions, and nothing else', () => {
-    for (const said of ['activá el modo zomboid', 'ponete en modo admin', 'salí del modo', 'volvé a ser vos', 'back to normal']) {
+    for (const said of ['activá el modo faro', 'ponete en el bot del faro', 'salí del modo', 'volvé a ser vos', 'back to normal']) {
       assert.equal(looksLikeModeCommand(said), true, said);
     }
     // Music mode has its own router; this one must not shadow it.
@@ -73,11 +102,11 @@ describe('a mode is not the room', () => {
     assert.match(usual, /respondé Y/, 'the room writes its own character');
     assert.match(usual, /asado/);
 
-    const inMode = promptWithInstructions('g1', modePrompt(modeByName('zomboid')), () => undefined, { room: false });
+    const inMode = promptWithInstructions('g1', modePrompt(modeByName('faro')), () => undefined, { room: false });
     assert.doesNotMatch(inMode, /respondé Y/, 'no standing instructions in a mode');
     assert.doesNotMatch(inMode, /asado/, 'no notebook either');
     assert.match(inMode, /You are Mirror/, 'the rules that make it audible stay');
-    assert.match(inMode, /Project Zomboid/, "and the mode's own rules arrive");
+    assert.match(inMode, /lighthouse/i, "and the mode's own rules arrive");
     assert.match(inMode, /Never answer from memory/i, 'including the rules every mode inherits');
   });
 
@@ -98,7 +127,7 @@ describe('what a mode can reach', () => {
   });
 
   test('a mode keeps only its families', () => {
-    const inMode = names(modeByName('zomboid'));
+    const inMode = names(modeByName('faro'));
     // Its own list plus quiet, and nothing from the families it left out.
     assert.ok(inMode.includes('enter_music_mode'), 'it declared quiet');
     for (const gone of ['remember_fact', 'change_setting', 'set_reminder', 'play_music']) {
@@ -109,7 +138,7 @@ describe('what a mode can reach', () => {
   test('the way out is always served', () => {
     // A mode whose declaration forgot to list it would otherwise be a room
     // nobody can leave by asking.
-    assert.ok(names(modeByName('zomboid')).includes('leave_mode'));
+    assert.ok(names(modeByName('faro')).includes('leave_mode'));
     assert.ok(names({ name: 'locked', tools: [] }).includes('leave_mode'));
   });
 });
@@ -144,16 +173,16 @@ describe('routing while in a mode', () => {
     });
 
     const said = await brain.answer({
-      question: 'cómo está el server',
+      question: 'cómo está el faro',
       askedBy: 'Vero',
       transcript: '',
       utterances: [],
-      mode: modeByName('zomboid'),
+      mode: modeByName('faro'),
     });
     assert.equal(said, 'from the agent');
     assert.equal(fastCalls, 0, 'a fast model must not answer an operational question');
     assert.equal(agent.calls.length, 1);
-    assert.match(brain.reason, /zomboid mode/);
+    assert.match(brain.reason, /faro mode/);
   });
 
   test('with no mode, the fast leg answers as usual', async () => {
@@ -187,13 +216,13 @@ describe('what the zomboid mode can see', () => {
 
   test('a server that answers is reported by what it said, not by configuration', () => {
     const said = describeServer({
-      name: 'PandaParkour',
+      name: 'El Refugio 42',
       map: 'Muldraugh, KY',
       players: 3,
       maxPlayers: 16,
       version: '42.20',
     });
-    assert.match(said, /PandaParkour/);
+    assert.match(said, /El Refugio 42/);
     assert.match(said, /3 of 16 playing/);
     assert.match(said, /42\.20/);
   });
@@ -213,7 +242,7 @@ describe('what the zomboid mode can see', () => {
 
   test('the zomboid family is what the mode declared', () => {
     const turn = { guildId: 'g1', guild: () => null, askerId: null, askerName: null };
-    const names = botTools('g1', turn, modeByName('zomboid')).map((t) => t.name);
+    const names = botTools('g1', turn, modeByName('faro')).map((t) => t.name);
     assert.ok(names.includes('zomboid_status'));
     assert.ok(names.includes('leave_mode'));
     assert.ok(!names.includes('remember_fact'));
@@ -222,7 +251,7 @@ describe('what the zomboid mode can see', () => {
 
 describe('a character has a name and a voice', () => {
   test('every mode is asked for by name, and says which name', () => {
-    for (const mode of MODES) {
+    for (const mode of characters()) {
       assert.ok(mode.displayName, `${mode.name}: nothing to call it`);
       assert.ok(
         mode.spoken.some((phrase) => phrase.includes(mode.name)),
@@ -235,7 +264,7 @@ describe('a character has a name and a voice', () => {
     // The ambiguity this design exists to remove: "espejo" starts every single
     // thing anybody says to the bot, so a bare name can never mean "change
     // character". Only a verb-and-name phrasing does.
-    assert.equal(looksLikeModeCommand('que venga el bot de zomboid'), true);
+    assert.equal(looksLikeModeCommand('que venga el bot del faro'), true);
     assert.equal(looksLikeModeCommand('que vuelva espejo'), true);
     assert.equal(looksLikeModeCommand('volvé a ser vos'), true);
     assert.equal(looksLikeModeCommand('espejo, qué hora es'), false);
@@ -245,7 +274,7 @@ describe('a character has a name and a voice', () => {
   test('asking for the default back is a switch that names no mode', () => {
     // leave_mode's job, not enter_mode's: findMode has nothing to return.
     assert.equal(findMode('que vuelva espejo'), null);
-    assert.equal(findMode('que venga el bot de zomboid')?.name, 'zomboid');
+    assert.equal(findMode('que venga el bot del faro')?.name, 'faro');
   });
 
   test('the default persona is named, so there is something to ask back for', () => {
@@ -257,7 +286,7 @@ describe('a character has a name and a voice', () => {
   });
 
   test('a mode with its own voice picks a real one', () => {
-    for (const mode of MODES) {
+    for (const mode of characters()) {
       if (!mode.voice) continue;
       assert.ok(VOICES.includes(mode.voice), `${mode.name}: ${mode.voice} is not an OpenAI voice`);
       assert.notEqual(mode.voice, 'onyx', `${mode.name}: the same voice as the room's is a costume`);
@@ -278,8 +307,8 @@ describe('asking the operator that lives on the server', () => {
   const guild = {
     members: {
       cache: new Map([
-        ['kpo', { displayName: 'Luc', roles: { cache: [{ name: 'los kpos' }] } }],
-        ['nadie', { displayName: 'Fede', roles: { cache: [{ name: 'BOTS' }] } }],
+        ['kpo', { displayName: 'Vero', roles: { cache: [{ name: 'guardianes' }] } }],
+        ['nadie', { displayName: 'Nico', roles: { cache: [{ name: 'BOTS' }] } }],
       ]),
       me: {},
     },
@@ -301,7 +330,7 @@ describe('asking the operator that lives on the server', () => {
     guildId: 'g1',
     guild: () => g,
     askerId,
-    askerName: 'Luc',
+    askerName: 'Vero',
   });
   const toolNamed = (tools, name) => tools.find((t) => t.name === name);
   const textOf = (result) => result.content[0].text;
@@ -314,7 +343,7 @@ describe('asking the operator that lives on the server', () => {
         seen.push(args);
         return { ok: true, spoken: 'Está arriba, hay tres jugando.' };
       },
-    });
+    }, modeByName('faro'));
     const said = textOf(await toolNamed(tools, 'zomboid_ask').handler({ question: '¿anda?' }));
     assert.match(said, /Está arriba/);
     assert.equal(seen[0].act, false, 'reading by default');
@@ -326,12 +355,12 @@ describe('asking the operator that lives on the server', () => {
       ask: async () => {
         throw new Error('should never be asked');
       },
-    });
+    }, modeByName('faro'));
     const said = textOf(
       await toolNamed(tools, 'zomboid_ask').handler({ question: 'reinicialo', act: true }),
     );
-    assert.match(said, /los kpos/, 'says which role it needs');
-    assert.match(said, /Fede/);
+    assert.match(said, /guardianes/, 'says which role it needs');
+    assert.match(said, /Nico/);
   });
 
   test('acting goes through for somebody who has it', async () => {
@@ -342,7 +371,7 @@ describe('asking the operator that lives on the server', () => {
         seen.push(args);
         return { ok: true, spoken: 'Listo, reiniciado.' };
       },
-    });
+    }, modeByName('faro'));
     const said = textOf(
       await toolNamed(tools, 'zomboid_ask').handler({ question: 'reinicialo', act: true }),
     );
@@ -351,7 +380,7 @@ describe('asking the operator that lives on the server', () => {
   });
 
   test('the long half is written, not spoken, and the voice says so', async () => {
-    const { posted, guild: g } = withChannel('project-zomboid-ñoños-chatroom');
+    const { posted, guild: g } = withChannel('sala-de-maquinas');
     const tools = zomboidTools(turnFor('kpo', g), {
       keys: { read: '/dev/null', act: '/dev/null' },
       ask: async () => ({
@@ -359,7 +388,7 @@ describe('asking the operator that lives on the server', () => {
         spoken: 'Se cayó por un mod. Te lo dejo escrito.',
         detail: '## Qué encontré\nEl mod BetterSorting no cargó.',
       }),
-    });
+    }, modeByName('faro'));
     const said = textOf(await toolNamed(tools, 'zomboid_ask').handler({ question: '¿por qué se cayó?' }));
     assert.equal(posted.length, 1, 'the report went to the channel');
     assert.match(posted[0], /BetterSorting/);
@@ -371,7 +400,7 @@ describe('asking the operator that lives on the server', () => {
     const ssh = config.values.zomboidSsh;
     config.values.zomboidSsh = '';
     try {
-      const tools = zomboidTools(turnFor('kpo'), { keys: { read: '/dev/null', act: '/dev/null' }, ask: async () => ({}) });
+      const tools = zomboidTools(turnFor('kpo'), { keys: { read: '/dev/null', act: '/dev/null' }, ask: async () => ({}) }, modeByName('faro'));
       const said = textOf(await toolNamed(tools, 'zomboid_ask').handler({ question: 'hola' }));
       assert.match(said, /no way in|cannot ask/i);
     } finally {
@@ -387,7 +416,7 @@ describe('asking the operator that lives on the server', () => {
         seen.push(args.keyPath);
         return { ok: true, spoken: 'listo' };
       },
-    });
+    }, modeByName('faro'));
     const ask = toolNamed(tools, 'zomboid_ask');
     await ask.handler({ question: '¿anda?' });
     await ask.handler({ question: 'reinicialo', act: true });
@@ -397,7 +426,7 @@ describe('asking the operator that lives on the server', () => {
   test('without the second key it can only look, and says which key is missing', async () => {
     const tools = zomboidTools(turnFor('kpo'), {
       keys: { read: '/dev/null', act: '/does/not/exist' },
-    });
+    }, modeByName('faro'));
     const said = textOf(
       await toolNamed(tools, 'zomboid_ask').handler({ question: 'reinicialo', act: true }),
     );
@@ -416,7 +445,7 @@ describe('asking the operator that lives on the server', () => {
         ask: async () => {
           throw new Error('ssh: connect to host port 22: Connection timed out');
         },
-      });
+      }, modeByName('faro'));
       const said = textOf(await toolNamed(tools, 'zomboid_ask').handler({ question: '¿por qué se cayó?' }));
       assert.match(said, /not up/i);
       assert.match(said, /\/pz start/, 'and where the way back up is');
@@ -430,7 +459,7 @@ describe('asking the operator that lives on the server', () => {
     const tools = zomboidTools(turnFor('kpo'), {
       keys: { read: '/dev/null', act: '/dev/null' },
       ask: async () => ({ ok: false, error: 'sin cupo' }),
-    });
+    }, modeByName('faro'));
     const said = textOf(await toolNamed(tools, 'zomboid_ask').handler({ question: 'hola' }));
     assert.match(said, /could not get a clear answer/i);
   });
@@ -471,12 +500,12 @@ describe('the ssh call is explicit about which identity it uses', () => {
 
 describe('the three ways a door can fail to answer', () => {
   const guild = {
-    members: { cache: new Map([['kpo', { displayName: 'Luc', roles: { cache: [{ name: 'los kpos' }] } }]]), me: {} },
+    members: { cache: new Map([['kpo', { displayName: 'Vero', roles: { cache: [{ name: 'guardianes' }] } }]]), me: {} },
     channels: { cache: new Map() },
   };
   const turn = { guildId: 'g1', guild: () => guild, askerId: 'kpo', askerName: 'Luc' };
   const askTool = (ask) =>
-    zomboidTools(turn, { keys: { read: '/dev/null', act: '/dev/null' }, ask }).find(
+    zomboidTools(turn, { keys: { read: '/dev/null', act: '/dev/null' }, ask }, modeByName('faro')).find(
       (t) => t.name === 'zomboid_ask',
     );
   const textOf = (r) => r.content[0].text;

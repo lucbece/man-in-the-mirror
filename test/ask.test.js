@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
-import test, { describe } from 'node:test';
+import test, { after, before, describe } from 'node:test';
 
 import { ask, AgentBusyError, stagesFrom, describeStages, COULD_NOT_LINES, CONTEXT_WAIT_MS } from '../src/agent/index.js';
 import { SILENCE_MS } from '../src/voice/receiver.js';
+import { config } from '../src/config.js';
 
 /**
  * The orchestrator with its collaborators replaced.
@@ -544,6 +545,18 @@ describe('the [latency] line', () => {
 });
 
 describe('a character speaks in its own voice from the moment it arrives', () => {
+  // The repository ships no characters, so the test writes the one it needs.
+  let configured;
+  before(() => {
+    configured = config.values.characters;
+    config.values.characters = JSON.stringify([
+      { name: 'faro', displayName: 'el bot del faro', spoken: ['bot del faro'], voice: 'echo' },
+    ]);
+  });
+  after(() => {
+    config.values.characters = configured;
+  });
+
   test('the sentence that announces the switch is already the new voice', async () => {
     // Found on the first real switch: the turn that changes character is the
     // turn that says "soy el bot de zomboid", and it was saying it in the
@@ -551,19 +564,19 @@ describe('a character speaks in its own voice from the moment it arrives', () =>
     const session = fakeSession();
     session.mode = null;
     const d = deps({
-      sentences: ['Soy el bot de zomboid.'],
+      sentences: ['Soy el bot del faro.'],
       tools: ['mcp__bot__enter_mode'],
       effect: () => {
-        session.mode = 'zomboid';
+        session.mode = 'faro';
       },
     });
-    await ask(session, { question: 'que venga el bot de zomboid', askedBy: 'Luc' }, d);
+    await ask(session, { question: 'que venga el bot del faro', askedBy: 'Vero' }, d);
     assert.deepEqual(d.voicesUsed, ['echo'], 'the introduction is in the new voice');
   });
 
   test('and goes back when the character does', async () => {
     const session = fakeSession();
-    session.mode = 'zomboid';
+    session.mode = 'faro';
     const d = deps({
       sentences: ['Listo, vuelve espejo.'],
       tools: ['mcp__bot__leave_mode'],
@@ -571,22 +584,22 @@ describe('a character speaks in its own voice from the moment it arrives', () =>
         session.mode = null;
       },
     });
-    await ask(session, { question: 'que vuelva espejo', askedBy: 'Luc' }, d);
+    await ask(session, { question: 'que vuelva espejo', askedBy: 'Vero' }, d);
     assert.deepEqual(d.voicesUsed, ['default'], 'the room’s own voice again');
   });
 
   test('an ordinary answer in a character stays in its voice', async () => {
     const session = fakeSession();
-    session.mode = 'zomboid';
+    session.mode = 'faro';
     const d = deps({ sentences: ['El server no está respondiendo.', 'Tirá barra pz start.'] });
-    await ask(session, { question: 'cómo está el server', askedBy: 'Luc' }, d);
+    await ask(session, { question: 'cómo está el faro', askedBy: 'Vero' }, d);
     assert.deepEqual(d.voicesUsed, ['echo', 'echo']);
   });
 
   test('with no character, nothing asks for a voice at all', async () => {
     const session = fakeSession();
     const d = deps({ sentences: ['Todo bien.'] });
-    await ask(session, { question: 'cómo andás', askedBy: 'Luc' }, d);
+    await ask(session, { question: 'cómo andás', askedBy: 'Vero' }, d);
     assert.deepEqual(d.voicesUsed, ['default']);
   });
 });

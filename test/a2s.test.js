@@ -7,7 +7,12 @@ import { fileURLToPath } from 'node:url';
 import { A2sError, NoAnswer, challengeIn, gameVersion, parseInfo, query } from '../src/agent/a2s.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-/** A real Build 42 answer, captured from the server the room plays on. */
+/**
+ * A real Build 42 answer, captured from a live server, with the server's own
+ * name replaced. Every byte of the shape is what a server really sent — the
+ * challenge, the field order, the extra-data flags — and the one string that
+ * identified somebody's game is not.
+ */
 const REAL = fs.readFileSync(path.join(here, 'fixtures/a2s_info.bin'));
 
 const HEADER = Buffer.from([0xff, 0xff, 0xff, 0xff]);
@@ -17,7 +22,7 @@ const challenge = (bytes = [1, 2, 3, 4]) =>
 describe('reading what the game says about itself', () => {
   test('parses a real Build 42 response', () => {
     const info = parseInfo(REAL);
-    assert.equal(info.name, 'PandaParkour');
+    assert.equal(info.name, 'El Refugio 42');
     assert.equal(info.map, 'Muldraugh, KY');
     assert.equal(info.game, 'Project Zomboid');
     assert.equal(info.players, 1);
@@ -57,7 +62,7 @@ describe('the query, without a socket', () => {
         return sent.length === 1 ? challenge([7, 7, 7, 7]) : REAL;
       },
     });
-    assert.equal(info.name, 'PandaParkour');
+    assert.equal(info.name, 'El Refugio 42');
     assert.equal(sent.length, 2, 'the request, then the request with the challenge');
     assert.deepEqual([...sent[1].subarray(-4)], [7, 7, 7, 7], 'the same four bytes come back');
     assert.ok(sent[1].length === sent[0].length + 4);
@@ -102,7 +107,7 @@ describe('the query, without a socket', () => {
         return REAL;
       },
     });
-    assert.equal(info.name, 'PandaParkour');
+    assert.equal(info.name, 'El Refugio 42');
   });
 
   test('a challenge answered with another challenge is a lost datagram, not an answer', async () => {
@@ -116,7 +121,7 @@ describe('the query, without a socket', () => {
         return REAL;
       },
     });
-    assert.equal(info.name, 'PandaParkour');
+    assert.equal(info.name, 'El Refugio 42');
     assert.equal(calls, 3);
   });
 
