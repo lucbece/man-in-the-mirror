@@ -4,7 +4,7 @@ import test, { after, before, beforeEach, describe } from 'node:test';
 import { DEFAULT_PERSONA, MODES, describeModes, findMode, looksLikeModeCommand, modeByName, modePrompt } from '../src/agent/modes.js';
 import { VOICES } from '../src/config.js';
 import { botTools } from '../src/agent/tools/index.js';
-import { describeServer, describeSilence, splitAddress, zomboidTools } from '../src/agent/tools/zomboid.js';
+import { describeServer, describeSilence, splitAddress, sshArgs, zomboidTools } from '../src/agent/tools/zomboid.js';
 import { promptWithInstructions } from '../src/agent/brain.js';
 import { config } from '../src/config.js';
 import { CascadeBrain, resetCascade } from '../src/agent/cascade.js';
@@ -433,5 +433,36 @@ describe('asking the operator that lives on the server', () => {
     });
     const said = textOf(await toolNamed(tools, 'zomboid_ask').handler({ question: 'hola' }));
     assert.match(said, /could not get a clear answer/i);
+  });
+});
+
+describe('the ssh call is explicit about which identity it uses', () => {
+  test('IdentitiesOnly, no agent, public key only', () => {
+    // Without these, `-i` is a suggestion: ssh offers every identity it can
+    // find and the server takes the first that matches, so a read-only
+    // question could authenticate with the key allowed to change things and
+    // nobody would have decided it. Two keys only mean two permissions if
+    // each call offers exactly one.
+    const args = sshArgs({ destination: 'pz@host', keyPath: '/k/read', act: false });
+    const pairs = args.join(' ');
+    assert.match(pairs, /-i \/k\/read/);
+    assert.match(pairs, /-o IdentitiesOnly=yes/);
+    assert.match(pairs, /-o IdentityAgent=none/);
+    assert.match(pairs, /-o PreferredAuthentications=publickey/);
+    assert.match(pairs, /-o BatchMode=yes/);
+    assert.equal(args.at(-2), 'pz@host');
+    assert.equal(args.at(-1), '--read');
+  });
+
+  test('the mode travels too, for the day a key stops being pinned', () => {
+    assert.equal(sshArgs({ destination: 'pz@host', keyPath: '/k/act', act: true }).at(-1), '--completo');
+  });
+
+  test('one identity offered per call, and it is the one asked for', () => {
+    for (const [key, act] of [['/k/read', false], ['/k/act', true]]) {
+      const args = sshArgs({ destination: 'pz@host', keyPath: key, act });
+      assert.equal(args.filter((a) => a === '-i').length, 1, 'exactly one identity');
+      assert.equal(args[args.indexOf('-i') + 1], key);
+    }
   });
 });

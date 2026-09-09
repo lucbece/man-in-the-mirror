@@ -108,25 +108,36 @@ export const ASK_TIMEOUT_MS = 150_000;
  * refuses, so anything that is not JSON is this side's problem: the machine
  * is off, the key is wrong, the network went away.
  */
-export function askOverSsh({ destination, keyPath, question, act, timeoutMs = ASK_TIMEOUT_MS }) {
+export function sshArgs({ destination, keyPath, act }) {
+  return [
+    '-i', keyPath,
+    // Without this, `-i` is a suggestion. ssh offers every identity it can
+    // find — the ones in the agent, the default names in ~/.ssh — and the
+    // server accepts the first that matches, so a question meant to be
+    // read-only could authenticate with the key that is allowed to change
+    // things, with nobody deciding it. The whole premise of two keys is that
+    // which one is used *is* the permission, and this is what makes that true
+    // rather than likely. `IdentityAgent=none` is the same point for an agent
+    // that might exist in the container's environment.
+    '-o', 'IdentitiesOnly=yes',
+    '-o', 'IdentityAgent=none',
+    '-o', 'PreferredAuthentications=publickey',
+    '-o', 'BatchMode=yes',
+    '-o', 'StrictHostKeyChecking=accept-new',
+    '-o', 'ConnectTimeout=10',
+    destination,
+    // Ignored while the far side forces its command, which is the point of
+    // forcing it. Sent anyway so the day somebody unpins a key, the two ends
+    // still agree about which mode was asked for.
+    act ? '--completo' : '--read',
+  ];
+}
+
+export function askOverSsh({ destination, keyPath, question, act, timeoutMs = ASK_TIMEOUT_MS, spawnImpl = spawn }) {
   return new Promise((resolve, reject) => {
-    const child = spawn(
-      'ssh',
-      [
-        '-i', keyPath,
-        '-o', 'BatchMode=yes',
-        '-o', 'StrictHostKeyChecking=accept-new',
-        '-o', 'ConnectTimeout=10',
-        destination,
-        // Passed for the day the far side stops forcing the command; with a
-        // forced command it is ignored, which is the point of forcing it.
-        // Ignored while the far side forces its command, which is the point of
-        // forcing it. Sent anyway so the day somebody unpins a key, the two
-        // ends still agree about which mode was asked for.
-        act ? '--completo' : '--read',
-      ],
-      { stdio: ['pipe', 'pipe', 'pipe'] },
-    );
+    const child = spawnImpl('ssh', sshArgs({ destination, keyPath, act }), {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
 
     let out = '';
     let err = '';
