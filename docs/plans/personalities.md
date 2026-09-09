@@ -316,6 +316,38 @@ The asker's sentence is what reaches the VM — never the room transcript. Ten
 friends talking is untrusted input, and an ops agent should not be reading it
 looking for instructions.
 
+## What reaches the VM, and what it remembers
+
+Two questions that decide whether this stays usable after a week, both raised
+by Luc before anything was built.
+
+**Is there a layer between the room and the VM?** Yes, and it is the agent
+itself. The room's speech reaches the bot's agent as a transcript; that agent,
+running with the character's rules and the character's tools, decides whether
+to call the tool at all and writes what goes in it. **Only what it writes
+reaches the VM.** The conversation over there never sees the channel: not the
+jokes, not the other people, not the transcript. It sees a brief. A silly
+question in the middle of a session about the server is answered — or
+deflected — by the bot, and costs the VM nothing, because no tool call is made.
+
+**Does the VM conversation accumulate?** It must not, and the way to make sure
+is to keep it short-lived: every question opens a **fresh, bounded run** over
+there, the way `autorepair.sh` already works — `claude -p` with the persona,
+the allow-list, a turn cap and a timeout. Nothing accrues between questions, so
+nothing drifts and nothing is polluted by an afternoon of chatter.
+
+Continuity lives on this side instead. The agent in the bot remembers what the
+VM answered, because a tool result is part of its own conversation. So the
+sequence that matters still works:
+
+> "revisá los logs, sospecho de un mod" → a fresh run over there returns a
+> report → the bot keeps the report → "desactivá ese mod" → **another** fresh
+> run, whose brief already names the mod and says why.
+
+The VM never accumulates and the room never repeats itself. It also means the
+brief is written by a model that has read the room and knows what was already
+established, which is the part a stateless door would otherwise lose.
+
 ## Verbosity
 
 An agent with the whole context of a server writes paragraphs; spoken, that is
