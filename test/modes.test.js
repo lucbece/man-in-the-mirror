@@ -450,12 +450,14 @@ describe('the ssh call is explicit about which identity it uses', () => {
     assert.match(pairs, /-o IdentityAgent=none/);
     assert.match(pairs, /-o PreferredAuthentications=publickey/);
     assert.match(pairs, /-o BatchMode=yes/);
-    assert.equal(args.at(-2), 'pz@host');
-    assert.equal(args.at(-1), '--read');
+    // The separator is not decoration: ssh keeps reading options after the
+    // destination, so `ssh host --read` exits with a usage error before it
+    // opens a socket. It cost one real knock on the door to find.
+    assert.deepEqual(args.slice(-3), ['pz@host', '--', '--read']);
   });
 
   test('the mode travels too, for the day a key stops being pinned', () => {
-    assert.equal(sshArgs({ destination: 'pz@host', keyPath: '/k/act', act: true }).at(-1), '--completo');
+    assert.deepEqual(sshArgs({ destination: 'pz@host', keyPath: '/k/act', act: true }).slice(-2), ['--', '--completo']);
   });
 
   test('one identity offered per call, and it is the one asked for', () => {
