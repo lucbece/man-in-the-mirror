@@ -3,6 +3,7 @@ import test, { beforeEach, describe } from 'node:test';
 
 import { MODES, describeModes, findMode, modeByName, modePrompt } from '../src/agent/modes.js';
 import { botTools } from '../src/agent/tools/index.js';
+import { describeServer, describeSilence, splitAddress } from '../src/agent/tools/zomboid.js';
 import { promptWithInstructions } from '../src/agent/brain.js';
 import { config } from '../src/config.js';
 import { CascadeBrain, resetCascade } from '../src/agent/cascade.js';
@@ -159,5 +160,49 @@ describe('routing while in a mode', () => {
     const said = await brain.answer({ question: 'por qué', askedBy: 'Vero', transcript: '', utterances: [] });
     assert.equal(said, 'Porque sí.');
     assert.equal(fastCalls, 1);
+  });
+});
+
+describe('what the zomboid mode can see', () => {
+  test('the address can be written with or without a port', () => {
+    assert.deepEqual(splitAddress('10.0.0.1:16261'), { host: '10.0.0.1', port: 16261 });
+    assert.deepEqual(splitAddress('game.example.com'), { host: 'game.example.com', port: 16261 });
+    assert.deepEqual(splitAddress(' 10.0.0.1:17000 '), { host: '10.0.0.1', port: 17000 });
+    assert.equal(splitAddress(''), null);
+    assert.equal(splitAddress(undefined), null);
+  });
+
+  test('a server that answers is reported by what it said, not by configuration', () => {
+    const said = describeServer({
+      name: 'PandaParkour',
+      map: 'Muldraugh, KY',
+      players: 3,
+      maxPlayers: 16,
+      version: '42.20',
+    });
+    assert.match(said, /PandaParkour/);
+    assert.match(said, /3 of 16 playing/);
+    assert.match(said, /42\.20/);
+  });
+
+  test('an empty server says so plainly', () => {
+    assert.match(describeServer({ name: 'x', map: 'y', players: 0, maxPlayers: 16, version: '42' }), /nobody playing/);
+  });
+
+  test('silence is the normal state, and the way out is somebody else\'s command', () => {
+    const said = describeSilence();
+    // The two things this wording exists for: not calling a nightly, designed
+    // shutdown a fault, and not letting the bot claim a switch it has not got.
+    assert.match(said, /powers itself off/);
+    assert.match(said, /\/pz start/);
+    assert.match(said, /Never say that you started it/);
+  });
+
+  test('the zomboid family is what the mode declared', () => {
+    const turn = { guildId: 'g1', guild: () => null, askerId: null, askerName: null };
+    const names = botTools('g1', turn, modeByName('zomboid')).map((t) => t.name);
+    assert.ok(names.includes('zomboid_status'));
+    assert.ok(names.includes('leave_mode'));
+    assert.ok(!names.includes('remember_fact'));
   });
 });

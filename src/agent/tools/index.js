@@ -22,6 +22,7 @@ import { notebookTools } from './notebook.js';
 import { quietTools } from './quiet.js';
 import { reminderTools } from './reminders.js';
 import { searchTools } from './search.js';
+import { zomboidTools } from './zomboid.js';
 
 /**
  * `turn` is how a tool learns who is asking: the same object every turn, with
@@ -44,6 +45,7 @@ const FAMILIES = {
   music: (guildId, turn) => musicTools(turn),
   quiet: (guildId, turn) => quietTools(turn),
   reminders: (guildId) => reminderTools(guildId),
+  zomboid: () => zomboidTools(),
 };
 
 /**
