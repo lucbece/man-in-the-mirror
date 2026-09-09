@@ -96,6 +96,17 @@ export function describeSilence() {
  */
 export class DoorMissing extends DiscordToolError {}
 
+/**
+ * The key was offered and the server would not take it.
+ *
+ * The expected state for a while, and by design: the act key exists on this
+ * side long before anybody authorises it on that side, because "without the
+ * second key it can only look" is the default worth having. Its own error so
+ * the room hears what is true — that it may look and not touch — rather than
+ * an ssh exit code, which is what it sounded like the first time.
+ */
+export class KeyRefused extends DiscordToolError {}
+
 export const KEYS = {
   read: process.env.MIRROR_ZOMBOID_KEY ?? path.join('data', 'zomboid-key'),
   act: process.env.MIRROR_ZOMBOID_ACT_KEY ?? path.join('data', 'zomboid-key-act'),
@@ -193,6 +204,10 @@ export function askOverSsh({ destination, keyPath, question, act, timeoutMs = AS
       // place hours before the script is.
       if (code === 127) {
         reject(new DoorMissing('the door is not installed on the server yet'));
+        return;
+      }
+      if (/permission denied \(publickey\)/i.test(err)) {
+        reject(new KeyRefused('the server did not accept this key'));
         return;
       }
       reject(
@@ -299,6 +314,13 @@ export function zomboidTools(turn, deps = {}, mode = null) {
           // probe decides which of the two happened, rather than the failure
           // of the expensive call.
           // Three states behind one failure, and they need three sentences.
+          if (err instanceof KeyRefused) {
+            throw new DiscordToolError(
+              act
+                ? 'the server lets me look but has not been told to let me change anything — say that in one sentence, and that somebody with access has to allow it'
+                : 'the server did not accept my key — say that in one sentence',
+            );
+          }
           if (err instanceof DoorMissing) {
             throw new DiscordToolError(
               'I can reach the server but the part of it that answers questions is not installed yet — say that in one sentence',
