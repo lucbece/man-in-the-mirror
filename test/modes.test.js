@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import test, { beforeEach, describe } from 'node:test';
+import test, { after, before, beforeEach, describe } from 'node:test';
 
 import { DEFAULT_PERSONA, MODES, describeModes, findMode, looksLikeModeCommand, modeByName, modePrompt } from '../src/agent/modes.js';
 import { VOICES } from '../src/config.js';
 import { botTools } from '../src/agent/tools/index.js';
-import { describeServer, describeSilence, splitAddress } from '../src/agent/tools/zomboid.js';
+import { describeServer, describeSilence, splitAddress, sshArgs, zomboidTools } from '../src/agent/tools/zomboid.js';
 import { promptWithInstructions } from '../src/agent/brain.js';
 import { config } from '../src/config.js';
 import { CascadeBrain, resetCascade } from '../src/agent/cascade.js';
@@ -261,6 +261,208 @@ describe('a character has a name and a voice', () => {
       if (!mode.voice) continue;
       assert.ok(VOICES.includes(mode.voice), `${mode.name}: ${mode.voice} is not an OpenAI voice`);
       assert.notEqual(mode.voice, 'onyx', `${mode.name}: the same voice as the room's is a costume`);
+    }
+  });
+});
+
+describe('asking the operator that lives on the server', () => {
+  let configured;
+  before(() => {
+    configured = config.values.zomboidSsh;
+    config.values.zomboidSsh = 'pz@10.0.0.1';
+  });
+  after(() => {
+    config.values.zomboidSsh = configured;
+  });
+
+  const guild = {
+    members: {
+      cache: new Map([
+        ['kpo', { displayName: 'Luc', roles: { cache: [{ name: 'los kpos' }] } }],
+        ['nadie', { displayName: 'Fede', roles: { cache: [{ name: 'BOTS' }] } }],
+      ]),
+      me: {},
+    },
+    channels: { cache: new Map() },
+  };
+  // A text channel that records what was written into it.
+  function withChannel(name) {
+    const posted = [];
+    const channel = {
+      name,
+      isTextBased: () => true,
+      isVoiceBased: () => false,
+      permissionsFor: () => ({ has: () => true }),
+      send: async (text) => posted.push(text),
+    };
+    return { posted, guild: { ...guild, channels: { cache: new Map([['c', channel]]) } } };
+  }
+  const turnFor = (askerId, g = guild) => ({
+    guildId: 'g1',
+    guild: () => g,
+    askerId,
+    askerName: 'Luc',
+  });
+  const toolNamed = (tools, name) => tools.find((t) => t.name === name);
+  const textOf = (result) => result.content[0].text;
+
+  test('a question only looks, and needs no role', async () => {
+    const seen = [];
+    const tools = zomboidTools(turnFor('nadie'), {
+      keys: { read: '/dev/null', act: '/dev/null' },
+      ask: async (args) => {
+        seen.push(args);
+        return { ok: true, spoken: 'Está arriba, hay tres jugando.' };
+      },
+    });
+    const said = textOf(await toolNamed(tools, 'zomboid_ask').handler({ question: '¿anda?' }));
+    assert.match(said, /Está arriba/);
+    assert.equal(seen[0].act, false, 'reading by default');
+  });
+
+  test('acting is refused without the role, and the refusal is sayable', async () => {
+    const tools = zomboidTools(turnFor('nadie'), {
+      keys: { read: '/dev/null', act: '/dev/null' },
+      ask: async () => {
+        throw new Error('should never be asked');
+      },
+    });
+    const said = textOf(
+      await toolNamed(tools, 'zomboid_ask').handler({ question: 'reinicialo', act: true }),
+    );
+    assert.match(said, /los kpos/, 'says which role it needs');
+    assert.match(said, /Fede/);
+  });
+
+  test('acting goes through for somebody who has it', async () => {
+    const seen = [];
+    const tools = zomboidTools(turnFor('kpo'), {
+      keys: { read: '/dev/null', act: '/dev/null' },
+      ask: async (args) => {
+        seen.push(args);
+        return { ok: true, spoken: 'Listo, reiniciado.' };
+      },
+    });
+    const said = textOf(
+      await toolNamed(tools, 'zomboid_ask').handler({ question: 'reinicialo', act: true }),
+    );
+    assert.match(said, /reiniciado/);
+    assert.equal(seen[0].act, true);
+  });
+
+  test('the long half is written, not spoken, and the voice says so', async () => {
+    const { posted, guild: g } = withChannel('project-zomboid-ñoños-chatroom');
+    const tools = zomboidTools(turnFor('kpo', g), {
+      keys: { read: '/dev/null', act: '/dev/null' },
+      ask: async () => ({
+        ok: true,
+        spoken: 'Se cayó por un mod. Te lo dejo escrito.',
+        detail: '## Qué encontré\nEl mod BetterSorting no cargó.',
+      }),
+    });
+    const said = textOf(await toolNamed(tools, 'zomboid_ask').handler({ question: '¿por qué se cayó?' }));
+    assert.equal(posted.length, 1, 'the report went to the channel');
+    assert.match(posted[0], /BetterSorting/);
+    assert.match(said, /Se cayó por un mod/);
+    assert.match(said, /written in the channel/i, 'and the voice mentions it');
+  });
+
+  test('with nowhere configured to ask, it says so instead of failing', async () => {
+    const ssh = config.values.zomboidSsh;
+    config.values.zomboidSsh = '';
+    try {
+      const tools = zomboidTools(turnFor('kpo'), { keys: { read: '/dev/null', act: '/dev/null' }, ask: async () => ({}) });
+      const said = textOf(await toolNamed(tools, 'zomboid_ask').handler({ question: 'hola' }));
+      assert.match(said, /no way in|cannot ask/i);
+    } finally {
+      config.values.zomboidSsh = ssh;
+    }
+  });
+
+  test('which key is used is the permission, not a flag', async () => {
+    const seen = [];
+    const tools = zomboidTools(turnFor('kpo'), {
+      keys: { read: '/read-key', act: '/act-key' },
+      ask: async (args) => {
+        seen.push(args.keyPath);
+        return { ok: true, spoken: 'listo' };
+      },
+    });
+    const ask = toolNamed(tools, 'zomboid_ask');
+    await ask.handler({ question: '¿anda?' });
+    await ask.handler({ question: 'reinicialo', act: true });
+    assert.deepEqual(seen, ['/read-key', '/act-key']);
+  });
+
+  test('without the second key it can only look, and says which key is missing', async () => {
+    const tools = zomboidTools(turnFor('kpo'), {
+      keys: { read: '/dev/null', act: '/does/not/exist' },
+    });
+    const said = textOf(
+      await toolNamed(tools, 'zomboid_ask').handler({ question: 'reinicialo', act: true }),
+    );
+    assert.match(said, /only have the key that lets me look/i);
+  });
+
+  test('a machine that is asleep is not a machine that is broken', async () => {
+    // The VM powers itself off after half an hour with nobody playing, so ssh
+    // failing is the normal evening rather than a fault. The cheap probe
+    // decides which, instead of the failure of the expensive call.
+    const address = config.values.zomboidAddress;
+    config.values.zomboidAddress = '';
+    try {
+      const tools = zomboidTools(turnFor('kpo'), {
+        keys: { read: '/dev/null', act: '/dev/null' },
+        ask: async () => {
+          throw new Error('ssh: connect to host port 22: Connection timed out');
+        },
+      });
+      const said = textOf(await toolNamed(tools, 'zomboid_ask').handler({ question: '¿por qué se cayó?' }));
+      assert.match(said, /not up/i);
+      assert.match(said, /\/pz start/, 'and where the way back up is');
+      assert.doesNotMatch(said, /timed out/i, 'not the ssh error, which means nothing to the room');
+    } finally {
+      config.values.zomboidAddress = address;
+    }
+  });
+
+  test('a door that answers nothing sayable does not go silent', async () => {
+    const tools = zomboidTools(turnFor('kpo'), {
+      keys: { read: '/dev/null', act: '/dev/null' },
+      ask: async () => ({ ok: false, error: 'sin cupo' }),
+    });
+    const said = textOf(await toolNamed(tools, 'zomboid_ask').handler({ question: 'hola' }));
+    assert.match(said, /could not get a clear answer/i);
+  });
+});
+
+describe('the ssh call is explicit about which identity it uses', () => {
+  test('IdentitiesOnly, no agent, public key only', () => {
+    // Without these, `-i` is a suggestion: ssh offers every identity it can
+    // find and the server takes the first that matches, so a read-only
+    // question could authenticate with the key allowed to change things and
+    // nobody would have decided it. Two keys only mean two permissions if
+    // each call offers exactly one.
+    const args = sshArgs({ destination: 'pz@host', keyPath: '/k/read', act: false });
+    const pairs = args.join(' ');
+    assert.match(pairs, /-i \/k\/read/);
+    assert.match(pairs, /-o IdentitiesOnly=yes/);
+    assert.match(pairs, /-o IdentityAgent=none/);
+    assert.match(pairs, /-o PreferredAuthentications=publickey/);
+    assert.match(pairs, /-o BatchMode=yes/);
+    assert.equal(args.at(-2), 'pz@host');
+    assert.equal(args.at(-1), '--read');
+  });
+
+  test('the mode travels too, for the day a key stops being pinned', () => {
+    assert.equal(sshArgs({ destination: 'pz@host', keyPath: '/k/act', act: true }).at(-1), '--completo');
+  });
+
+  test('one identity offered per call, and it is the one asked for', () => {
+    for (const [key, act] of [['/k/read', false], ['/k/act', true]]) {
+      const args = sshArgs({ destination: 'pz@host', keyPath: key, act });
+      assert.equal(args.filter((a) => a === '-i').length, 1, 'exactly one identity');
+      assert.equal(args[args.indexOf('-i') + 1], key);
     }
   });
 });

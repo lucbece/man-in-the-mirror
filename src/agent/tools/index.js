@@ -45,7 +45,7 @@ const FAMILIES = {
   music: (guildId, turn) => musicTools(turn),
   quiet: (guildId, turn) => quietTools(turn),
   reminders: (guildId) => reminderTools(guildId),
-  zomboid: () => zomboidTools(),
+  zomboid: (guildId, turn) => zomboidTools(turn),
 };
 
 /**

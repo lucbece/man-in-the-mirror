@@ -47,9 +47,20 @@ import { speakableTool } from './wrappers.js';
  * came due in music mode, needs to know its promise went nowhere.
  */
 export async function noteInMusicChannel(turn, text) {
+  return writeToChannel(turn.guild?.(), config.get('musicChannel'), text);
+}
+
+/**
+ * Write a line into a text channel, found by name.
+ *
+ * Pulled out of the music note because a second thing wants it: a character
+ * whose answer is too long to say puts the long half here and speaks one line
+ * about it. Same matching — exact name first, then a channel that contains it,
+ * because "#music" and "#música-y-otras-yerbas" are both what somebody meant.
+ */
+export async function writeToChannel(guild, channelName, text) {
   try {
-    const guild = turn.guild?.();
-    const wanted = config.get('musicChannel').trim().toLowerCase();
+    const wanted = String(channelName ?? '').trim().toLowerCase();
     if (!guild || !wanted) return false;
 
     const channels = [...guild.channels.cache.values()].filter(
@@ -65,7 +76,7 @@ export async function noteInMusicChannel(turn, text) {
     await channel.send(text);
     return true;
   } catch (err) {
-    console.warn(`[music] could not write to the channel: ${err.message}`);
+    console.warn(`[channel] could not write to #${channelName}: ${err.message}`);
     return false;
   }
 }

@@ -21,9 +21,17 @@
  */
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 
+import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { z } from 'zod';
+
 import { NoAnswer, query } from '../a2s.js';
 import { config } from '../../config.js';
-import { speakableTool } from './wrappers.js';
+import { DiscordToolError, requireRole } from '../discord-tools.js';
+import { modeByName } from '../modes.js';
+import { writeToChannel } from './music.js';
+import { discordTool, speakableTool } from './wrappers.js';
 
 /** Split "host" or "host:port" into what the query needs. */
 export function splitAddress(address) {
@@ -63,7 +71,110 @@ export function describeSilence() {
   );
 }
 
-export function zomboidTools() {
+/**
+ * Two keys, because one key is one mode.
+ *
+ * The far side pins each key to a fixed command in `authorized_keys`, and a
+ * forced command ignores whatever the client asks for. So the difference
+ * between looking and changing cannot be an argument this side sends: it has
+ * to be *which key* is used. That is better than a flag — the decision is
+ * materialised in a file that exists or does not, rather than in a model
+ * reasoning correctly about a boolean.
+ *
+ * They live in the data volume beside the other secret the bot keeps on disk,
+ * the YouTube cookies, and for the same reason: they survive a redeploy and
+ * they never go near the repository. Mode 0600, put there by hand. Without the
+ * second one the character can only look, which is the right thing to be true
+ * by default.
+ */
+export const KEYS = {
+  read: process.env.MIRROR_ZOMBOID_KEY ?? path.join('data', 'zomboid-key'),
+  act: process.env.MIRROR_ZOMBOID_ACT_KEY ?? path.join('data', 'zomboid-key-act'),
+};
+
+/** Long enough for a real diagnosis, short enough that a room is still listening. */
+export const ASK_TIMEOUT_MS = 150_000;
+
+/**
+ * Send a question through the door and bring back what came out.
+ *
+ * One ssh connection to a key whose `authorized_keys` entry pins it to a
+ * single script with `command=`: it cannot open a shell, cannot forward a
+ * port, cannot run anything else. The question goes on stdin — the same
+ * reason the script reads it there, since with a forced command the client's
+ * command line is not the channel.
+ *
+ * The far side always answers with one line of JSON, including when it
+ * refuses, so anything that is not JSON is this side's problem: the machine
+ * is off, the key is wrong, the network went away.
+ */
+export function sshArgs({ destination, keyPath, act }) {
+  return [
+    '-i', keyPath,
+    // Without this, `-i` is a suggestion. ssh offers every identity it can
+    // find — the ones in the agent, the default names in ~/.ssh — and the
+    // server accepts the first that matches, so a question meant to be
+    // read-only could authenticate with the key that is allowed to change
+    // things, with nobody deciding it. The whole premise of two keys is that
+    // which one is used *is* the permission, and this is what makes that true
+    // rather than likely. `IdentityAgent=none` is the same point for an agent
+    // that might exist in the container's environment.
+    '-o', 'IdentitiesOnly=yes',
+    '-o', 'IdentityAgent=none',
+    '-o', 'PreferredAuthentications=publickey',
+    '-o', 'BatchMode=yes',
+    '-o', 'StrictHostKeyChecking=accept-new',
+    '-o', 'ConnectTimeout=10',
+    destination,
+    // Ignored while the far side forces its command, which is the point of
+    // forcing it. Sent anyway so the day somebody unpins a key, the two ends
+    // still agree about which mode was asked for.
+    act ? '--completo' : '--read',
+  ];
+}
+
+export function askOverSsh({ destination, keyPath, question, act, timeoutMs = ASK_TIMEOUT_MS, spawnImpl = spawn }) {
+  return new Promise((resolve, reject) => {
+    const child = spawnImpl('ssh', sshArgs({ destination, keyPath, act }), {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+
+    let out = '';
+    let err = '';
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(new DiscordToolError('the server took too long to answer'));
+    }, timeoutMs);
+
+    child.stdout.on('data', (chunk) => {
+      out += chunk;
+    });
+    child.stderr.on('data', (chunk) => {
+      err += chunk;
+    });
+    child.on('error', (e) => {
+      clearTimeout(timer);
+      reject(new DiscordToolError(`could not reach the server: ${e.message}`));
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      const line = out.trim().split('\n').filter(Boolean).pop();
+      if (!line) {
+        reject(new DiscordToolError(`the server said nothing (exit ${code})${err ? `: ${err.trim().slice(0, 120)}` : ''}`));
+        return;
+      }
+      try {
+        resolve(JSON.parse(line));
+      } catch {
+        reject(new DiscordToolError(`the server answered something I could not read: ${line.slice(0, 120)}`));
+      }
+    });
+
+    child.stdin.end(String(question ?? ''));
+  });
+}
+
+export function zomboidTools(turn, deps = {}) {
   return [
     tool(
       'zomboid_status',
@@ -92,6 +203,87 @@ export function zomboidTools() {
             'and do not guess whether it is up.'
           );
         }
+      }),
+    ),
+    tool(
+      'zomboid_ask',
+      'Ask the operator that lives on the server itself — it can read the logs, the configuration and the state of the machine, and answer with what it found.\n\n' +
+        'Use this for anything that needs looking at something rather than knowing it: "¿por qué se cayó?", "fijate si hay errores de un mod", "¿cuánto disco queda?", "revisá el log de hace una hora". Not for the state of the server, which zomboid_status answers in a second and for free.\n\n' +
+        'It takes up to a couple of minutes. Say one short line first — "dame un segundo que me fijo" — before calling it.\n\n' +
+        'Set `act` to true ONLY when they asked you to change something: restart it, fix a configuration file, disable a mod. Anything that only looks stays false, and false is the default. Acting needs a role, and you will be refused if the person asking does not have it — say the refusal out loud.\n\n' +
+        'Pass their request as they made it, in their own words. Do not add what the room was talking about.',
+      {
+        question: z.string().describe("What to ask, in the asker's words, one or two sentences."),
+        act: z
+          .boolean()
+          .optional()
+          .describe('True only if carrying this out changes something on the server.'),
+      },
+      discordTool(turn, async (guild, askerId, { question, act = false }) => {
+        const mode = modeByName('zomboid');
+        const destination = config.get('zomboidSsh');
+        if (!destination) {
+          throw new DiscordToolError(
+            'There is no way in to the server configured, so I cannot ask it anything.',
+          );
+        }
+        // The second tier of the gate. Entering the character is already gated;
+        // this is the line between looking and changing, checked against the
+        // person who spoke this turn rather than whoever turned the mode on.
+        if (act) requireRole(guild, askerId, mode.actRole, 'change anything on the server');
+
+        const keys = deps.keys ?? KEYS;
+        const keyPath = act ? keys.act : keys.read;
+        if (!deps.ask && !fs.existsSync(keyPath)) {
+          throw new DiscordToolError(
+            act
+              ? 'I only have the key that lets me look, not the one that lets me change anything.'
+              : 'The key to the server is not on this machine.',
+          );
+        }
+
+        const send = deps.ask ?? askOverSsh;
+        let answer;
+        try {
+          answer = await send({ destination, keyPath, question, act });
+        } catch (err) {
+          // The machine is asleep most of the day by design, and then there is
+          // no ssh either. Telling the room "I could not reach the server"
+          // when the truth is "it is off, and anyone can start it" is the
+          // difference between a fault and a normal evening — so the cheap
+          // probe decides which of the two happened, rather than the failure
+          // of the expensive call.
+          const at = splitAddress(config.get('zomboidAddress'));
+          const asleep = at ? await query(at).then(() => false, () => true) : true;
+          if (asleep) {
+            throw new DiscordToolError(
+              'the machine is not up, which is normal — say so and that whoever wants it can type /pz start',
+            );
+          }
+          throw err;
+        }
+        const spoken = String(answer?.spoken ?? '').trim();
+        const detail = String(answer?.detail ?? '').trim();
+
+        // The long half never gets spoken. It goes where the room already
+        // reads about this server, and the voice says one line about it.
+        let wrote = false;
+        if (detail && detail !== spoken) {
+          wrote = await writeToChannel(
+            guild,
+            mode.detailChannel,
+            `🧟  **${act ? 'Hice' : 'Miré'}, a pedido de ${turn.askerName ?? 'alguien'}**\n${detail}`.slice(0, 1900),
+          );
+        }
+        console.log(`[zomboid] asked (${act ? 'act' : 'read'}): "${String(question).slice(0, 80)}" → ${answer?.ok ? 'ok' : 'not ok'}`);
+
+        if (!spoken) {
+          return 'The server answered, but with nothing sayable. Say you could not get a clear answer.';
+        }
+        return (
+          `Say this, or something very close to it: "${spoken}"` +
+          (wrote ? ' Then add, in a few words, that the rest is written in the channel.' : '')
+        );
       }),
     ),
   ];

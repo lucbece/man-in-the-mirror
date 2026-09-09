@@ -120,6 +120,15 @@ const DEFAULTS = {
   // machine's power switch. Blank turns the mode's status tool off.
   zomboidAddress: '',
 
+  // Where to ask the operator that lives on the game server, as user@host.
+  // Two keys in the volume, mode 0600: `data/zomboid-key` for looking and
+  // `data/zomboid-key-act` for changing something. Each is pinned in the VM's
+  // authorized_keys to one script with `command=`, and a forced command
+  // ignores what the client asks for — so which key is used *is* the
+  // permission, rather than a flag the bot has to get right. Without the
+  // second key the character can only look. Blank turns it off.
+  zomboidSsh: '',
+
   // Web UI
   webPort: 3000,
 };
@@ -228,6 +237,7 @@ function clampConfig(cfg) {
   out.musicChannel = out.musicChannel.trim().replace(/^#/, '');
   // A pasted address can arrive with a scheme or a trailing slash on it.
   out.zomboidAddress = String(out.zomboidAddress ?? '').trim().replace(/^\w+:\/\//, '').replace(/\/+$/, '');
+  out.zomboidSsh = String(out.zomboidSsh ?? '').trim();
   // One instruction per line, however they were typed or dictated. The caps
   // on length and count are enforced where there is somewhere to report them:
   // the panel's save handler and the voice tool.
