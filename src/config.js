@@ -120,10 +120,13 @@ const DEFAULTS = {
   // machine's power switch. Blank turns the mode's status tool off.
   zomboidAddress: '',
 
-  // Where to ask the operator that lives on the game server, as user@host. The
-  // key is `data/zomboid-key` in the volume, mode 0600, and its entry in the
-  // VM's authorized_keys pins it to one script with `command=` — so this is a
-  // door onto exactly one question, not an account. Blank turns it off.
+  // Where to ask the operator that lives on the game server, as user@host.
+  // Two keys in the volume, mode 0600: `data/zomboid-key` for looking and
+  // `data/zomboid-key-act` for changing something. Each is pinned in the VM's
+  // authorized_keys to one script with `command=`, and a forced command
+  // ignores what the client asks for — so which key is used *is* the
+  // permission, rather than a flag the bot has to get right. Without the
+  // second key the character can only look. Blank turns it off.
   zomboidSsh: '',
 
   // Web UI

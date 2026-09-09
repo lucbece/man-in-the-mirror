@@ -72,13 +72,25 @@ export function describeSilence() {
 }
 
 /**
- * Where the key that opens the door lives.
+ * Two keys, because one key is one mode.
  *
- * In the data volume beside the other secret the bot keeps on disk, the
- * YouTube cookies, and for the same reason: it survives a redeploy and it
- * never goes near the repository. Mode 0600, put there by hand.
+ * The far side pins each key to a fixed command in `authorized_keys`, and a
+ * forced command ignores whatever the client asks for. So the difference
+ * between looking and changing cannot be an argument this side sends: it has
+ * to be *which key* is used. That is better than a flag — the decision is
+ * materialised in a file that exists or does not, rather than in a model
+ * reasoning correctly about a boolean.
+ *
+ * They live in the data volume beside the other secret the bot keeps on disk,
+ * the YouTube cookies, and for the same reason: they survive a redeploy and
+ * they never go near the repository. Mode 0600, put there by hand. Without the
+ * second one the character can only look, which is the right thing to be true
+ * by default.
  */
-export const KEY_PATH = process.env.MIRROR_ZOMBOID_KEY ?? path.join('data', 'zomboid-key');
+export const KEYS = {
+  read: process.env.MIRROR_ZOMBOID_KEY ?? path.join('data', 'zomboid-key'),
+  act: process.env.MIRROR_ZOMBOID_ACT_KEY ?? path.join('data', 'zomboid-key-act'),
+};
 
 /** Long enough for a real diagnosis, short enough that a room is still listening. */
 export const ASK_TIMEOUT_MS = 150_000;
@@ -108,6 +120,9 @@ export function askOverSsh({ destination, keyPath, question, act, timeoutMs = AS
         destination,
         // Passed for the day the far side stops forcing the command; with a
         // forced command it is ignored, which is the point of forcing it.
+        // Ignored while the far side forces its command, which is the point of
+        // forcing it. Sent anyway so the day somebody unpins a key, the two
+        // ends still agree about which mode was asked for.
         act ? '--completo' : '--read',
       ],
       { stdio: ['pipe', 'pipe', 'pipe'] },
@@ -201,17 +216,41 @@ export function zomboidTools(turn, deps = {}) {
             'There is no way in to the server configured, so I cannot ask it anything.',
           );
         }
-        const keyPath = deps.keyPath ?? KEY_PATH;
-        if (!deps.ask && !fs.existsSync(keyPath)) {
-          throw new DiscordToolError('The key to the server is not on this machine.');
-        }
         // The second tier of the gate. Entering the character is already gated;
         // this is the line between looking and changing, checked against the
         // person who spoke this turn rather than whoever turned the mode on.
         if (act) requireRole(guild, askerId, mode.actRole, 'change anything on the server');
 
+        const keys = deps.keys ?? KEYS;
+        const keyPath = act ? keys.act : keys.read;
+        if (!deps.ask && !fs.existsSync(keyPath)) {
+          throw new DiscordToolError(
+            act
+              ? 'I only have the key that lets me look, not the one that lets me change anything.'
+              : 'The key to the server is not on this machine.',
+          );
+        }
+
         const send = deps.ask ?? askOverSsh;
-        const answer = await send({ destination, keyPath, question, act });
+        let answer;
+        try {
+          answer = await send({ destination, keyPath, question, act });
+        } catch (err) {
+          // The machine is asleep most of the day by design, and then there is
+          // no ssh either. Telling the room "I could not reach the server"
+          // when the truth is "it is off, and anyone can start it" is the
+          // difference between a fault and a normal evening — so the cheap
+          // probe decides which of the two happened, rather than the failure
+          // of the expensive call.
+          const at = splitAddress(config.get('zomboidAddress'));
+          const asleep = at ? await query(at).then(() => false, () => true) : true;
+          if (asleep) {
+            throw new DiscordToolError(
+              'the machine is not up, which is normal — say so and that whoever wants it can type /pz start',
+            );
+          }
+          throw err;
+        }
         const spoken = String(answer?.spoken ?? '').trim();
         const detail = String(answer?.detail ?? '').trim();
 

@@ -309,7 +309,7 @@ describe('asking the operator that lives on the server', () => {
   test('a question only looks, and needs no role', async () => {
     const seen = [];
     const tools = zomboidTools(turnFor('nadie'), {
-      keyPath: '/dev/null',
+      keys: { read: '/dev/null', act: '/dev/null' },
       ask: async (args) => {
         seen.push(args);
         return { ok: true, spoken: 'Está arriba, hay tres jugando.' };
@@ -322,7 +322,7 @@ describe('asking the operator that lives on the server', () => {
 
   test('acting is refused without the role, and the refusal is sayable', async () => {
     const tools = zomboidTools(turnFor('nadie'), {
-      keyPath: '/dev/null',
+      keys: { read: '/dev/null', act: '/dev/null' },
       ask: async () => {
         throw new Error('should never be asked');
       },
@@ -337,7 +337,7 @@ describe('asking the operator that lives on the server', () => {
   test('acting goes through for somebody who has it', async () => {
     const seen = [];
     const tools = zomboidTools(turnFor('kpo'), {
-      keyPath: '/dev/null',
+      keys: { read: '/dev/null', act: '/dev/null' },
       ask: async (args) => {
         seen.push(args);
         return { ok: true, spoken: 'Listo, reiniciado.' };
@@ -353,7 +353,7 @@ describe('asking the operator that lives on the server', () => {
   test('the long half is written, not spoken, and the voice says so', async () => {
     const { posted, guild: g } = withChannel('project-zomboid-ñoños-chatroom');
     const tools = zomboidTools(turnFor('kpo', g), {
-      keyPath: '/dev/null',
+      keys: { read: '/dev/null', act: '/dev/null' },
       ask: async () => ({
         ok: true,
         spoken: 'Se cayó por un mod. Te lo dejo escrito.',
@@ -371,7 +371,7 @@ describe('asking the operator that lives on the server', () => {
     const ssh = config.values.zomboidSsh;
     config.values.zomboidSsh = '';
     try {
-      const tools = zomboidTools(turnFor('kpo'), { keyPath: '/dev/null', ask: async () => ({}) });
+      const tools = zomboidTools(turnFor('kpo'), { keys: { read: '/dev/null', act: '/dev/null' }, ask: async () => ({}) });
       const said = textOf(await toolNamed(tools, 'zomboid_ask').handler({ question: 'hola' }));
       assert.match(said, /no way in|cannot ask/i);
     } finally {
@@ -379,9 +379,56 @@ describe('asking the operator that lives on the server', () => {
     }
   });
 
+  test('which key is used is the permission, not a flag', async () => {
+    const seen = [];
+    const tools = zomboidTools(turnFor('kpo'), {
+      keys: { read: '/read-key', act: '/act-key' },
+      ask: async (args) => {
+        seen.push(args.keyPath);
+        return { ok: true, spoken: 'listo' };
+      },
+    });
+    const ask = toolNamed(tools, 'zomboid_ask');
+    await ask.handler({ question: '¿anda?' });
+    await ask.handler({ question: 'reinicialo', act: true });
+    assert.deepEqual(seen, ['/read-key', '/act-key']);
+  });
+
+  test('without the second key it can only look, and says which key is missing', async () => {
+    const tools = zomboidTools(turnFor('kpo'), {
+      keys: { read: '/dev/null', act: '/does/not/exist' },
+    });
+    const said = textOf(
+      await toolNamed(tools, 'zomboid_ask').handler({ question: 'reinicialo', act: true }),
+    );
+    assert.match(said, /only have the key that lets me look/i);
+  });
+
+  test('a machine that is asleep is not a machine that is broken', async () => {
+    // The VM powers itself off after half an hour with nobody playing, so ssh
+    // failing is the normal evening rather than a fault. The cheap probe
+    // decides which, instead of the failure of the expensive call.
+    const address = config.values.zomboidAddress;
+    config.values.zomboidAddress = '';
+    try {
+      const tools = zomboidTools(turnFor('kpo'), {
+        keys: { read: '/dev/null', act: '/dev/null' },
+        ask: async () => {
+          throw new Error('ssh: connect to host port 22: Connection timed out');
+        },
+      });
+      const said = textOf(await toolNamed(tools, 'zomboid_ask').handler({ question: '¿por qué se cayó?' }));
+      assert.match(said, /not up/i);
+      assert.match(said, /\/pz start/, 'and where the way back up is');
+      assert.doesNotMatch(said, /timed out/i, 'not the ssh error, which means nothing to the room');
+    } finally {
+      config.values.zomboidAddress = address;
+    }
+  });
+
   test('a door that answers nothing sayable does not go silent', async () => {
     const tools = zomboidTools(turnFor('kpo'), {
-      keyPath: '/dev/null',
+      keys: { read: '/dev/null', act: '/dev/null' },
       ask: async () => ({ ok: false, error: 'sin cupo' }),
     });
     const said = textOf(await toolNamed(tools, 'zomboid_ask').handler({ question: 'hola' }));
