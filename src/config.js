@@ -118,6 +118,13 @@ const DEFAULTS = {
   // needs no credentials from anybody — see agent/a2s.js — and it is the only
   // thing that mode can do without going through the bot that owns the
   // machine's power switch. Blank turns the mode's status tool off.
+  // The bot's other characters, as JSON: see agent/modes.js for the shape and
+  // docs/configuration.md for the fields. Deliberately empty here — a
+  // character names a Discord role, a channel and a job, which are facts about
+  // one group of people and have no business being in a repository anybody can
+  // read. The framework is general; who it becomes is configuration.
+  characters: '',
+
   zomboidAddress: '',
 
   // Where to ask the operator that lives on the game server, as user@host.
@@ -236,6 +243,7 @@ function clampConfig(cfg) {
   // A leading # is how people write a channel, not part of its name.
   out.musicChannel = out.musicChannel.trim().replace(/^#/, '');
   // A pasted address can arrive with a scheme or a trailing slash on it.
+  out.characters = String(out.characters ?? '').trim();
   out.zomboidAddress = String(out.zomboidAddress ?? '').trim().replace(/^\w+:\/\//, '').replace(/\/+$/, '');
   out.zomboidSsh = String(out.zomboidSsh ?? '').trim();
   // One instruction per line, however they were typed or dictated. The caps

@@ -29,7 +29,6 @@ import { z } from 'zod';
 import { NoAnswer, query } from '../a2s.js';
 import { config } from '../../config.js';
 import { DiscordToolError, requireRole } from '../discord-tools.js';
-import { modeByName } from '../modes.js';
 import { writeToChannel } from './music.js';
 import { discordTool, speakableTool } from './wrappers.js';
 
@@ -209,7 +208,15 @@ export function askOverSsh({ destination, keyPath, question, act, timeoutMs = AS
   });
 }
 
-export function zomboidTools(turn, deps = {}) {
+/**
+ * `mode` is the character these tools are serving, whichever one it is.
+ *
+ * They used to look it up by name, which meant this file knew there was a
+ * character called "zomboid" and what role gated it. Both of those are facts
+ * about one group of friends; the tools only need to know which role to check
+ * and where to write, and the active character carries both.
+ */
+export function zomboidTools(turn, deps = {}, mode = null) {
   return [
     tool(
       'zomboid_status',
@@ -255,7 +262,6 @@ export function zomboidTools(turn, deps = {}) {
           .describe('True only if carrying this out changes something on the server.'),
       },
       discordTool(turn, async (guild, askerId, { question, act = false }) => {
-        const mode = modeByName('zomboid');
         const destination = config.get('zomboidSsh');
         if (!destination) {
           throw new DiscordToolError(
@@ -265,7 +271,11 @@ export function zomboidTools(turn, deps = {}) {
         // The second tier of the gate. Entering the character is already gated;
         // this is the line between looking and changing, checked against the
         // person who spoke this turn rather than whoever turned the mode on.
-        if (act) requireRole(guild, askerId, mode.actRole, 'change anything on the server');
+        // A character with no role named is one nobody has restricted, and that is
+        // a decision its author made rather than one to second-guess here.
+        if (act && mode?.actRole) {
+          requireRole(guild, askerId, mode.actRole, 'change anything on the server');
+        }
 
         const keys = deps.keys ?? KEYS;
         const keyPath = act ? keys.act : keys.read;
@@ -318,7 +328,7 @@ export function zomboidTools(turn, deps = {}) {
         if (detail && detail !== spoken) {
           wrote = await writeToChannel(
             guild,
-            mode.detailChannel,
+            mode?.detailChannel,
             `🧟  **${act ? 'Hice' : 'Miré'}, a pedido de ${turn.askerName ?? 'alguien'}**\n${detail}`.slice(0, 1900),
           );
         }

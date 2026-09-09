@@ -77,6 +77,7 @@ function fakeConfig(overrides = {}) {
     ttsSpeed: 1,
     ttsLocalVoice: 'es_ES-davefx-medium',
     musicChannel: 'music',
+    characters: '',
     zomboidAddress: '',
     zomboidSsh: '',
     webPort: 3000,

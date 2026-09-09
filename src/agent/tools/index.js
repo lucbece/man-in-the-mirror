@@ -45,7 +45,7 @@ const FAMILIES = {
   music: (guildId, turn) => musicTools(turn),
   quiet: (guildId, turn) => quietTools(turn),
   reminders: (guildId) => reminderTools(guildId),
-  zomboid: (guildId, turn) => zomboidTools(turn),
+  zomboid: (guildId, turn, mode) => zomboidTools(turn, {}, mode),
 };
 
 /**
@@ -67,7 +67,7 @@ export function botTools(guildId, turn, mode = null) {
   const wanted = mode?.tools ? [...mode.tools, ...ALWAYS] : [...Object.keys(FAMILIES), ...ALWAYS];
   const tools = [...modeTools(turn)];
   for (const [name, build] of Object.entries(FAMILIES)) {
-    if (wanted.includes(name)) tools.push(...build(guildId, turn));
+    if (wanted.includes(name)) tools.push(...build(guildId, turn, mode));
   }
   return tools;
 }

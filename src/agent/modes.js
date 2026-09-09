@@ -18,6 +18,7 @@
  * are what make the bot usable in a voice channel at all, not what make it
  * funny, and every mode keeps them.
  */
+import { config } from '../config.js';
 import { normalise } from './wake.js';
 
 /**
@@ -82,60 +83,34 @@ export const DEFAULT_PERSONA = {
  * separate fields pointing at the same role today, because the day one of them
  * moves is the day the distinction has to already exist.
  */
-export const MODES = [
-  {
-    name: 'zomboid',
-    displayName: 'el bot de zomboid',
-    spoken: [
-      'bot de zomboid', 'bot zomboid', 'zomboid bot', 'modo zomboid', 'modo admin',
-      'zomboid admin', 'modo servidor', 'modo server', 'zomboid mode', 'admin mode',
-      'server mode',
-    ],
-    // Distinctly not the voice the room jokes with. onyx is the bot they know;
-    // this one should be recognisable as somebody else before it finishes its
-    // first sentence.
-    voice: 'echo',
-    enterRole: 'los kpos',
-    actRole: 'los kpos',
-    /**
-     * Which families of the bot's own tools survive. `modes` is always kept —
-     * a mode nobody can leave is a bug — and everything unlisted is gone, so
-     * the agent cannot wander off into the notebook or the settings while it
-     * is meant to be looking at a server.
-     */
-    tools: ['zomboid', 'quiet'],
-    /** Where a long answer goes, by channel name. The room already reads server news there. */
-    detailChannel: 'project-zomboid-ñoños-chatroom',
-    entering: 'Soy el bot de zomboid. Preguntame por el server y me fijo.',
-    leaving: 'Listo, vuelve espejo.',
-    prompt: `
-
-# This mode: Project Zomboid admin
-
-You are looking after the group's Project Zomboid server. Sixteen friends play
-on it most nights; when it is down, nobody is playing.
-
-Your register here is a competent sysadmin talking to the person who asked:
-short, factual, no jokes, no reassurance nobody asked for. Say what is true and
-stop. If something is broken, say what is broken.
-
-What you actually know:
-- The machine the game runs on turns itself off after half an hour with nobody
-  playing. **That is normal, not a fault.** A server that is not answering at
-  nine in the evening is almost always just off.
-- You do not have the switch. Another bot does, and it is the one with the
-  permissions: \`/pz start\` starts the machine and takes about three minutes,
-  \`/pz status\` reports it, \`/pz stop\` stops it and refuses while anyone is
-  playing. When the server is not up and somebody wants it up, tell them to
-  type \`/pz start\` — anyone in the server can. Never claim you started it.
-- Everything you say about the game comes from asking the game. Never state a
-  player count, a version or a map from memory.`,
-  },
-];
+/**
+ * The characters this bot has, from the configuration.
+ *
+ * Not a constant in this file, and that is the whole point of the shape: a
+ * character names a Discord role, a text channel and a job — facts about one
+ * particular group of friends, which have no business being in a repository
+ * anybody can read. What is general is the framework: a named character with
+ * its own rules, its own tools, its own voice and its own gate. Which
+ * characters exist is theirs to write.
+ *
+ * Invalid JSON is not worth crashing a voice call over: it becomes no
+ * characters and one line in the log, the same way a broken MCP entry does.
+ */
+export function characters() {
+  const raw = config.get('characters');
+  if (!raw?.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return (Array.isArray(parsed) ? parsed : [parsed]).filter((mode) => mode?.name && mode?.spoken?.length);
+  } catch (err) {
+    console.warn(`[mode] the characters setting is not valid JSON, so there are none: ${err.message}`);
+    return [];
+  }
+}
 
 /** A mode by name, or undefined. */
 export function modeByName(name) {
-  return MODES.find((mode) => mode.name === name);
+  return characters().find((mode) => mode.name === name);
 }
 
 /**
@@ -149,7 +124,7 @@ export function modeByName(name) {
 export function findMode(said) {
   const heard = normalise(said ?? '');
   if (!heard) return null;
-  for (const mode of MODES) {
+  for (const mode of characters()) {
     if (mode.spoken.some((phrase) => heard.includes(normalise(phrase)))) return mode;
   }
   return null;
@@ -170,7 +145,7 @@ export function findMode(said) {
 export function looksLikeModeCommand(said) {
   const heard = normalise(said ?? '');
   if (!heard) return false;
-  const phrases = [...DEFAULT_PERSONA.spoken, ...MODES.flatMap((mode) => mode.spoken)];
+  const phrases = [...DEFAULT_PERSONA.spoken, ...characters().flatMap((mode) => mode.spoken)];
   return phrases.some((phrase) => heard.includes(normalise(phrase)));
 }
 
@@ -186,7 +161,7 @@ export function modePrompt(mode) {
 
 /** What to tell the agent it can be asked to become. */
 export function describeModes() {
-  return MODES.map(
+  return characters().map(
     (mode) => `"${mode.name}" (${mode.displayName}), asked for as ${mode.spoken.slice(0, 3).map((p) => `"${p}"`).join(' or ')}`,
   ).join('; ');
 }
@@ -199,6 +174,7 @@ export function describeModes() {
  * separate thing to remember.
  */
 export function modesParagraph() {
+  if (!characters().length) return '';
   return `
 
 **Your other characters.** You can be asked to become one of them, each with its own name, its own rules and its own tools: ${describeModes()}. When somebody asks for one by name — "que venga el bot de zomboid", "poné el bot de zomboid" — call enter_mode; it will refuse if that person is not allowed, and you say the refusal out loud. When somebody asks for the default one back — "que vuelva espejo", "volvé a ser vos", "salí del modo" — call leave_mode, whoever put you in it.

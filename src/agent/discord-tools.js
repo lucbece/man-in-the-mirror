@@ -194,7 +194,7 @@ export function requireOwnerish(guild, askerId, what) {
  * Refuse unless the asker holds a named role.
  *
  * Roles rather than Discord permissions, because what a mode gates is not a
- * Discord capability: "los kpos" is a group of friends, not a set of
+ * Discord capability: a role can be a group of friends rather than a set of
  * privileges, and nothing in Discord's permission model expresses "these are
  * the people who look after the game server".
  *
