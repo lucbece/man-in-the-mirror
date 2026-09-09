@@ -106,7 +106,7 @@ export const MODES = [
     tools: ['zomboid', 'quiet'],
     /** Where a long answer goes, by channel name. The room already reads server news there. */
     detailChannel: 'project-zomboid-ñoños-chatroom',
-    entering: 'Soy el bot de zomboid. Por ahora solo puedo mirar el server y decirte cómo está.',
+    entering: 'Soy el bot de zomboid. Preguntame por el server y me fijo.',
     leaving: 'Listo, vuelve espejo.',
     prompt: `
 
