@@ -16,6 +16,7 @@ import { createSdkMcpServer } from '@anthropic-ai/claude-agent-sdk';
 
 import { callTools } from './call.js';
 import { configTools } from './config.js';
+import { modeTools } from './modes.js';
 import { musicTools } from './music.js';
 import { notebookTools } from './notebook.js';
 import { quietTools } from './quiet.js';
@@ -27,7 +28,50 @@ import { searchTools } from './search.js';
  * `askerId` and `askerName` rewritten before each answer. The definitions are
  * built once per session; the identity behind them is not.
  */
-export function botToolsServer(guildId, turn) {
+/**
+ * The families, by the name a mode uses to keep one.
+ *
+ * A mode narrows this list to the job it is for: an agent looking after a game
+ * server has no business reaching for the notebook or the settings, and every
+ * tool it cannot use is one it cannot pick by mistake and one less thing in
+ * the prompt.
+ */
+const FAMILIES = {
+  search: (guildId, turn) => searchTools(turn),
+  call: (guildId, turn) => callTools(turn),
+  config: (guildId, turn) => configTools(turn),
+  notebook: (guildId, turn) => notebookTools(turn),
+  music: (guildId, turn) => musicTools(turn),
+  quiet: (guildId, turn) => quietTools(turn),
+  reminders: (guildId) => reminderTools(guildId),
+};
+
+/**
+ * Always served, whatever mode it is in: the way out.
+ *
+ * A mode whose tool list left `modes` off would be one nobody could leave by
+ * asking, which is the one failure this switch must not have.
+ */
+const ALWAYS = ['modes'];
+
+/**
+ * The tools a mode leaves standing, in the order they are served.
+ *
+ * Separate from the server it goes into so that what a mode can and cannot
+ * reach is something a test can read, rather than something buried in an
+ * object only the SDK knows how to open.
+ */
+export function botTools(guildId, turn, mode = null) {
+  const wanted = mode?.tools ? [...mode.tools, ...ALWAYS] : [...Object.keys(FAMILIES), ...ALWAYS];
+  const tools = [...modeTools(turn)];
+  for (const [name, build] of Object.entries(FAMILIES)) {
+    if (wanted.includes(name)) tools.push(...build(guildId, turn));
+  }
+  return tools;
+}
+
+export function botToolsServer(guildId, turn, mode = null) {
+  const tools = botTools(guildId, turn, mode);
   return createSdkMcpServer({
     name: 'bot',
     version: '1.0.0',
@@ -35,15 +79,7 @@ export function botToolsServer(guildId, turn) {
     // search costs a whole model round trip before the first real tool call,
     // which in a voice call is seconds of silence for nothing.
     alwaysLoad: true,
-    tools: [
-      ...searchTools(turn),
-      ...callTools(turn),
-      ...configTools(turn),
-      ...notebookTools(turn),
-      ...musicTools(turn),
-      ...quietTools(turn),
-      ...reminderTools(guildId),
-    ],
+    tools,
   });
 }
 

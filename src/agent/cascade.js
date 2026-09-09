@@ -330,6 +330,16 @@ export class CascadeBrain {
       return this.#runAgent(context, memory, { onSearchStart, onSentence, onToolUse });
     }
 
+    // In a mode, everything goes to the agent, and for the sharper of the two
+    // reasons music mode has: the fast leg has none of the mode's tools, and a
+    // fast model answering an operational question out of what it happens to
+    // know is not slow, it is wrong.
+    if (context.mode) {
+      this.escalated = true;
+      this.reason = `the ${context.mode.name} mode, whose tools only the agent has`;
+      return this.#runAgent(context, memory, { onSearchStart, onSentence, onToolUse });
+    }
+
     // Music mode: everything goes to the agent. The reason the fast leg is in
     // front — the first spoken word arriving two seconds sooner — does not
     // exist while nothing is spoken, and the one request that matters in this

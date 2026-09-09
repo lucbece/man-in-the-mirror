@@ -38,6 +38,7 @@ import { connectMcpServers } from './mcp-client.js';
 import { providerFor } from './models.js';
 import { OpenAiAgentSession } from './openai-agent.js';
 import { SentenceSplitter } from './sentences.js';
+import { modePrompt } from './modes.js';
 import { botToolsServer } from './tools/index.js';
 import { DATA_DIR } from '../paths.js';
 
@@ -373,8 +374,13 @@ export class AgentSession {
 const sessions = new Map();
 
 /** What a session was built from; a change here means a different session. */
-function currentSignature() {
+function currentSignature(mode = null) {
   return [
+    // A mode changes the prompt and the tool list, so it changes the session:
+    // the same conversation cannot be both characters. Stepping in or out
+    // therefore starts a fresh one, which is also what stops the operator
+    // inheriting the jokes and the jokes inheriting the operator.
+    mode?.name ?? '-',
     config.get('brainModel') || DEFAULT_AGENT_MODEL,
     config.get('agentMaxTurns'),
     config.get('mcpServers'),
@@ -395,7 +401,7 @@ function currentSignature() {
 
 
 
-function buildSession(guildId) {
+function buildSession(guildId, mode = null) {
   const { servers, allow } = parseMcpServers(config.get('mcpServers'));
   // Same reasoning as the bot's own server: pay the tokens, skip the round
   // trip. A handful of servers is what people configure, not hundreds.
@@ -413,7 +419,7 @@ function buildSession(guildId) {
     askerName: null,
     guild: () => botClient()?.guilds.cache.get(guildId) ?? null,
   };
-  servers.bot = botToolsServer(guildId, turn);
+  servers.bot = botToolsServer(guildId, turn, mode);
   allowed.push('mcp__bot__*');
   const model = config.get('brainModel') || DEFAULT_AGENT_MODEL;
 
@@ -441,14 +447,14 @@ function buildSession(guildId) {
     const openaiKey = config.get('openaiApiKey');
     if (!openaiKey) throw new AgentError('The agent brain needs an OpenAI API key.');
     return Object.assign(new OpenAiAgentSession({
-      signature: currentSignature(),
+      signature: currentSignature(mode),
       guildId,
       model,
       apiKey: openaiKey,
       webSearch: config.get('webSearch'),
       // The same prompt the Claude session gets, word for word. Two agents
       // told different things would be two different bots wearing one name.
-      instructions: promptWithInstructions(guildId, AGENT_PROMPT_EXTRA),
+      instructions: promptWithInstructions(guildId, AGENT_PROMPT_EXTRA + modePrompt(mode), undefined, { room: !mode }),
       // Started now, awaited on the first question: connecting is the slow
       // part and the bot is usually still joining the channel at this point.
       mcp: connectMcpServers({ servers, allow, directories }),
@@ -462,7 +468,7 @@ function buildSession(guildId) {
   if (!apiKey) throw new AgentError('The agent brain needs an Anthropic API key.');
 
   return Object.assign(new AgentSession({
-    signature: currentSignature(),
+    signature: currentSignature(mode),
     model,
     toolNames: serverNames,
     turn,
@@ -471,7 +477,7 @@ function buildSession(guildId) {
       // Built once, with the session: names are re-read whenever the session
       // is, which is every configuration change and every rejoin. A rename
       // mid-session is not picked up until then — see AUDIT.md.
-      systemPrompt: promptWithInstructions(guildId, AGENT_PROMPT_EXTRA),
+      systemPrompt: promptWithInstructions(guildId, AGENT_PROMPT_EXTRA + modePrompt(mode), undefined, { room: !mode }),
       mcpServers: servers,
       // The fence, both directions: only the user's MCP tools (plus web
       // search) are approved, and the built-ins that touch this machine are
@@ -500,16 +506,16 @@ function buildSession(guildId) {
   }), { keyToVerify: { provider: 'anthropic', key: apiKey } });
 }
 
-function getSession(guildId) {
+function getSession(guildId, mode = null) {
   const existing = sessions.get(guildId);
-  if (existing && !existing.closed && existing.signature === currentSignature()) {
+  if (existing && !existing.closed && existing.signature === currentSignature(mode)) {
     return existing;
   }
   if (existing) {
     if (!existing.closed) console.log('[agent-brain] config changed — restarting session');
     existing.end();
   }
-  const session = buildSession(guildId);
+  const session = buildSession(guildId, mode);
   sessions.set(guildId, session);
   preflightKey(session);
   return session;
@@ -638,6 +644,9 @@ setInterval(() => {
 export class AgentBrain {
   constructor({ guildId }) {
     this.guildId = guildId;
+    // The mode arrives with the question, not with the construction: the brain
+    // is built when the bot joins and the room may step into a character an
+    // hour later. `answer` re-reads it and getSession does the rest.
     this.session = getSession(guildId);
     this.model = config.get('brainModel') || DEFAULT_AGENT_MODEL;
     this.tools = Object.keys(parseMcpServers(config.get('mcpServers')).servers);
@@ -650,6 +659,10 @@ export class AgentBrain {
   }
 
   async answer(context, { onSearchStart, onSentence, onToolUse } = {}) {
+    // Which character is being asked. A mode changes the prompt and the tools,
+    // so it changes the session; getSession returns the existing one when the
+    // mode has not moved and builds a fresh one when it has.
+    this.session = getSession(this.guildId, context.mode ?? null);
     // The tools check this against Discord's permissions, so it has to be the
     // speaker Discord identified, never a name from the transcript.
     if (this.session.turn_) {

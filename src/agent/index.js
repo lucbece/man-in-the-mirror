@@ -6,6 +6,7 @@
  * that matters most is `first words at`, since that's when a listener stops
  * wondering whether the thing is broken.
  */
+import { modeByName } from './modes.js';
 import { createBrain, clampForSpeech, BrainError, MAX_SPOKEN_CHARS } from './brain.js';
 import { takePendingLeave } from './tools/index.js';
 import { noteInMusicChannel } from './tools/music.js';
@@ -306,7 +307,17 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, ma
         // `quiet` is a routing signal: in music mode the cascade skips its fast
         // leg, which has no tool to end the mode with. Read once here, before
         // the turn; the sentences below re-read the live flag as they arrive.
-        { transcript, utterances, question, askedBy, askedById, quiet: Boolean(session.quiet) },
+        {
+          transcript,
+          utterances,
+          question,
+          askedBy,
+          askedById,
+          quiet: Boolean(session.quiet),
+          // Which character is answering. Read once, before the turn, so a
+          // mode entered mid-answer does not change the rules underneath it.
+          mode: modeByName(session.mode),
+        },
         {
           onSentence: say,
           onToolUse: (name) => {
