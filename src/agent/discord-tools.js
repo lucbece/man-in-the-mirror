@@ -190,6 +190,41 @@ export function requireOwnerish(guild, askerId, what) {
   return asker;
 }
 
+/**
+ * Refuse unless the asker holds a named role.
+ *
+ * Roles rather than Discord permissions, because what a mode gates is not a
+ * Discord capability: "los kpos" is a group of friends, not a set of
+ * privileges, and nothing in Discord's permission model expresses "these are
+ * the people who look after the game server".
+ *
+ * Matched by name, case- and accent-insensitively, because the name is what
+ * gets written into a mode's declaration and read by a person. An id would be
+ * stabler against a rename and unreadable in the one place it appears.
+ */
+export function requireRole(guild, askerId, roleName, what) {
+  if (!askerId) throw new DiscordToolError(`I can't tell who's asking, so I won't ${what}.`);
+  const asker = guild.members.cache.get(askerId);
+  if (!asker) throw new DiscordToolError(`I can't tell who's asking, so I won't ${what}.`);
+  const wanted = fold(roleName);
+  const has = asker.roles?.cache?.some?.((role) => fold(role.name) === wanted);
+  if (!has) {
+    throw new DiscordToolError(
+      `${asker.displayName} would need the "${roleName}" role to ${what}.`,
+    );
+  }
+  return asker;
+}
+
+/** Case and accents are noise when comparing a role name somebody typed. */
+function fold(text) {
+  return String(text ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
 /** A voice channel by spoken name, or the one the asker is in. */
 function resolveChannel(guild, spoken, asker) {
   if (!spoken) {

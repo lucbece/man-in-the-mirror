@@ -43,6 +43,18 @@ export const commandData = [
             .setMaxLength(500),
         ),
     )
+    .addSubcommand((sub) =>
+      sub
+        .setName('note')
+        .setDescription('Write something into the conversation — a name it would mishear. No answer')
+        .addStringOption((opt) =>
+          opt
+            .setName('text')
+            .setDescription('A mod id, a song title, anything hard to say out loud')
+            .setRequired(true)
+            .setMaxLength(500),
+        ),
+    )
     .addSubcommand((sub) => sub.setName('shush').setDescription('Stop the agent mid-sentence'))
     .addSubcommand((sub) =>
       sub.setName('mute').setDescription('Music mode: stop speaking, and write what it would have said'),
@@ -82,6 +94,8 @@ export async function handleInteraction(interaction) {
         return await cmdTranscript(interaction);
       case 'ask':
         return await cmdAsk(interaction);
+      case 'note':
+        return await cmdNote(interaction);
       case 'shush':
         return await cmdShush(interaction);
       case 'mute':
@@ -197,6 +211,52 @@ async function cmdTranscript(interaction) {
   const body = text.length > budget ? `…${text.slice(-budget)}` : text;
 
   return interaction.editReply(`${header}\n\`\`\`\n${body}\n\`\`\``);
+}
+
+/**
+ * Put a line into the conversation without asking anything.
+ *
+ * The gap this fills: some strings cannot survive being spoken. A mod id, a
+ * song title in a language nobody in the room speaks, a version number — the
+ * transcriber will mangle them every time, and no amount of tuning the wake
+ * word helps, because the problem is in the middle of the sentence rather
+ * than at its start.
+ *
+ * So it is typed, and it lands in the buffer as a line that was said: the
+ * model reads it in the transcript exactly like speech, attributed to whoever
+ * typed it, in the place in time where it was typed. Nothing is answered and
+ * nothing is spoken. What makes it useful is the sentence after it — "espejo,
+ * te escribí el nombre del tema, ponelo" — which is an ordinary spoken
+ * question that now has an exact string to work with.
+ *
+ * It belongs to no character in particular: whichever one is active reads the
+ * same transcript. And a typo needs no undo: type it again and say so, since
+ * both lines are in the transcript in the order they happened, exactly as a
+ * correction to something misspoken would be.
+ */
+async function cmdNote(interaction) {
+  const session = requireSession(interaction);
+  if (!session) return;
+
+  const text = interaction.options.getString('text');
+  const line = session.receiver?.buffer?.note({
+    userId: interaction.user.id,
+    displayName: interaction.member?.displayName ?? interaction.user.username,
+    text,
+  });
+  if (!line) {
+    return interaction.reply(ephemeral('Nothing to write down.'));
+  }
+  console.log(`[note] ${line.displayName} typed: "${line.text}"`);
+  // Not quoted back. Discord already shows the command that was sent, so
+  // repeating the text is the same string twice on one screen, and the person
+  // who typed it is the one person who does not need to be told what it says.
+  // Getting it wrong needs no undo either: type another and say so, the way
+  // you would if you had misspoken.
+  //
+  // A reply is still required — a slash command with none shows "the
+  // application did not respond" — so it is one line, and only they see it.
+  return interaction.reply(ephemeral("📝 Noted. I'll read it as if you'd said it."));
 }
 
 async function cmdAsk(interaction) {

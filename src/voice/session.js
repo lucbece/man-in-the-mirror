@@ -194,6 +194,8 @@ export class VoiceSession extends EventEmitter {
      * which is also the only way it can be forgotten by accident.
      */
     this.quiet = false;
+    /** The mode it is in, by name, or null for its usual self. See agent/modes.js. */
+    this.mode = null;
 
     this.eager = null;
     this.lastWakeAt = 0;
@@ -681,6 +683,22 @@ export class VoiceSession extends EventEmitter {
     if (wanted) this.speech?.cancel();
     this.emit('update');
     return this.quiet;
+  }
+
+  /**
+   * Step into a mode, or back out of it.
+   *
+   * Kept here rather than in the config for the same reason `quiet` is: a bot
+   * that came back from a restart in character, with nobody having asked it to
+   * be, would look broken and nobody would know the word to say to fix it.
+   * Leaving the channel ends it too.
+   */
+  setMode(name) {
+    const wanted = name || null;
+    if (wanted === this.mode) return this.mode;
+    this.mode = wanted;
+    this.emit('update');
+    return this.mode;
   }
 
   /** Cut off playback immediately. Backs a "stop talking" control. */

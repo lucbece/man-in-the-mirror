@@ -74,12 +74,22 @@ How to answer:
  *
  * `resolve` is injectable so this can be exercised without a Discord client.
  */
-export function promptWithInstructions(guildId, extra = '', resolve = guildNameResolver(guildId)) {
+export function promptWithInstructions(
+  guildId,
+  extra = '',
+  resolve = guildNameResolver(guildId),
+  { room = true } = {},
+) {
+  // `room` off is a mode: the standing instructions and the notebook are the
+  // room's own character — the nicknames, the running jokes, what to answer to
+  // an insult — and a mode exists precisely to not be that character. The
+  // fixed rules above stay, because they are about being audible rather than
+  // about being funny.
   return (
     SYSTEM_PROMPT +
     extra +
-    customInstructionBlock(config.get('customInstructions'), resolve) +
-    notebookBlock(config.get('notebook'), resolve)
+    (room ? customInstructionBlock(config.get('customInstructions'), resolve) : '') +
+    (room ? notebookBlock(config.get('notebook'), resolve) : '')
   );
 }
 

@@ -59,6 +59,7 @@ import { AgentBrain, DEFAULT_AGENT_MODEL } from './agent-brain.js';
 import { handleCommand } from './commands.js';
 import { promptWithInstructions } from './brain.js';
 import { providerFor } from './models.js';
+import { looksLikeModeCommand } from './modes.js';
 import { SentenceSplitter } from './sentences.js';
 import { readSse } from './sse.js';
 import { trace } from './trace.js';
@@ -330,6 +331,16 @@ export class CascadeBrain {
       return this.#runAgent(context, memory, { onSearchStart, onSentence, onToolUse });
     }
 
+    // In a mode, everything goes to the agent, and for the sharper of the two
+    // reasons music mode has: the fast leg has none of the mode's tools, and a
+    // fast model answering an operational question out of what it happens to
+    // know is not slow, it is wrong.
+    if (context.mode) {
+      this.escalated = true;
+      this.reason = `the ${context.mode.name} mode, whose tools only the agent has`;
+      return this.#runAgent(context, memory, { onSearchStart, onSentence, onToolUse });
+    }
+
     // Music mode: everything goes to the agent. The reason the fast leg is in
     // front — the first spoken word arriving two seconds sooner — does not
     // exist while nothing is spoken, and the one request that matters in this
@@ -338,6 +349,16 @@ export class CascadeBrain {
     if (context.quiet) {
       this.escalated = true;
       this.reason = 'music mode: nothing is spoken, and the way out of it is a tool';
+      return this.#runAgent(context, memory, { onSearchStart, onSentence, onToolUse });
+    }
+
+    // Changing character is a tool too, and the fast leg has none of them.
+    // Handed "activá el modo zomboid" it would answer "dale" and leave the bot
+    // exactly as it was — the failure music mode had in a real call, where the
+    // room believed it was muted and it was not.
+    if (looksLikeModeCommand(context.question)) {
+      this.escalated = true;
+      this.reason = 'a mode switch, which the fast leg has no tool for';
       return this.#runAgent(context, memory, { onSearchStart, onSentence, onToolUse });
     }
 

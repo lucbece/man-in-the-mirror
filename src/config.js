@@ -113,6 +113,13 @@ const DEFAULTS = {
   // without such a channel simply gets no message; the music still plays.
   musicChannel: 'music',
 
+  // Where the Project Zomboid server the zomboid mode looks after answers,
+  // as host or host:port (16261 by default). Asking it is a UDP query that
+  // needs no credentials from anybody — see agent/a2s.js — and it is the only
+  // thing that mode can do without going through the bot that owns the
+  // machine's power switch. Blank turns the mode's status tool off.
+  zomboidAddress: '',
+
   // Web UI
   webPort: 3000,
 };
@@ -219,6 +226,8 @@ function clampConfig(cfg) {
   out.agentDirectories = out.agentDirectories.trim();
   // A leading # is how people write a channel, not part of its name.
   out.musicChannel = out.musicChannel.trim().replace(/^#/, '');
+  // A pasted address can arrive with a scheme or a trailing slash on it.
+  out.zomboidAddress = String(out.zomboidAddress ?? '').trim().replace(/^\w+:\/\//, '').replace(/\/+$/, '');
   // One instruction per line, however they were typed or dictated. The caps
   // on length and count are enforced where there is somewhere to report them:
   // the panel's save handler and the voice tool.
