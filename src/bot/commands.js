@@ -230,7 +230,9 @@ async function cmdTranscript(interaction) {
  * question that now has an exact string to work with.
  *
  * It belongs to no character in particular: whichever one is active reads the
- * same transcript.
+ * same transcript. And a typo needs no undo: type it again and say so, since
+ * both lines are in the transcript in the order they happened, exactly as a
+ * correction to something misspoken would be.
  */
 async function cmdNote(interaction) {
   const session = requireSession(interaction);
@@ -246,12 +248,15 @@ async function cmdNote(interaction) {
     return interaction.reply(ephemeral('Nothing to write down.'));
   }
   console.log(`[note] ${line.displayName} typed: "${line.text}"`);
-  // Quoted back, and only to the person who typed it: the whole point is a
-  // string that has to be exact, so they have to be able to check it. Nothing
-  // is said out loud — the bot has not been asked anything yet.
-  return interaction.reply(
-    ephemeral(`📝 Noted, and I'll read it as if you'd said it:\n> ${line.text}`),
-  );
+  // Not quoted back. Discord already shows the command that was sent, so
+  // repeating the text is the same string twice on one screen, and the person
+  // who typed it is the one person who does not need to be told what it says.
+  // Getting it wrong needs no undo either: type another and say so, the way
+  // you would if you had misspoken.
+  //
+  // A reply is still required — a slash command with none shows "the
+  // application did not respond" — so it is one line, and only they see it.
+  return interaction.reply(ephemeral("📝 Noted. I'll read it as if you'd said it."));
 }
 
 async function cmdAsk(interaction) {
