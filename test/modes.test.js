@@ -4,7 +4,7 @@ import test, { after, before, beforeEach, describe } from 'node:test';
 import { DEFAULT_PERSONA, characters, describeModes, findMode, looksLikeModeCommand, modeByName, modePrompt } from '../src/agent/modes.js';
 import { VOICES } from '../src/config.js';
 import { botTools } from '../src/agent/tools/index.js';
-import { DoorMissing, describeServer, describeSilence, splitAddress, sshArgs, zomboidTools } from '../src/agent/tools/zomboid.js';
+import { DoorMissing, KeyRefused, describeServer, describeSilence, splitAddress, sshArgs, zomboidTools } from '../src/agent/tools/zomboid.js';
 import { promptWithInstructions } from '../src/agent/brain.js';
 import { config } from '../src/config.js';
 import { CascadeBrain, resetCascade } from '../src/agent/cascade.js';
@@ -552,5 +552,50 @@ describe('the three ways a door can fail to answer', () => {
     );
     assert.match(said, /not up/i);
     assert.match(said, /\/pz start/);
+  });
+});
+
+describe('a key the server will not take', () => {
+  const guild = {
+    members: { cache: new Map([['kpo', { displayName: 'Vero', roles: { cache: [{ name: 'guardianes' }] } }]]), me: {} },
+    channels: { cache: new Map() },
+  };
+  const turn = { guildId: 'g1', guild: () => guild, askerId: 'kpo', askerName: 'Vero' };
+  const textOf = (r) => r.content[0].text;
+  const refusing = () =>
+    zomboidTools(
+      turn,
+      {
+        keys: { read: '/dev/null', act: '/dev/null' },
+        ask: async () => {
+          throw new KeyRefused('the server did not accept this key');
+        },
+      },
+      modeByName('faro'),
+    ).find((t) => t.name === 'zomboid_ask');
+
+  let configured;
+  before(() => {
+    configured = { ssh: config.values.zomboidSsh, address: config.values.zomboidAddress };
+    config.values.zomboidSsh = 'pz@10.0.0.1';
+    config.values.zomboidAddress = '';
+  });
+  after(() => {
+    config.values.zomboidSsh = configured.ssh;
+    config.values.zomboidAddress = configured.address;
+  });
+
+  test('acting with a key nobody authorised says exactly that', async () => {
+    // The expected state for a while, and by design: the act key exists here
+    // long before anybody allows it there, because "it can only look" is the
+    // default worth having. What the room must not hear is an exit code.
+    const said = textOf(await refusing().handler({ question: 'reinicialo', act: true }));
+    assert.match(said, /lets me look but has not been told to let me change/i);
+    assert.doesNotMatch(said, /255|publickey/i);
+  });
+
+  test('and a refused read key is a different sentence', async () => {
+    const said = textOf(await refusing().handler({ question: '¿anda?' }));
+    assert.match(said, /did not accept my key/i);
   });
 });
