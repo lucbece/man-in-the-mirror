@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { describe } from 'node:test';
 
-import { AudioBuffer, Utterance } from '../src/agent/buffer.js';
+import { AudioBuffer, TYPED_WINDOW_MS, Utterance } from '../src/agent/buffer.js';
 
 const NOW = 1_700_000_000_000;
 
@@ -94,5 +94,57 @@ describe('AudioBuffer', () => {
     const stats = buf.stats(NOW);
     assert.equal(stats.utterances, 3);
     assert.equal(stats.speakers, 2);
+  });
+});
+
+describe('a line that was typed rather than said', () => {
+  test('reads like speech, in the place in time where it was typed', () => {
+    const buffer = new AudioBuffer({ windowSeconds: 60 });
+    const spoken = new Utterance({ userId: 'u1', displayName: 'Vero', startedAt: 1000 });
+    spoken.push(Buffer.alloc(100));
+    spoken.text = 'poné el tema ese';
+    buffer.add(spoken, 1000);
+
+    const note = buffer.note({ userId: 'u2', displayName: 'Luc', text: 'Ne me quitte pas' }, 2000);
+    assert.ok(note);
+    assert.equal(note.text, 'Ne me quitte pas');
+    assert.equal(note.typed, true);
+    assert.equal(note.durationMs, 0, 'no audio behind it');
+
+    const lines = buffer.recent(2000);
+    assert.equal(lines.length, 2);
+    assert.deepEqual(lines.map((u) => u.displayName), ['Vero', 'Luc'], 'in the order they happened');
+    // The one thing that must hold: the transcriber never tries to transcribe
+    // it, because it is already text.
+    assert.equal(buffer.untranscribed(2000).length, 0);
+  });
+
+  test('an empty note is not a line', () => {
+    const buffer = new AudioBuffer({ windowSeconds: 60 });
+    assert.equal(buffer.note({ userId: 'u1', displayName: 'Luc', text: '   ' }), null);
+    assert.equal(buffer.note({ userId: 'u1', displayName: 'Luc', text: undefined }), null);
+    assert.equal(buffer.recent().length, 0);
+  });
+
+  test('it outlives the audio window, because retyping it is the thing to avoid', () => {
+    const buffer = new AudioBuffer({ windowSeconds: 60 });
+    buffer.note({ userId: 'u1', displayName: 'Luc', text: 'BetterSorting_v3' }, 0);
+
+    // Long past the audio window, well inside the typed one.
+    assert.equal(buffer.recent(120_000).length, 1, 'still there two minutes later');
+    // And eventually it does go.
+    assert.equal(buffer.recent(TYPED_WINDOW_MS + 1000).length, 0);
+  });
+
+  test('spoken audio still ages out on its own window', () => {
+    const buffer = new AudioBuffer({ windowSeconds: 60 });
+    const spoken = new Utterance({ userId: 'u1', displayName: 'Vero', startedAt: 0 });
+    spoken.push(Buffer.alloc(100));
+    buffer.add(spoken, 0);
+    buffer.note({ userId: 'u1', displayName: 'Luc', text: 'x' }, 0);
+
+    const left = buffer.recent(120_000);
+    assert.equal(left.length, 1, 'the audio is gone and the note is not');
+    assert.equal(left[0].typed, true);
   });
 });

@@ -124,6 +124,7 @@ bar.
 | `set_member_mute` | Server-mutes or unmutes a member | Mute Members |
 | `leave_voice` | Leaves after the current reply | — |
 | `play_music`, `play_album`, `skip_song`, `pause_music`, `resume_music`, `stop_music`, `remove_from_queue`, `move_in_queue`, `set_volume`, `now_playing` | Plays music through the bot's own voice connection. Everything but `now_playing` is done without speaking; what happened is written to `musicChannel` | Can post in `musicChannel` |
+| — (`/mj note`) | Not a tool: a slash command that writes a line into the conversation without asking anything. It reads like speech, attributed to whoever typed it, and lasts ten minutes rather than the audio window. For strings speech recognition destroys — mod ids, song titles, version numbers — so the next spoken question can refer to them |
 | `enter_mode`, `leave_mode` | Steps into one of the bot's other characters, or back out. A character replaces the room's standing instructions and notebook with its own rules, narrows its tools to the job and answers in its own voice; the fixed rules that make it audible stay. Asked for by name ("que venga el bot de zomboid", "que vuelva espejo") — the wake word is unchanged and never means a switch. Entering needs the Discord role the mode names, leaving is open to anyone. Switching is manual: it lasts until somebody asks for another, or the bot leaves the channel | The mode's `enterRole` |
 | `zomboid_status` | Asks the Project Zomboid server, over UDP, whether it is up and who is playing. Only looks: starting and stopping that machine belongs to the `pz-bot` that owns it, so when the server is down the answer is the state and `/pz start` | — |
 | `enter_music_mode`, `leave_music_mode` | Music mode: stop speaking until told otherwise. Nothing is spoken and the track is never paused for a voice; hearing, tools and answers keep working, and what would have been said is written to `musicChannel`. Leaving is confirmed out loud. Not persisted: it ends when the bot leaves the channel | — |
@@ -270,6 +271,7 @@ web search. The SDK's file and shell tools are denied.
 | `/mj join [channel]` | Join your channel, or a named one |
 | `/mj leave` | Disconnect |
 | `/mj ask <question>` | Ask without saying the name |
+| `/mj note <text>` | Write a line into the conversation without asking anything, for strings speech recognition would destroy. Nothing is spoken; the next question can use it |
 | `/mj transcript` | Print recent transcribed speech |
 | `/mj shush` | Stop the current reply |
 | `/mj mute`, `/mj unmute` | Music mode on and off; the same switch as the voice tools and the panel's button |

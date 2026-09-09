@@ -43,6 +43,18 @@ export const commandData = [
             .setMaxLength(500),
         ),
     )
+    .addSubcommand((sub) =>
+      sub
+        .setName('note')
+        .setDescription('Write something into the conversation — a name it would mishear. No answer')
+        .addStringOption((opt) =>
+          opt
+            .setName('text')
+            .setDescription('A mod id, a song title, anything hard to say out loud')
+            .setRequired(true)
+            .setMaxLength(500),
+        ),
+    )
     .addSubcommand((sub) => sub.setName('shush').setDescription('Stop the agent mid-sentence'))
     .addSubcommand((sub) =>
       sub.setName('mute').setDescription('Music mode: stop speaking, and write what it would have said'),
@@ -82,6 +94,8 @@ export async function handleInteraction(interaction) {
         return await cmdTranscript(interaction);
       case 'ask':
         return await cmdAsk(interaction);
+      case 'note':
+        return await cmdNote(interaction);
       case 'shush':
         return await cmdShush(interaction);
       case 'mute':
@@ -197,6 +211,47 @@ async function cmdTranscript(interaction) {
   const body = text.length > budget ? `…${text.slice(-budget)}` : text;
 
   return interaction.editReply(`${header}\n\`\`\`\n${body}\n\`\`\``);
+}
+
+/**
+ * Put a line into the conversation without asking anything.
+ *
+ * The gap this fills: some strings cannot survive being spoken. A mod id, a
+ * song title in a language nobody in the room speaks, a version number — the
+ * transcriber will mangle them every time, and no amount of tuning the wake
+ * word helps, because the problem is in the middle of the sentence rather
+ * than at its start.
+ *
+ * So it is typed, and it lands in the buffer as a line that was said: the
+ * model reads it in the transcript exactly like speech, attributed to whoever
+ * typed it, in the place in time where it was typed. Nothing is answered and
+ * nothing is spoken. What makes it useful is the sentence after it — "espejo,
+ * te escribí el nombre del tema, ponelo" — which is an ordinary spoken
+ * question that now has an exact string to work with.
+ *
+ * It belongs to no character in particular: whichever one is active reads the
+ * same transcript.
+ */
+async function cmdNote(interaction) {
+  const session = requireSession(interaction);
+  if (!session) return;
+
+  const text = interaction.options.getString('text');
+  const line = session.receiver?.buffer?.note({
+    userId: interaction.user.id,
+    displayName: interaction.member?.displayName ?? interaction.user.username,
+    text,
+  });
+  if (!line) {
+    return interaction.reply(ephemeral('Nothing to write down.'));
+  }
+  console.log(`[note] ${line.displayName} typed: "${line.text}"`);
+  // Quoted back, and only to the person who typed it: the whole point is a
+  // string that has to be exact, so they have to be able to check it. Nothing
+  // is said out loud — the bot has not been asked anything yet.
+  return interaction.reply(
+    ephemeral(`📝 Noted, and I'll read it as if you'd said it:\n> ${line.text}`),
+  );
 }
 
 async function cmdAsk(interaction) {
