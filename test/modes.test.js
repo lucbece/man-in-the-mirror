@@ -4,7 +4,7 @@ import test, { after, before, beforeEach, describe } from 'node:test';
 import { DEFAULT_PERSONA, MODES, describeModes, findMode, looksLikeModeCommand, modeByName, modePrompt } from '../src/agent/modes.js';
 import { VOICES } from '../src/config.js';
 import { botTools } from '../src/agent/tools/index.js';
-import { describeServer, describeSilence, splitAddress, sshArgs, zomboidTools } from '../src/agent/tools/zomboid.js';
+import { DoorMissing, describeServer, describeSilence, splitAddress, sshArgs, zomboidTools } from '../src/agent/tools/zomboid.js';
 import { promptWithInstructions } from '../src/agent/brain.js';
 import { config } from '../src/config.js';
 import { CascadeBrain, resetCascade } from '../src/agent/cascade.js';
@@ -464,5 +464,62 @@ describe('the ssh call is explicit about which identity it uses', () => {
       assert.equal(args.filter((a) => a === '-i').length, 1, 'exactly one identity');
       assert.equal(args[args.indexOf('-i') + 1], key);
     }
+  });
+});
+
+describe('the three ways a door can fail to answer', () => {
+  const guild = {
+    members: { cache: new Map([['kpo', { displayName: 'Luc', roles: { cache: [{ name: 'los kpos' }] } }]]), me: {} },
+    channels: { cache: new Map() },
+  };
+  const turn = { guildId: 'g1', guild: () => guild, askerId: 'kpo', askerName: 'Luc' };
+  const askTool = (ask) =>
+    zomboidTools(turn, { keys: { read: '/dev/null', act: '/dev/null' }, ask }).find(
+      (t) => t.name === 'zomboid_ask',
+    );
+  const textOf = (r) => r.content[0].text;
+
+  let configured;
+  before(() => {
+    configured = { ssh: config.values.zomboidSsh, address: config.values.zomboidAddress };
+    config.values.zomboidSsh = 'pz@10.0.0.1';
+    config.values.zomboidAddress = '';
+  });
+  after(() => {
+    config.values.zomboidSsh = configured.ssh;
+    config.values.zomboidAddress = configured.address;
+  });
+
+  test('installed and refusing: it answers, and the refusal is the answer', async () => {
+    // The door closed is not a failure — it replies in JSON, which is also the
+    // best proof the key works and the path is whole.
+    const said = textOf(
+      await askTool(async () => ({ ok: false, spoken: 'La puerta está cerrada en el server.' })).handler({
+        question: '¿por qué se cayó?',
+      }),
+    );
+    assert.match(said, /puerta está cerrada/);
+  });
+
+  test('not installed yet: the key works and the script is missing', async () => {
+    // Expected first, because the copy of the repo on that machine is synced
+    // by hand: the key can be in place hours before the script is.
+    const said = textOf(
+      await askTool(async () => {
+        throw new DoorMissing('exit 127');
+      }).handler({ question: '¿por qué se cayó?' }),
+    );
+    assert.match(said, /not installed yet/i);
+    assert.doesNotMatch(said, /127/, 'an exit code means nothing out loud');
+  });
+
+  test('no machine at all: normal, and somebody can fix it in two seconds', async () => {
+    const said = textOf(
+      await askTool(async () => {
+        throw new Error('ssh: connect to host port 22: Connection timed out');
+      }).handler({ question: '¿por qué se cayó?' }),
+    );
+    assert.match(said, /not up/i);
+    assert.match(said, /\/pz start/);
   });
 });

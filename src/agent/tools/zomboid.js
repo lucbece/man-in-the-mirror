@@ -87,6 +87,16 @@ export function describeSilence() {
  * second one the character can only look, which is the right thing to be true
  * by default.
  */
+/**
+ * The key works, the machine is up, and the script it points at is not there.
+ *
+ * Its own error because it is its own state and its own sentence: nothing is
+ * broken and nothing is refusing, the far side is simply not finished being
+ * set up. Told apart from a refusal, which answers in JSON, and from an
+ * asleep machine, which does not answer at all.
+ */
+export class DoorMissing extends DiscordToolError {}
+
 export const KEYS = {
   read: process.env.MIRROR_ZOMBOID_KEY ?? path.join('data', 'zomboid-key'),
   act: process.env.MIRROR_ZOMBOID_ACT_KEY ?? path.join('data', 'zomboid-key-act'),
@@ -159,15 +169,35 @@ export function askOverSsh({ destination, keyPath, question, act, timeoutMs = AS
     child.on('close', (code) => {
       clearTimeout(timer);
       const line = out.trim().split('\n').filter(Boolean).pop();
-      if (!line) {
-        reject(new DiscordToolError(`the server said nothing (exit ${code})${err ? `: ${err.trim().slice(0, 120)}` : ''}`));
+      let parsed = null;
+      if (line) {
+        try {
+          parsed = JSON.parse(line);
+        } catch {
+          parsed = null;
+        }
+      }
+      if (parsed) {
+        resolve(parsed);
         return;
       }
-      try {
-        resolve(JSON.parse(line));
-      } catch {
-        reject(new DiscordToolError(`the server answered something I could not read: ${line.slice(0, 120)}`));
+      // 127 is a shell saying the command does not exist, which here means one
+      // exact thing: the key is installed and pinned to a script the machine
+      // has not got yet. That is a different state from the door refusing and
+      // from there being no machine, and it is the one to expect first — the
+      // copy of the repo on the VM is synced by hand, so the key can be in
+      // place hours before the script is.
+      if (code === 127) {
+        reject(new DoorMissing('the door is not installed on the server yet'));
+        return;
       }
+      reject(
+        new DiscordToolError(
+          line
+            ? `the server answered something I could not read: ${line.slice(0, 120)}`
+            : `the server said nothing (exit ${code})${err ? `: ${err.trim().slice(0, 120)}` : ''}`,
+        ),
+      );
     });
 
     child.stdin.end(String(question ?? ''));
@@ -247,6 +277,18 @@ export function zomboidTools(turn, deps = {}) {
         try {
           answer = await send({ destination, keyPath, question, act });
         } catch (err) {
+          // The machine is asleep most of the day by design, and then there is
+          // no ssh either. Telling the room "I could not reach the server"
+          // when the truth is "it is off, and anyone can start it" is the
+          // difference between a fault and a normal evening — so the cheap
+          // probe decides which of the two happened, rather than the failure
+          // of the expensive call.
+          // Three states behind one failure, and they need three sentences.
+          if (err instanceof DoorMissing) {
+            throw new DiscordToolError(
+              'I can reach the server but the part of it that answers questions is not installed yet — say that in one sentence',
+            );
+          }
           // The machine is asleep most of the day by design, and then there is
           // no ssh either. Telling the room "I could not reach the server"
           // when the truth is "it is off, and anyone can start it" is the
