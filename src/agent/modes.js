@@ -45,21 +45,56 @@ below. While you are in it:
 - Someone can take you out of the mode by asking. Do it without arguing.`;
 
 /**
+ * What the bot is called when it is being nobody in particular.
+ *
+ * A mode is stepped out of by naming what should come back, so the default
+ * character needs a name too — otherwise "que vuelva espejo" has nothing to
+ * refer to. Its phrasings are all verb-and-name constructions on purpose:
+ * a bare "espejo" is the wake word and appears in every single thing anybody
+ * says to the bot, so a bare name can never mean "switch".
+ */
+export const DEFAULT_PERSONA = {
+  name: 'espejo',
+  displayName: 'espejo',
+  spoken: [
+    'que vuelva espejo', 'que vuelvas a ser espejo', 'volve a ser espejo', 'volvé a ser espejo',
+    'que vuelva el espejo', 'que vuelva el chatbot', 'que vuelva el de siempre',
+    'que vuelva el default', 'volve a ser vos', 'volvé a ser vos', 'se vos de nuevo',
+    'sali del modo', 'salite del modo', 'termina el modo', 'terminá el modo', 'modo normal',
+    'bring back espejo', 'leave the mode', 'exit the mode', 'back to normal', 'be yourself again',
+  ],
+};
+
+/**
  * One mode.
  *
- * `spoken` are the phrasings people actually use to ask for it, in both
- * languages the room speaks. `enterRole` and `actRole` are Discord role names:
- * the first gates turning the mode on, the second gates the verbs that change
- * something. They are separate fields pointing at the same role today, because
- * the day one of them moves is the day the distinction has to already exist.
+ * `displayName` is what it is called out loud — the room asks for a character
+ * by name, not for a "mode", and a second and third one will only be
+ * distinguishable that way. `spoken` are the phrasings people actually use to
+ * ask for it, in both languages the room speaks.
+ *
+ * `voice` is which OpenAI voice it answers in. A different character with the
+ * same voice is a costume; the voice is most of what makes the switch audible
+ * from the other side of a call.
+ *
+ * `enterRole` and `actRole` are Discord role names: the first gates turning
+ * the mode on, the second gates the verbs that change something. They are
+ * separate fields pointing at the same role today, because the day one of them
+ * moves is the day the distinction has to already exist.
  */
 export const MODES = [
   {
     name: 'zomboid',
+    displayName: 'el bot de zomboid',
     spoken: [
-      'modo zomboid', 'modo admin', 'zomboid admin', 'modo servidor', 'modo server',
-      'zomboid mode', 'admin mode', 'server mode',
+      'bot de zomboid', 'bot zomboid', 'zomboid bot', 'modo zomboid', 'modo admin',
+      'zomboid admin', 'modo servidor', 'modo server', 'zomboid mode', 'admin mode',
+      'server mode',
     ],
+    // Distinctly not the voice the room jokes with. onyx is the bot they know;
+    // this one should be recognisable as somebody else before it finishes its
+    // first sentence.
+    voice: 'echo',
     enterRole: 'los kpos',
     actRole: 'los kpos',
     /**
@@ -71,10 +106,8 @@ export const MODES = [
     tools: ['zomboid', 'quiet'],
     /** Where a long answer goes, by channel name. The room already reads server news there. */
     detailChannel: 'project-zomboid-ñoños-chatroom',
-    entering: 'Modo zomboid. Fijate que solo puedo mirar el server y decirte cómo está.',
-    leaving: 'Listo, salí del modo zomboid.',
-    /** Said by the bot itself when the mode times out, with nobody having asked. */
-    expired: 'Hace rato que nadie me pregunta nada del server, así que vuelvo a ser yo.',
+    entering: 'Soy el bot de zomboid. Por ahora solo puedo mirar el server y decirte cómo está.',
+    leaving: 'Listo, vuelve espejo.',
     prompt: `
 
 # This mode: Project Zomboid admin
@@ -100,26 +133,6 @@ What you actually know:
   },
 ];
 
-/**
- * How long a mode survives with nothing asked of it.
- *
- * A character nobody ends is a character the bot is left in: the room stops
- * talking about the server, carries on with the night, and the funny bot never
- * comes back because nobody remembers the words. Fifteen minutes is long
- * enough that a real conversation about a server never trips it — every
- * question resets it — and short enough that walking away from one ends it.
- *
- * It says so when it goes. A bot that changed character silently would be
- * worse than one that stayed.
- */
-export const MODE_IDLE_MS = 15 * 60 * 1000;
-
-/**
- * The live value, in one table, the way WAKE_TIMING works in voice/session.js:
- * a test that had to wait fifteen real minutes would not be written.
- */
-export const MODE_TIMING = { idleMs: MODE_IDLE_MS };
-
 /** A mode by name, or undefined. */
 export function modeByName(name) {
   return MODES.find((mode) => mode.name === name);
@@ -143,16 +156,6 @@ export function findMode(said) {
 }
 
 /**
- * Ways of asking to stop being a character, which belong to no mode in
- * particular.
- */
-const EXIT_PHRASES = [
-  'sali del modo', 'salite del modo', 'terminá el modo', 'termina el modo',
-  'volve a ser vos', 'volvé a ser vos', 'se vos de nuevo', 'modo normal',
-  'leave the mode', 'exit the mode', 'back to normal', 'be yourself again',
-];
-
-/**
  * Is this a request to change character, either way?
  *
  * The cascade needs this before any model sees the question. Its fast leg has
@@ -167,8 +170,8 @@ const EXIT_PHRASES = [
 export function looksLikeModeCommand(said) {
   const heard = normalise(said ?? '');
   if (!heard) return false;
-  if (EXIT_PHRASES.some((phrase) => heard.includes(normalise(phrase)))) return true;
-  return Boolean(findMode(heard));
+  const phrases = [...DEFAULT_PERSONA.spoken, ...MODES.flatMap((mode) => mode.spoken)];
+  return phrases.some((phrase) => heard.includes(normalise(phrase)));
 }
 
 /**
@@ -183,7 +186,9 @@ export function modePrompt(mode) {
 
 /** What to tell the agent it can be asked to become. */
 export function describeModes() {
-  return MODES.map((mode) => `"${mode.name}", asked for as ${mode.spoken.slice(0, 3).map((p) => `"${p}"`).join(' or ')}`).join('; ');
+  return MODES.map(
+    (mode) => `"${mode.name}" (${mode.displayName}), asked for as ${mode.spoken.slice(0, 3).map((p) => `"${p}"`).join(' or ')}`,
+  ).join('; ');
 }
 
 /**
@@ -196,7 +201,9 @@ export function describeModes() {
 export function modesParagraph() {
   return `
 
-**Modes.** You can be asked to become one of your other characters, each with its own rules and its own tools: ${describeModes()}. When somebody asks for one — "activá el modo zomboid", "ponete en modo admin" — call enter_mode; it will refuse if that person is not allowed, and you say the refusal out loud. When somebody asks you to stop — "salí del modo", "volvé a ser vos" — call leave_mode, whoever put you in it. Never merely say you have changed character: without the tool nothing has changed, and the room will believe you.`;
+**Your other characters.** You can be asked to become one of them, each with its own name, its own rules and its own tools: ${describeModes()}. When somebody asks for one by name — "que venga el bot de zomboid", "poné el bot de zomboid" — call enter_mode; it will refuse if that person is not allowed, and you say the refusal out loud. When somebody asks for the default one back — "que vuelva espejo", "volvé a ser vos", "salí del modo" — call leave_mode, whoever put you in it.
+
+Two things about this. Never merely say you have changed character: without the tool nothing has changed and the room will believe you. And they always call you by the same name, "${DEFAULT_PERSONA.name}", whichever character you are being — that is how they get your attention, not a request to change back. Only the phrasings above are a request to change.`;
 }
 
-export { COMMON_RULES, EXIT_PHRASES };
+export { COMMON_RULES };

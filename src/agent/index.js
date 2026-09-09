@@ -181,7 +181,14 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, ma
     /** Clock times of each stage, turned into the `[latency]` line at the end. */
     const at = { asked: t1 };
     const brain = makeBrain({ guildId: session.guildId });
-    const tts = makeTts();
+    // Which character is answering, read once before the turn so a switch
+    // mid-answer cannot change the rules underneath it.
+    const mode = modeByName(session.mode);
+    // A character with its own voice. Same synthesiser, same settings, one
+    // field different: the voice is most of what makes the switch audible from
+    // the other side of a call, and a new character in the old voice is a
+    // costume rather than somebody else.
+    const tts = makeTts(mode?.voice ? { voice: mode.voice } : undefined);
 
     /**
      * The mouth, taken only when there is something to say with it.
@@ -221,7 +228,7 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, ma
         // when somebody is waiting to hear something. In music mode nobody
         // is, so the clip is not even fetched — the queue would drop it, and
         // fetching it is a synthesis request for a sound with no listener.
-        if (speech && !doingNotAnswering() && !session.quiet) {
+        if (speech && !doingNotAnswering() && !session.quiet && !mode?.voice) {
           const filler = getFiller(guessLanguage(question), 'waiting');
           if (filler) {
             speech.push(toResource(filler.audio), null);
@@ -300,9 +307,6 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, ma
         });
     };
 
-    // Asking something while in a mode is what keeps it alive; see touchMode.
-    session.touchMode?.();
-
     try {
       // The return value is the whole reply, but everything sayable has
       // already gone out through onSentence by the time it resolves.
@@ -319,7 +323,7 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, ma
           quiet: Boolean(session.quiet),
           // Which character is answering. Read once, before the turn, so a
           // mode entered mid-answer does not change the rules underneath it.
-          mode: modeByName(session.mode),
+          mode,
         },
         {
           onSentence: say,
@@ -330,7 +334,10 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, ma
             // heard. Once per turn, never over a search filler, never in
             // music mode, never for a silent command.
             // A search has its own, longer filler through onSearchStart.
-            if (isSilentTool(name) || /search/i.test(name) || session.quiet || speech || at.firstSentence !== undefined) return;
+            // A mode with its own voice gets no cached clip: they were
+            // rendered in the room's voice, and one word in the wrong voice
+            // before an answer in the right one sounds like two bots.
+            if (isSilentTool(name) || /search/i.test(name) || session.quiet || speech || mode?.voice || at.firstSentence !== undefined) return;
             const ack = getFiller(guessLanguage(question), 'ack');
             if (!ack) return;
             timings.ack = ack.line;
@@ -345,8 +352,10 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, ma
             //
             if (doingNotAnswering()) return;
             // Music mode covers no silence: the room is listening to a song,
-            // and the clip is skipped here so none is fetched at all.
-            if (session.quiet) return;
+            // and the clip is skipped here so none is fetched at all. A mode
+            // with its own voice skips it for a different reason: the clips
+            // were rendered in the room's voice and would not be its own.
+            if (session.quiet || mode?.voice) return;
             timings.searchedAtMs = Date.now() - t1;
             const filler = getFiller(guessLanguage(question));
             if (!filler) return;

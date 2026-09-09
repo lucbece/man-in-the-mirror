@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test, { beforeEach, describe } from 'node:test';
 
-import { MODES, MODE_TIMING, describeModes, findMode, looksLikeModeCommand, modeByName, modePrompt } from '../src/agent/modes.js';
-import { VoiceSession } from '../src/voice/session.js';
+import { DEFAULT_PERSONA, MODES, describeModes, findMode, looksLikeModeCommand, modeByName, modePrompt } from '../src/agent/modes.js';
+import { VOICES } from '../src/config.js';
 import { botTools } from '../src/agent/tools/index.js';
 import { describeServer, describeSilence, splitAddress } from '../src/agent/tools/zomboid.js';
 import { promptWithInstructions } from '../src/agent/brain.js';
@@ -220,74 +220,47 @@ describe('what the zomboid mode can see', () => {
   });
 });
 
-describe('a mode that nobody is using ends on its own', () => {
-  /** A session with only the mode machinery on it. */
-  function stubSession() {
-    const s = Object.create(VoiceSession.prototype);
-    s.mode = null;
-    s.modeTimer = null;
-    s.events = [];
-    s.emit = (event, payload) => s.events.push({ event, payload });
-    return s;
-  }
-
-  test('the clock starts with the mode and is reset by every question', async () => {
-    const s = stubSession();
-    s.setMode('zomboid');
-    assert.ok(s.modeTimer, 'armed on the way in');
-    const first = s.modeTimer;
-    s.touchMode();
-    assert.notEqual(s.modeTimer, first, 'a question restarts it');
-    assert.equal(s.mode, 'zomboid');
-  });
-
-  test('leaving on purpose clears the clock', () => {
-    const s = stubSession();
-    s.setMode('zomboid');
-    s.setMode(null);
-    assert.equal(s.modeTimer, null);
-    assert.equal(s.mode, null);
-  });
-
-  test('when it runs out the character ends and the room is told', async () => {
-    const real = MODE_TIMING.idleMs;
-    MODE_TIMING.idleMs = 20;
-    try {
-      const s = stubSession();
-      s.setMode('zomboid');
-      await new Promise((resolve) => {
-        setTimeout(resolve, 60);
-      });
-      assert.equal(s.mode, null, 'no longer in character');
-      const expired = s.events.find((e) => e.event === 'mode-expired');
-      assert.ok(expired, 'the room is told rather than the character ending in silence');
-      assert.equal(expired.payload.mode.name, 'zomboid');
-      assert.match(expired.payload.message, /vuelvo a ser yo/);
-    } finally {
-      MODE_TIMING.idleMs = real;
+describe('a character has a name and a voice', () => {
+  test('every mode is asked for by name, and says which name', () => {
+    for (const mode of MODES) {
+      assert.ok(mode.displayName, `${mode.name}: nothing to call it`);
+      assert.ok(
+        mode.spoken.some((phrase) => phrase.includes(mode.name)),
+        `${mode.name}: none of its phrasings contain its own name`,
+      );
     }
   });
 
-  test('a question asked in time keeps it alive', async () => {
-    const real = MODE_TIMING.idleMs;
-    MODE_TIMING.idleMs = 40;
-    try {
-      const s = stubSession();
-      s.setMode('zomboid');
-      for (let i = 0; i < 3; i += 1) {
-        await new Promise((resolve) => {
-          setTimeout(resolve, 20);
-        });
-        s.touchMode();
-      }
-      assert.equal(s.mode, 'zomboid', 'still in character after longer than the window');
-      assert.equal(s.events.filter((e) => e.event === 'mode-expired').length, 0);
-    } finally {
-      MODE_TIMING.idleMs = real;
+  test('switching is asked for by name, and the wake word is not a switch', () => {
+    // The ambiguity this design exists to remove: "espejo" starts every single
+    // thing anybody says to the bot, so a bare name can never mean "change
+    // character". Only a verb-and-name phrasing does.
+    assert.equal(looksLikeModeCommand('que venga el bot de zomboid'), true);
+    assert.equal(looksLikeModeCommand('que vuelva espejo'), true);
+    assert.equal(looksLikeModeCommand('volvé a ser vos'), true);
+    assert.equal(looksLikeModeCommand('espejo, qué hora es'), false);
+    assert.equal(looksLikeModeCommand('espejo, cómo está el server'), false);
+  });
+
+  test('asking for the default back is a switch that names no mode', () => {
+    // leave_mode's job, not enter_mode's: findMode has nothing to return.
+    assert.equal(findMode('que vuelva espejo'), null);
+    assert.equal(findMode('que venga el bot de zomboid')?.name, 'zomboid');
+  });
+
+  test('the default persona is named, so there is something to ask back for', () => {
+    assert.equal(DEFAULT_PERSONA.name, 'espejo');
+    // Not a bare name anywhere: that is the wake word.
+    for (const phrase of DEFAULT_PERSONA.spoken) {
+      assert.ok(phrase.trim().includes(' '), `"${phrase}" is a bare word and would fire constantly`);
     }
   });
 
-  test('every mode has something to say when it times out', () => {
-    for (const mode of MODES) assert.ok(mode.expired, `${mode.name}: nothing to say on the way out`);
+  test('a mode with its own voice picks a real one', () => {
+    for (const mode of MODES) {
+      if (!mode.voice) continue;
+      assert.ok(VOICES.includes(mode.voice), `${mode.name}: ${mode.voice} is not an OpenAI voice`);
+      assert.notEqual(mode.voice, 'onyx', `${mode.name}: the same voice as the room's is a costume`);
+    }
   });
 });

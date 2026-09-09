@@ -200,15 +200,6 @@ export class SessionManager extends EventEmitter {
       forgetCascade(channel.guild.id);
       this.emit('update');
     });
-    // A mode ran out on its own. The room is told, through the same door a
-    // reminder uses, because a character that ends in silence ends without
-    // anybody knowing it has.
-    session.on('mode-expired', ({ mode, message }) => {
-      this.speakUnprompted(channel.guild.id, message, `[mode] ${mode.name} expired`, '🎭').catch(
-        (err) => console.warn(`[mode] could not say the mode ended: ${err.message}`),
-      );
-    });
-
     session.on('update', () => this.emit('update'));
 
     // Someone said the wake phrase out loud. This is the whole point.
