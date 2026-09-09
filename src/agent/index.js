@@ -188,7 +188,25 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, ma
     // field different: the voice is most of what makes the switch audible from
     // the other side of a call, and a new character in the old voice is a
     // costume rather than somebody else.
-    const tts = makeTts(mode?.voice ? { voice: mode.voice } : undefined);
+    //
+    // Re-read per sentence rather than fixed for the turn, the way `quiet` is,
+    // and for a reason found on the first real switch: the turn that changes
+    // character is the turn that says "soy el bot de zomboid", and it was
+    // saying it in the voice of the character it had just stopped being. The
+    // rules and the tools are deliberately fixed for the turn — a switch
+    // mid-answer must not change what the model is allowed to do underneath it
+    // — but the mouth belongs to whoever is speaking now.
+    let tts = makeTts(mode?.voice ? { voice: mode.voice } : undefined);
+    let speakingAs = mode?.voice ?? null;
+    const voice = () => modeByName(session.mode)?.voice ?? null;
+    const mouthpiece = () => {
+      const wanted = voice();
+      if (wanted !== speakingAs) {
+        tts = makeTts(wanted ? { voice: wanted } : undefined);
+        speakingAs = wanted;
+      }
+      return tts;
+    };
 
     /**
      * The mouth, taken only when there is something to say with it.
@@ -228,7 +246,7 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, ma
         // when somebody is waiting to hear something. In music mode nobody
         // is, so the clip is not even fetched — the queue would drop it, and
         // fetching it is a synthesis request for a sound with no listener.
-        if (speech && !doingNotAnswering() && !session.quiet && !mode?.voice) {
+        if (speech && !doingNotAnswering() && !session.quiet && !voice()) {
           const filler = getFiller(guessLanguage(question), 'waiting');
           if (filler) {
             speech.push(toResource(filler.audio), null);
@@ -292,7 +310,7 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, ma
       at.firstSentence ??= Date.now();
       rendering = rendering
         .then(async () => {
-          const audio = await tts.synthesizeStream(clean);
+          const audio = await mouthpiece().synthesizeStream(clean);
           at.firstAudio ??= Date.now();
           timings.firstAudioMs ??= Date.now() - t1;
           mouth().push(toResource(audio), clean);
@@ -337,7 +355,7 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, ma
             // A mode with its own voice gets no cached clip: they were
             // rendered in the room's voice, and one word in the wrong voice
             // before an answer in the right one sounds like two bots.
-            if (isSilentTool(name) || /search/i.test(name) || session.quiet || speech || mode?.voice || at.firstSentence !== undefined) return;
+            if (isSilentTool(name) || /search/i.test(name) || session.quiet || speech || voice() || at.firstSentence !== undefined) return;
             const ack = getFiller(guessLanguage(question), 'ack');
             if (!ack) return;
             timings.ack = ack.line;
@@ -355,7 +373,7 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, ma
             // and the clip is skipped here so none is fetched at all. A mode
             // with its own voice skips it for a different reason: the clips
             // were rendered in the room's voice and would not be its own.
-            if (session.quiet || mode?.voice) return;
+            if (session.quiet || voice()) return;
             timings.searchedAtMs = Date.now() - t1;
             const filler = getFiller(guessLanguage(question));
             if (!filler) return;
