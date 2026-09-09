@@ -300,6 +300,9 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, ma
         });
     };
 
+    // Asking something while in a mode is what keeps it alive; see touchMode.
+    session.touchMode?.();
+
     try {
       // The return value is the whole reply, but everything sayable has
       // already gone out through onSentence by the time it resolves.

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test, { beforeEach, describe } from 'node:test';
 
-import { MODES, describeModes, findMode, modeByName, modePrompt } from '../src/agent/modes.js';
+import { MODES, MODE_TIMING, describeModes, findMode, looksLikeModeCommand, modeByName, modePrompt } from '../src/agent/modes.js';
+import { VoiceSession } from '../src/voice/session.js';
 import { botTools } from '../src/agent/tools/index.js';
 import { describeServer, describeSilence, splitAddress } from '../src/agent/tools/zomboid.js';
 import { promptWithInstructions } from '../src/agent/brain.js';
@@ -41,6 +42,18 @@ describe('finding the mode somebody asked for', () => {
       // A mode that can be entered by anyone but acts as an admin is the
       // failure this pair of fields exists to make visible.
       assert.ok(mode.enterRole && mode.actRole, `${mode.name}: both gates`);
+    }
+  });
+});
+
+describe('asking to change character never reaches the fast leg', () => {
+  test('both directions, and nothing else', () => {
+    for (const said of ['activá el modo zomboid', 'ponete en modo admin', 'salí del modo', 'volvé a ser vos', 'back to normal']) {
+      assert.equal(looksLikeModeCommand(said), true, said);
+    }
+    // Music mode has its own router; this one must not shadow it.
+    for (const said of ['poné el modo música', 'mutéate', 'qué hora es', '']) {
+      assert.equal(looksLikeModeCommand(said), false, said);
     }
   });
 });
@@ -204,5 +217,77 @@ describe('what the zomboid mode can see', () => {
     assert.ok(names.includes('zomboid_status'));
     assert.ok(names.includes('leave_mode'));
     assert.ok(!names.includes('remember_fact'));
+  });
+});
+
+describe('a mode that nobody is using ends on its own', () => {
+  /** A session with only the mode machinery on it. */
+  function stubSession() {
+    const s = Object.create(VoiceSession.prototype);
+    s.mode = null;
+    s.modeTimer = null;
+    s.events = [];
+    s.emit = (event, payload) => s.events.push({ event, payload });
+    return s;
+  }
+
+  test('the clock starts with the mode and is reset by every question', async () => {
+    const s = stubSession();
+    s.setMode('zomboid');
+    assert.ok(s.modeTimer, 'armed on the way in');
+    const first = s.modeTimer;
+    s.touchMode();
+    assert.notEqual(s.modeTimer, first, 'a question restarts it');
+    assert.equal(s.mode, 'zomboid');
+  });
+
+  test('leaving on purpose clears the clock', () => {
+    const s = stubSession();
+    s.setMode('zomboid');
+    s.setMode(null);
+    assert.equal(s.modeTimer, null);
+    assert.equal(s.mode, null);
+  });
+
+  test('when it runs out the character ends and the room is told', async () => {
+    const real = MODE_TIMING.idleMs;
+    MODE_TIMING.idleMs = 20;
+    try {
+      const s = stubSession();
+      s.setMode('zomboid');
+      await new Promise((resolve) => {
+        setTimeout(resolve, 60);
+      });
+      assert.equal(s.mode, null, 'no longer in character');
+      const expired = s.events.find((e) => e.event === 'mode-expired');
+      assert.ok(expired, 'the room is told rather than the character ending in silence');
+      assert.equal(expired.payload.mode.name, 'zomboid');
+      assert.match(expired.payload.message, /vuelvo a ser yo/);
+    } finally {
+      MODE_TIMING.idleMs = real;
+    }
+  });
+
+  test('a question asked in time keeps it alive', async () => {
+    const real = MODE_TIMING.idleMs;
+    MODE_TIMING.idleMs = 40;
+    try {
+      const s = stubSession();
+      s.setMode('zomboid');
+      for (let i = 0; i < 3; i += 1) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, 20);
+        });
+        s.touchMode();
+      }
+      assert.equal(s.mode, 'zomboid', 'still in character after longer than the window');
+      assert.equal(s.events.filter((e) => e.event === 'mode-expired').length, 0);
+    } finally {
+      MODE_TIMING.idleMs = real;
+    }
+  });
+
+  test('every mode has something to say when it times out', () => {
+    for (const mode of MODES) assert.ok(mode.expired, `${mode.name}: nothing to say on the way out`);
   });
 });

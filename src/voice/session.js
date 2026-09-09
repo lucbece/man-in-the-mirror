@@ -15,6 +15,7 @@ import { VoiceReceiver } from './receiver.js';
 import { EagerTranscriber, CONCURRENCY_WITH_MUSIC } from '../agent/eager.js';
 import { matchHush } from '../agent/commands.js';
 import { detectAddress, normalise, onlyTheName } from '../agent/wake.js';
+import { MODE_TIMING, modeByName } from '../agent/modes.js';
 
 const READY_TIMEOUT_MS = 20_000;
 
@@ -196,6 +197,7 @@ export class VoiceSession extends EventEmitter {
     this.quiet = false;
     /** The mode it is in, by name, or null for its usual self. See agent/modes.js. */
     this.mode = null;
+    this.modeTimer = null;
 
     this.eager = null;
     this.lastWakeAt = 0;
@@ -697,8 +699,33 @@ export class VoiceSession extends EventEmitter {
     const wanted = name || null;
     if (wanted === this.mode) return this.mode;
     this.mode = wanted;
+    this.touchMode();
     this.emit('update');
     return this.mode;
+  }
+
+  /**
+   * Restart the mode's idle clock, or clear it when there is no mode.
+   *
+   * Called on every question asked while in one, so a conversation about the
+   * thing the mode is for never times out underneath it. What times out is
+   * being left in character after the room has moved on.
+   */
+  touchMode() {
+    clearTimeout(this.modeTimer);
+    this.modeTimer = null;
+    if (!this.mode) return;
+    this.modeTimer = setTimeout(() => {
+      const mode = modeByName(this.mode);
+      this.mode = null;
+      this.modeTimer = null;
+      console.log(`[mode] ${mode?.name} timed out after ${Math.round(MODE_TIMING.idleMs / 60000)} minutes idle`);
+      this.emit('update');
+      // Said, not just logged: the room has to learn that the character is
+      // gone, or the next serious question gets a joke for an answer.
+      if (mode?.expired) this.emit('mode-expired', { mode, message: mode.expired });
+    }, MODE_TIMING.idleMs);
+    this.modeTimer.unref?.();
   }
 
   /** Cut off playback immediately. Backs a "stop talking" control. */
@@ -715,6 +742,7 @@ export class VoiceSession extends EventEmitter {
   }
 
   destroy() {
+    clearTimeout(this.modeTimer);
     this.cancelWake();
     try {
       this.eager?.stop();

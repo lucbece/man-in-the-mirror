@@ -73,6 +73,8 @@ export const MODES = [
     detailChannel: 'project-zomboid-ñoños-chatroom',
     entering: 'Modo zomboid. Fijate que solo puedo mirar el server y decirte cómo está.',
     leaving: 'Listo, salí del modo zomboid.',
+    /** Said by the bot itself when the mode times out, with nobody having asked. */
+    expired: 'Hace rato que nadie me pregunta nada del server, así que vuelvo a ser yo.',
     prompt: `
 
 # This mode: Project Zomboid admin
@@ -98,6 +100,26 @@ What you actually know:
   },
 ];
 
+/**
+ * How long a mode survives with nothing asked of it.
+ *
+ * A character nobody ends is a character the bot is left in: the room stops
+ * talking about the server, carries on with the night, and the funny bot never
+ * comes back because nobody remembers the words. Fifteen minutes is long
+ * enough that a real conversation about a server never trips it — every
+ * question resets it — and short enough that walking away from one ends it.
+ *
+ * It says so when it goes. A bot that changed character silently would be
+ * worse than one that stayed.
+ */
+export const MODE_IDLE_MS = 15 * 60 * 1000;
+
+/**
+ * The live value, in one table, the way WAKE_TIMING works in voice/session.js:
+ * a test that had to wait fifteen real minutes would not be written.
+ */
+export const MODE_TIMING = { idleMs: MODE_IDLE_MS };
+
 /** A mode by name, or undefined. */
 export function modeByName(name) {
   return MODES.find((mode) => mode.name === name);
@@ -121,6 +143,35 @@ export function findMode(said) {
 }
 
 /**
+ * Ways of asking to stop being a character, which belong to no mode in
+ * particular.
+ */
+const EXIT_PHRASES = [
+  'sali del modo', 'salite del modo', 'terminá el modo', 'termina el modo',
+  'volve a ser vos', 'volvé a ser vos', 'se vos de nuevo', 'modo normal',
+  'leave the mode', 'exit the mode', 'back to normal', 'be yourself again',
+];
+
+/**
+ * Is this a request to change character, either way?
+ *
+ * The cascade needs this before any model sees the question. Its fast leg has
+ * no mode tools at all, and asked to switch it will happily say "dale, modo
+ * zomboid" and change nothing — the exact failure music mode had, found in a
+ * real call: the room believed the bot was muted and it was not.
+ *
+ * Built from the declarations rather than from a second list of regexes, so a
+ * mode added tomorrow is routed correctly without anyone remembering to come
+ * back here.
+ */
+export function looksLikeModeCommand(said) {
+  const heard = normalise(said ?? '');
+  if (!heard) return false;
+  if (EXIT_PHRASES.some((phrase) => heard.includes(normalise(phrase)))) return true;
+  return Boolean(findMode(heard));
+}
+
+/**
  * The prompt a mode adds, common rules first.
  *
  * Returns '' for no mode, so the caller can concatenate unconditionally.
@@ -135,4 +186,17 @@ export function describeModes() {
   return MODES.map((mode) => `"${mode.name}", asked for as ${mode.spoken.slice(0, 3).map((p) => `"${p}"`).join(' or ')}`).join('; ');
 }
 
-export { COMMON_RULES };
+/**
+ * What the agent is told about modes, in the prompt every session carries.
+ *
+ * Generated rather than written out, for the same reason as above: the day a
+ * mode is added, the paragraph that tells the model it exists should not be a
+ * separate thing to remember.
+ */
+export function modesParagraph() {
+  return `
+
+**Modes.** You can be asked to become one of your other characters, each with its own rules and its own tools: ${describeModes()}. When somebody asks for one — "activá el modo zomboid", "ponete en modo admin" — call enter_mode; it will refuse if that person is not allowed, and you say the refusal out loud. When somebody asks you to stop — "salí del modo", "volvé a ser vos" — call leave_mode, whoever put you in it. Never merely say you have changed character: without the tool nothing has changed, and the room will believe you.`;
+}
+
+export { COMMON_RULES, EXIT_PHRASES };

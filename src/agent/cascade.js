@@ -59,6 +59,7 @@ import { AgentBrain, DEFAULT_AGENT_MODEL } from './agent-brain.js';
 import { handleCommand } from './commands.js';
 import { promptWithInstructions } from './brain.js';
 import { providerFor } from './models.js';
+import { looksLikeModeCommand } from './modes.js';
 import { SentenceSplitter } from './sentences.js';
 import { readSse } from './sse.js';
 import { trace } from './trace.js';
@@ -348,6 +349,16 @@ export class CascadeBrain {
     if (context.quiet) {
       this.escalated = true;
       this.reason = 'music mode: nothing is spoken, and the way out of it is a tool';
+      return this.#runAgent(context, memory, { onSearchStart, onSentence, onToolUse });
+    }
+
+    // Changing character is a tool too, and the fast leg has none of them.
+    // Handed "activá el modo zomboid" it would answer "dale" and leave the bot
+    // exactly as it was — the failure music mode had in a real call, where the
+    // room believed it was muted and it was not.
+    if (looksLikeModeCommand(context.question)) {
+      this.escalated = true;
+      this.reason = 'a mode switch, which the fast leg has no tool for';
       return this.#runAgent(context, memory, { onSearchStart, onSentence, onToolUse });
     }
 

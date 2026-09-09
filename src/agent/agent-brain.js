@@ -38,7 +38,7 @@ import { connectMcpServers } from './mcp-client.js';
 import { providerFor } from './models.js';
 import { OpenAiAgentSession } from './openai-agent.js';
 import { SentenceSplitter } from './sentences.js';
-import { modePrompt } from './modes.js';
+import { modePrompt, modesParagraph } from './modes.js';
 import { botToolsServer } from './tools/index.js';
 import { DATA_DIR } from '../paths.js';
 
@@ -454,7 +454,7 @@ function buildSession(guildId, mode = null) {
       webSearch: config.get('webSearch'),
       // The same prompt the Claude session gets, word for word. Two agents
       // told different things would be two different bots wearing one name.
-      instructions: promptWithInstructions(guildId, AGENT_PROMPT_EXTRA + modePrompt(mode), undefined, { room: !mode }),
+      instructions: promptWithInstructions(guildId, AGENT_PROMPT_EXTRA + modesParagraph() + modePrompt(mode), undefined, { room: !mode }),
       // Started now, awaited on the first question: connecting is the slow
       // part and the bot is usually still joining the channel at this point.
       mcp: connectMcpServers({ servers, allow, directories }),
@@ -477,7 +477,7 @@ function buildSession(guildId, mode = null) {
       // Built once, with the session: names are re-read whenever the session
       // is, which is every configuration change and every rejoin. A rename
       // mid-session is not picked up until then — see AUDIT.md.
-      systemPrompt: promptWithInstructions(guildId, AGENT_PROMPT_EXTRA + modePrompt(mode), undefined, { room: !mode }),
+      systemPrompt: promptWithInstructions(guildId, AGENT_PROMPT_EXTRA + modesParagraph() + modePrompt(mode), undefined, { room: !mode }),
       mcpServers: servers,
       // The fence, both directions: only the user's MCP tools (plus web
       // search) are approved, and the built-ins that touch this machine are

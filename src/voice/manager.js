@@ -72,53 +72,12 @@ export class SessionManager extends EventEmitter {
     };
     config.on('change', this.onConfigChange);
 
-    // A reminder came due. This is the one place the bot speaks without
-    // having just been spoken to — the agent composed the sentence when the
-    // reminder was set; all that's left is to say it.
-    this.onReminderFire = async ({ guildId, id, message }) => {
-      const session = this.sessions.get(guildId);
-      if (!session || session.destroyed) {
-        console.warn(`[reminders] #${id} fired but the bot is no longer in a channel — dropped: "${message}"`);
-        return;
-      }
-      // Music mode: still a promise the bot made, so it is kept — written
-      // where the room is already reading about the music rather than spoken
-      // over the song. Never held back to be said once the mode ends: a
-      // reminder said half an hour late is worse than one not said at all,
-      // which is the same rule as one that came due while the process was down.
-      if (session.quiet) {
-        const wrote = await noteInMusicChannel(
-          { guild: () => session.client?.guilds?.cache?.get(guildId) ?? null },
-          `⏰  ${message}`,
-        );
-        console.log(
-          wrote
-            ? `[reminders] #${id} written in the music channel, not spoken: "${message}"`
-            : `[reminders] #${id} came due in music mode with no music channel to write it in — dropped: "${message}"`,
-        );
-        return;
-      }
-      try {
-        const tts = createTts();
-        const audio = await tts.synthesizeStream(clampForSpeech(message));
-        // If it's mid-answer, let the sentence finish — an alarm that talks
-        // over the answer to someone else's question serves nobody.
-        if (session.speaking) {
-          await entersState(session.player, AudioPlayerStatus.Idle, 15_000).catch(() => {});
-        }
-        // Through the same door as every answer: startSpeech pauses the music
-        // and hands the connection to the speaking player, then hands it back.
-        // Playing on session.player directly, as this did, went to a player
-        // the connection was not listening to whenever a song was on.
-        const speech = session.startSpeech();
-        speech.push(toAudioResource(audio), message);
-        speech.end();
-        await speech.finished;
-        console.log(`[reminders] #${id} spoken: "${message}"`);
-      } catch (err) {
-        console.warn(`[reminders] #${id} could not be spoken: ${err.message}`);
-      }
-    };
+    // A reminder came due. One of the few places the bot speaks without having
+    // just been spoken to — the agent composed the sentence when the reminder
+    // was set; all that's left is to say it.
+    this.onReminderFire = ({ guildId, id, message }) =>
+      this.speakUnprompted(guildId, message, `[reminders] #${id}`);
+
     reminders.on('fire', this.onReminderFire);
   }
 
@@ -144,6 +103,67 @@ export class SessionManager extends EventEmitter {
   }
 
   /** Join (or move to) a voice channel and return the ready session. */
+  /**
+   * Say something into the channel that nobody just asked for.
+   *
+   * The bot speaks when spoken to, with two exceptions and soon a third: a
+   * reminder coming due, a mode ending on its own, and — see
+   * docs/plans/personalities.md — something a mode was watching finishing.
+   * They all need the same four decisions, which is why they share one path:
+   * drop it when the bot has left, write it instead of speaking it when the
+   * room has asked for quiet, wait for a sentence in flight, and go out
+   * through the speech queue rather than the player, so the music is paused
+   * and handed back properly.
+   *
+   * `tag` is how it is logged, e.g. "[reminders] #3"; `prefix` is what marks
+   * it in the text channel when it has to be written rather than said.
+   */
+  async speakUnprompted(guildId, message, tag, prefix = '⏰') {
+    const session = this.sessions.get(guildId);
+    if (!session || session.destroyed) {
+      console.warn(`${tag} came due but the bot is no longer in a channel — dropped: "${message}"`);
+      return false;
+    }
+    // Music mode: still a promise the bot made, so it is kept — written
+    // where the room is already reading about the music rather than spoken
+    // over the song. Never held back to be said once the mode ends: a
+    // reminder said half an hour late is worse than one not said at all,
+    // which is the same rule as one that came due while the process was down.
+    if (session.quiet) {
+      const wrote = await noteInMusicChannel(
+        { guild: () => session.client?.guilds?.cache?.get(guildId) ?? null },
+        `${prefix}  ${message}`,
+      );
+      console.log(
+        wrote
+          ? `${tag} written in the music channel, not spoken: "${message}"`
+          : `${tag} came due in music mode with no music channel to write it in — dropped: "${message}"`,
+      );
+      return false;
+    }
+    try {
+      const tts = createTts();
+      const audio = await tts.synthesizeStream(clampForSpeech(message));
+      // If it's mid-answer, let the sentence finish — an alarm that talks
+      // over the answer to someone else's question serves nobody.
+      if (session.speaking) {
+        await entersState(session.player, AudioPlayerStatus.Idle, 15_000).catch(() => {});
+      }
+      // Through the same door as every answer: startSpeech pauses the music
+      // and hands the connection to the speaking player, then hands it back.
+      // Playing on session.player directly, as this did, went to a player
+      // the connection was not listening to whenever a song was on.
+      const speech = session.startSpeech();
+      speech.push(toAudioResource(audio), message);
+      speech.end();
+      await speech.finished;
+      console.log(`${tag} spoken: "${message}"`);
+    } catch (err) {
+      console.warn(`${tag} could not be spoken: ${err.message}`);
+    }
+    return true;
+  }
+
   async join(channel) {
     const existing = this.sessions.get(channel.guild.id);
     if (existing && !existing.destroyed) {
@@ -180,6 +200,15 @@ export class SessionManager extends EventEmitter {
       forgetCascade(channel.guild.id);
       this.emit('update');
     });
+    // A mode ran out on its own. The room is told, through the same door a
+    // reminder uses, because a character that ends in silence ends without
+    // anybody knowing it has.
+    session.on('mode-expired', ({ mode, message }) => {
+      this.speakUnprompted(channel.guild.id, message, `[mode] ${mode.name} expired`, '🎭').catch(
+        (err) => console.warn(`[mode] could not say the mode ended: ${err.message}`),
+      );
+    });
+
     session.on('update', () => this.emit('update'));
 
     // Someone said the wake phrase out loud. This is the whole point.
