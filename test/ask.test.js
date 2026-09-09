@@ -16,10 +16,12 @@ function deps({ sentences = [], failWith = null, search = false, tools = [], eff
   const rendered = [];
   const notes = [];
   const fillersTaken = [];
+  const voicesUsed = [];
   return {
     rendered,
     notes,
     fillersTaken,
+    voicesUsed,
     toAudioResource: (audio) => audio,
     noteInMusicChannel: async (_target, text) => {
       notes.push(text);
@@ -34,10 +36,11 @@ function deps({ sentences = [], failWith = null, search = false, tools = [], eff
         audio: { text: set === 'waiting' ? '<waiting>' : '<filler>' },
       };
     },
-    createTts: () => ({
-      label: 'fake voice',
+    createTts: (options) => ({
+      label: `fake voice (${options?.voice ?? 'default'})`,
       async synthesizeStream(text) {
         rendered.push(text);
+        voicesUsed.push(options?.voice ?? 'default');
         return { text };
       },
     }),
@@ -537,5 +540,53 @@ describe('the [latency] line', () => {
   test('timeouts are named per stage when any happened', () => {
     const s = stagesFrom({ started: 0, t0: 0, at: { asked: 100, done: 900, timeouts: { stt: 1, tts: 0 } } });
     assert.equal(describeStages(s), 'asked +0.1s · done +0.9s · timeouts stt=1');
+  });
+});
+
+describe('a character speaks in its own voice from the moment it arrives', () => {
+  test('the sentence that announces the switch is already the new voice', async () => {
+    // Found on the first real switch: the turn that changes character is the
+    // turn that says "soy el bot de zomboid", and it was saying it in the
+    // voice of the character it had just stopped being.
+    const session = fakeSession();
+    session.mode = null;
+    const d = deps({
+      sentences: ['Soy el bot de zomboid.'],
+      tools: ['mcp__bot__enter_mode'],
+      effect: () => {
+        session.mode = 'zomboid';
+      },
+    });
+    await ask(session, { question: 'que venga el bot de zomboid', askedBy: 'Luc' }, d);
+    assert.deepEqual(d.voicesUsed, ['echo'], 'the introduction is in the new voice');
+  });
+
+  test('and goes back when the character does', async () => {
+    const session = fakeSession();
+    session.mode = 'zomboid';
+    const d = deps({
+      sentences: ['Listo, vuelve espejo.'],
+      tools: ['mcp__bot__leave_mode'],
+      effect: () => {
+        session.mode = null;
+      },
+    });
+    await ask(session, { question: 'que vuelva espejo', askedBy: 'Luc' }, d);
+    assert.deepEqual(d.voicesUsed, ['default'], 'the room’s own voice again');
+  });
+
+  test('an ordinary answer in a character stays in its voice', async () => {
+    const session = fakeSession();
+    session.mode = 'zomboid';
+    const d = deps({ sentences: ['El server no está respondiendo.', 'Tirá barra pz start.'] });
+    await ask(session, { question: 'cómo está el server', askedBy: 'Luc' }, d);
+    assert.deepEqual(d.voicesUsed, ['echo', 'echo']);
+  });
+
+  test('with no character, nothing asks for a voice at all', async () => {
+    const session = fakeSession();
+    const d = deps({ sentences: ['Todo bien.'] });
+    await ask(session, { question: 'cómo andás', askedBy: 'Luc' }, d);
+    assert.deepEqual(d.voicesUsed, ['default']);
   });
 });
