@@ -136,6 +136,11 @@ export function sshArgs({ destination, keyPath, act }) {
     '-o', 'StrictHostKeyChecking=accept-new',
     '-o', 'ConnectTimeout=10',
     destination,
+    // ssh keeps reading options after the destination, so a remote command
+    // that begins with a dash is taken as one of its own and it exits with a
+    // usage error before it opens a socket. Found by knocking on the real
+    // door: `ssh host --read` is "unknown option -- -".
+    '--',
     // Ignored while the far side forces its command, which is the point of
     // forcing it. Sent anyway so the day somebody unpins a key, the two ends
     // still agree about which mode was asked for.
