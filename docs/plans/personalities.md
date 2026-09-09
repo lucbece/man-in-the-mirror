@@ -129,6 +129,35 @@ like a real one.
    an error. Relay it — that is the system working, and the room should hear
    the reason.
 
+## When the action belongs to somebody else
+
+State 1 comes with a trap. "Offer the action" assumes the mode may take it, and
+often it must not: the switch belongs to another tool, with its own
+permissions, its own audit trail and its own reasons for refusing. A mode that
+grabs the switch because it was easier has quietly become the owner of
+something nobody put it in charge of.
+
+Three ways to reach an actuator, in the order to prefer them:
+
+1. **Say the command.** The bot names the state and the exact thing to type:
+   "está apagado — tirá `/pz start` y en tres minutos arranca". Zero
+   integration, zero credentials, and the permission check stays where it was
+   written. Weak only in that a human has to move.
+2. **Ask the owner through an interface it exposes.** The owning tool grows a
+   narrow door — an endpoint, a queue, a command — and keeps its credentials,
+   its checks and its logs. The mode asks; the owner decides. This is the right
+   answer when the action must happen without anyone typing.
+3. **Take the action.** Only when the mode *is* the owner. For anything else
+   this is how one bot ends up holding another's keys.
+
+**Whose permission is being checked** is the question that decides between 1
+and 2. Asking through a door means the owner sees *the bot* as the caller, not
+the person who spoke: whatever the owner would have checked about that person
+is no longer being checked, and the mode's own role gate becomes the only one
+left. That is acceptable when the mode's gate is at least as strict as the
+owner's, and it is a hole when it is not. Say it out loud in each mode's
+declaration rather than discovering it later.
+
 ## Three rules that make those states reachable
 
 **A cheap probe, declared apart from the expensive ask.** Every mode declares
@@ -191,26 +220,70 @@ it when someone asks out loud.
 ## The nuance that proves part 2
 
 **The VM is off most of the time, by design.** `docs/on-demand.md`: the game VM
-powers itself off after a stretch with no players (`idle-shutdown.sh`, cron,
+powers itself off after thirty minutes with nobody playing (`idle-shutdown.sh`:
 RCON `players` at zero for N minutes, clean stop, backup, then SOFTSTOP through
 the OCI API), and something else powers it back on. A stopped OCI instance
-bills only its boot volume; that is where the phase's ~85% saving comes from.
+bills only its boot volume, which is where that phase's saving comes from.
 
-Two things follow.
+So "the backend is not there" is this mode's **normal state**, not its error
+path. A question asked at nine, before anyone has started playing, has to
+answer "está apagado" and say what to do about it.
 
-First, "the backend is not there" is this mode's **normal state**, not its
-error path. A question asked at 9 p.m. before anyone has started playing must
-answer "está apagado, ¿lo prendo?" — and starting it is a real action with a
-real duration, so the bot says the duration and then says when it is up.
+## What the mode must not own: the switch
 
-Second, and this was not in the plan an hour ago: **that document names our bot
-as the missing half.** The idle shutdown is not in cron yet, deliberately,
-because powering the VM off without a way to start it again locks the players
-out, and the way in was specified as "a Discord bot on a separate always-on
-instance". Man-in-the-mirror is that instance. This mode does not merely
-consume the zomboid repo, it unblocks the phase that pays for itself.
+The switch already has an owner, and it is not this bot. `tools/pz-bot` is a
+separate Discord bot on a small always-on instance:
 
-## The door
+| | |
+|---|---|
+| `/pz start` | Starts the VM if `STOPPED`, answers "tarda ~3 minutos", then edits its own message until A2S answers. Open to any member, or to `PZ_BOT_ALLOWED_ROLE_IDS`. |
+| `/pz status` | VM lifecycle state, plus name, map, players and version from A2S. |
+| `/pz stop` | `SOFTSTOP`, and only with zero players — an unreachable server is not an empty one. Admin ids only. |
+| `/pz reset` | Hard power cycle, never open to everyone. |
+
+Its OCI policy is pinned to that one instance and to three permissions
+(`INSTANCE_INSPECT`, `INSTANCE_READ`, `INSTANCE_POWER_ACTIONS`); it holds no
+world data, no backups, no keys. That is a switch with a proper owner, and
+man-in-the-mirror asking for its credentials would undo the design.
+
+**So the mode reads freely and asks for the switch.** Two consequences, and one
+Discord constraint worth knowing before building anything:
+
+- **A bot cannot invoke another bot's slash command.** Application commands are
+  interactions created by users; there is no API for one bot to run another's
+  `/pz start`. Whatever else this mode does, it cannot type that command. *(Ten
+  minutes with the API docs before WP4 is built, in case this has changed.)*
+- **Route 1 is therefore the answer for the first version**: the bot says the
+  state and the exact command — "está apagado; tirá `/pz start`, tarda como
+  tres minutos" — and anyone in the call can do it, because `/pz start` is open
+  to any member. Nothing to integrate, nothing to authorise, and the switch
+  keeps its owner.
+- **Route 2 is the upgrade, and it belongs in the other repo**: a narrow door
+  on `pz-bot` — a local HTTP endpoint with a shared secret, reachable only over
+  the tunnel between the two instances — that runs the same `accion_start` its
+  slash command runs. Then the bot can start the VM when someone asks it out
+  loud, and `pz-bot` keeps the credentials, the checks and the log. Note what
+  that gives up: `pz-bot` would see *this bot* as the caller, so the mode's own
+  role gate becomes the only check on who asked. For `/pz start`, open to every
+  member anyway, that costs nothing; for `/pz stop` it would matter, which is
+  why stop stays a slash command a person types.
+
+## The probe, which needs no credentials at all
+
+The best part of this arrangement: **the mode can answer "¿cómo está el
+server?" on its own, with no keys and no permission from anybody.** An A2S_INFO
+query to the game's reserved public IP on UDP 16261 either answers — with the
+server name, the map, the player count and the version, straight from the game
+— or it does not. `tools/pz-bot/a2s.py` is 227 lines of exactly this, including
+the challenge round trip Build 42 requires, and it is a clean port to Node.
+
+That is the cheap probe of part 2, and it separates the states that matter:
+answering means up, and how many are playing; not answering means not up. The
+one distinction it cannot make is "stopped" from "unreachable" — which needs
+the OCI lifecycle state, which is `pz-bot`'s to know. Until route 2 exists the
+mode says the honest thing: "no está respondiendo", and the command to try.
+
+## The door for the operational questions## The door
 
 The narrowest one that works: a dedicated ssh keypair whose entry in the VM's
 `authorized_keys` is `command="/opt/zomboid-server/tools/ask.sh",
@@ -293,11 +366,11 @@ case that proves `backend` is optional.
    3 a.m. watchdog — which may restart the server and disable a mod — or less,
    because the person asking is awake and can be asked back? Recommendation:
    same rules, read-only by default, every acting run announced in the channel.
-5. **Does the bot own the power switch?** Taking the "always-on instance" role
-   from `on-demand.md` means the bot starts the VM when someone asks, and it
-   makes the idle shutdown safe to put in cron. That is a larger commitment
-   than a chat mode — the bot becomes infrastructure — and it should be a
-   deliberate yes, not a side effect of this plan.
+5. **The upgrade to route 2.** Adding a narrow endpoint to `pz-bot` so the
+   mode can start the VM without anyone typing is a change to *that* repo, and
+   it trades a permission check for convenience (see part 2). Worth doing after
+   the first version has been used, and worth not doing if "tirá `/pz start`"
+   turns out to be fine.
 
 ## What was measured, and when
 
@@ -305,9 +378,11 @@ Read on 2026-09-09 from `~/repos/lucbece/zomboid-server`:
 `tools/autorepair/CLAUDE.md`; `scripts/autorepair.sh` (the `claude -p`
 invocation, its `--allowedTools`, `--max-turns`, timeout and JSON parsing);
 `scripts/lib/notificar.sh` (Discord webhook, 25 lines at 140 columns);
-`scripts/watchdog.sh`; `scripts/idle-shutdown.sh` and `docs/on-demand.md` (the
-VM stops itself and the bot that starts it does not exist yet); the `remote-*`
-targets in `Makefile`. From this repo: `promptWithInstructions` in
+`scripts/watchdog.sh`; `scripts/idle-shutdown.sh`, `docs/on-demand.md` and
+`docs/discord.md` (the VM stops itself; `tools/pz-bot` — 941 lines of Python
+over four files — owns the switch through four guild slash commands and an OCI
+policy pinned to one instance); `tools/pz-bot/a2s.py` (the credential-free
+probe); the `remote-*` targets in `Makefile`. From this repo: `promptWithInstructions` in
 `agent/brain.js`, `agent/tools/quiet.js`, the `context.quiet` branch in
 `agent/cascade.js`, the `allow` handling in `agent/mcp.js`, and
 `requirePermission` in `agent/discord-tools.js`.
