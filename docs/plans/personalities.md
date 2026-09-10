@@ -383,6 +383,61 @@ case that proves `backend` is optional.
 
 ---
 
+## What building the first one taught, measured
+
+The zomboid character was built end to end on 2026-09-09/10, across this
+repository and the zomboid one, with the session that owns that repo reviewing
+every step. Four things came out of it that are about doors in general, not
+about that door.
+
+**Deny first, prompt second — in that order.** The read-only mode is enforced
+twice: by the tool list the far side hands its own model, and by rules telling
+it to refuse rather than try. The first makes it *impossible*; the second makes
+it *fast*. Built in that order it works; built the other way round you get an
+operator that refuses politely and a door that still opens. The cost of having
+only the first, measured: asking for a restart in read mode took **13 turns,
+54 seconds and USD 0.39**, and returned silence, because the model tried the
+denied tools one after another until it ran out of budget. With the rule added:
+**1 turn, 13 seconds, USD 0.17**, and a refusal that says which mode it is in
+and what would be needed. Same lock, same answer, forty times cheaper.
+
+**A fact the operator needs is cheaper supplied than derived.** A status
+question kept spending its whole budget establishing that a frozen frame
+counter was not a hang — the server pauses itself when empty. Putting that one
+sentence in its prompt took the same question from *cut off without answering*
+to **a correct answer with zero turns spent on it**. The derivation is paid for
+by the person waiting on the call, every single time.
+
+**Quotas belong on the thing you actually care about.** The first quota counted
+questions, which is not what a question costs: at 15/hour and USD 0.74 apiece
+that is eleven dollars an hour. The count is still there as a rate limit, but
+the control that matters is a daily spend cap, because it measures the thing
+that hurts. (It also nearly shipped broken — `mawk` parses decimals by locale,
+so under `es_AR` "0.74" summed to zero and eight questions sailed past a
+five-dollar cap. A cap that sums to zero is worse than no cap: you believe you
+are covered. `LC_ALL=C`.)
+
+**Don't tune a number against a counter you have not confirmed.** The CLI's
+reported `num_turns` and the `--max-turns` ceiling are not the same counter —
+12→13 and 6→7 both stopped at the limit, but 10→12 completed fine. Two points
+looked like "the limit plus one" and the third broke it. Each data point costs
+real money, so the answer is not to keep measuring: leave the turn ceiling
+generous as a patience limit and let the spend cap be the real control.
+
+## What is still missing, and it will be obvious in the first call
+
+**A long answer cannot be a long silence.** That status question took **85
+seconds**. The bot says "dame un segundo que me fijo" and then the room hears a
+minute and a half of nothing. The path out already exists —
+`sessionManager.speakUnprompted`, which reminders use — so a slow question
+should answer "te aviso cuando sepa" and speak on its own when the answer
+lands.
+
+One constraint on building that, from the far side: the door holds its ssh
+connection until it answers or its own five-minute timeout expires. So whatever
+waits for it must not be the thing that serves the room — answering early means
+handing the wait to something else, not shortening it.
+
 ## Open questions for Luc
 
 1. **How a mode ends.** Explicit and on leaving the channel are obvious. Should
