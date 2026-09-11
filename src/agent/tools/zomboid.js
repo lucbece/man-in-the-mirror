@@ -24,11 +24,11 @@ import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { EventEmitter } from 'node:events';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
-import path from 'node:path';
 import { z } from 'zod';
 
 import { NoAnswer, query } from '../a2s.js';
 import { config } from '../../config.js';
+import { dataPath } from '../../data-dir.js';
 import { DiscordToolError, requireRole } from '../discord-tools.js';
 import { writeToChannel } from './music.js';
 import { discordTool, speakableTool } from './wrappers.js';
@@ -109,8 +109,8 @@ export class DoorMissing extends DiscordToolError {}
 export class KeyRefused extends DiscordToolError {}
 
 export const KEYS = {
-  read: process.env.MIRROR_ZOMBOID_KEY ?? path.join('data', 'zomboid-key'),
-  act: process.env.MIRROR_ZOMBOID_ACT_KEY ?? path.join('data', 'zomboid-key-act'),
+  read: process.env.MIRROR_ZOMBOID_KEY ?? dataPath('zomboid-key'),
+  act: process.env.MIRROR_ZOMBOID_ACT_KEY ?? dataPath('zomboid-key-act'),
 };
 
 /** Long enough for a real diagnosis, short enough that a room is still listening. */

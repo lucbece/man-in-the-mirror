@@ -68,22 +68,35 @@ timings needed to tell.
 Package: WP2
 
 
-### Running the tests rewrites the developer's real configuration
+### One live config object is imported by eighteen modules
 
-`config` is one object built at import time, and every `update()` persists to
-`data/config.json` and notifies the running bot (`src/config.js:266-294`).
-Fifteen modules import that object directly, so a test that needs a different
-setting has nowhere else to put it: `test/manager.test.js:155-192` and
-`test/config.test.js:29-111` change the live configuration and change it back
-afterwards. A failure between those two points leaves it changed.
-`test/web-server.test.js:154-158` documents the corner and gives up on the
-assertion it wanted rather than write a fake token into a real file next to
-real keys.
+`config` is one object built at import time (`src/config.js:297-301`), and
+every `update()` persists it and notifies the running bot
+(`src/config.js:350-355`). Eighteen modules import that object directly,
+`config.js` itself among the tools that read and write it.
 
-Same root cause as the plan itself: one process holds one configuration, so a
-second profile, a test with its own settings, and two bots in one process are
-all impossible. The entry closes when the last of those fifteen importers is
-gone.
+The test-clobbering half of this entry is fixed: `CONFIG_PATH` (and every
+other path this bot builds under `data/` — YouTube cookies, cached filler
+clips, presence, the zomboid SSH keys' default location) now derives from
+`dataDir()` / `dataPath()` in `src/data-dir.js`, which reads one override,
+`MIRROR_DATA_DIR`. The test runner sets it to a fresh temp directory before
+any module loads (`test/setup.mjs`, loaded via `node --import` in the
+`test` script in `package.json`), so `test/manager.test.js:149-197`,
+`test/config.test.js` and `test/web-server.test.js` change the live
+configuration freely — a failure mid-test no longer leaves the developer's
+real `data/config.json` changed, because nothing in the test run ever
+touches it. `test/config.test.js`'s "data directory isolation" suite proves
+that: it reads the real file before the suite runs and asserts it is
+byte-identical after. `test/web-server.test.js:243` finishes the assertion
+this entry used to describe as given up on — it plants a fake token and
+checks it never reaches the browser, safe now that persisting during tests
+never touches a real file next to real keys.
+
+What's left is the structural half, same root cause as the plan itself: one
+process still holds exactly one configuration object, so a second profile, a
+test with its own settings independent of the shared one, and two bots in
+one process are all still impossible. The entry closes when the last of
+those eighteen direct importers is gone.
 
 Package: WP1
 
