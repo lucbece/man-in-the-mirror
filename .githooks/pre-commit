@@ -17,7 +17,7 @@ if [ -z "$(git diff --cached --name-only)" ]; then
 fi
 
 # Only when JavaScript changed. A README commit should not run the suite.
-if ! git diff --cached --name-only --diff-filter=ACMR | grep -qE '\.js$|package(-lock)?\.json$|eslint\.config\.js$'; then
+if ! git diff --cached --name-only --diff-filter=ACMR | grep -qE '\.m?js$|package(-lock)?\.json$|eslint\.config\.js$'; then
   exit 0
 fi
 
