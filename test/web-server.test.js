@@ -3,6 +3,7 @@ import test, { describe, after, before } from 'node:test';
 
 import { createApp } from '../src/web/server.js';
 import { config } from '../src/config.js';
+import { bot } from '../src/bot/index.js';
 
 /**
  * The real app on an ephemeral port.
@@ -240,6 +241,39 @@ describe('saving customInstructions or notebook against a stale base', () => {
     assert.ok(seenPatch && !('notebook' in seenPatch), 'an untouched field must never reach config.update at all');
     assert.ok(!('base' in seenPatch), 'base is bookkeeping for the route, never a config key');
     assert.equal(seenPatch.bufferSeconds, 123, 'the field that actually changed is still saved');
+  });
+});
+
+describe('/healthz, the container healthcheck', () => {
+  test('ready is 200', async (t) => {
+    bot.setState('ready');
+    t.after(() => bot.setState('stopped'));
+
+    const res = await fetch(`${base}/healthz`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { ok: true, bot: 'ready' });
+  });
+
+  test('stopped (no token configured, or stopped from the panel) is still 200', async (t) => {
+    bot.setState('stopped');
+    t.after(() => bot.setState('stopped'));
+
+    const res = await fetch(`${base}/healthz`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { ok: true, bot: 'stopped' });
+  });
+
+  test('error — a rejected or revoked token — is 503, with the message', async (t) => {
+    bot.setState('error', 'Discord session invalidated — the token was reset or revoked');
+    t.after(() => bot.setState('stopped'));
+
+    const res = await fetch(`${base}/healthz`);
+    assert.equal(res.status, 503);
+    assert.deepEqual(await res.json(), {
+      ok: false,
+      bot: 'error',
+      error: 'Discord session invalidated — the token was reset or revoked',
+    });
   });
 });
 

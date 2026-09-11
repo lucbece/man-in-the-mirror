@@ -41,10 +41,12 @@ ENV HOME=/home/node \
 VOLUME ["/app/data", "/app/runtime"]
 EXPOSE 3000
 
-# The panel's state endpoint answers as soon as the process is up, whether or
-# not a token is configured, so "healthy" means "the process serves", not
-# "logged in to Discord". Login problems show in the log, not here.
+# /healthz answers as soon as the process is up, so "healthy" no longer means
+# only "the process serves": it means that, plus either logged in to Discord
+# or intentionally stopped (no token configured yet, or stopped from the
+# panel) — never a token that was rejected or later revoked sitting there
+# quietly. Login problems still show in the log, but now they also fail this.
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:'+(process.env.WEB_PORT||3000)+'/api/state').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.WEB_PORT||3000)+'/healthz').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 CMD ["node", "src/index.js"]
