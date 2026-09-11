@@ -32,6 +32,11 @@ export class SpeechQueue {
     this.finished = new Promise((resolve) => {
       this.resolve = resolve;
     });
+    // Resolvers for drained() — see below. Separate from `finished`'s single
+    // resolve because drained() can be asked for, and answered, more than
+    // once (shutdown's drain only ever calls it once per queue, but nothing
+    // here should assume that).
+    this.drainWaiters = [];
 
     this.onIdle = () => {
       this.playing = false;
@@ -66,6 +71,39 @@ export class SpeechQueue {
     this.pending = [];
     this.#detach();
     this.resolve({ cancelled: true, spoken: this.spoken });
+    this.#settleDrain();
+  }
+
+  /**
+   * Resolve once there is nothing left of what the queue already holds: no
+   * piece pending, and the player past whatever it was playing. Immediately
+   * if that is already true.
+   *
+   * Deliberately not the same thing as `finished` — that also waits for
+   * `end()`, which is right for an answer that is still being synthesised
+   * sentence by sentence, but wrong for shutdown's drain: a queue can sit
+   * mid-answer with nothing pending for a moment while the next sentence
+   * renders, and drain must not read that gap as "done". What makes it safe
+   * is that shutdown never trusts this alone — SessionManager.drain() also
+   * waits on whenIdle() for the ask() still producing sentences, and only a
+   * queue truly caught up on everything it has been handed passes both.
+   */
+  drained() {
+    if (this.#isDrained()) return Promise.resolve();
+    return new Promise((resolve) => {
+      this.drainWaiters.push(resolve);
+    });
+  }
+
+  #isDrained() {
+    return this.cancelled || (!this.playing && this.pending.length === 0);
+  }
+
+  #settleDrain() {
+    if (this.drainWaiters.length === 0 || !this.#isDrained()) return;
+    const waiters = this.drainWaiters;
+    this.drainWaiters = [];
+    for (const resolve of waiters) resolve();
   }
 
   #advance() {
@@ -86,8 +124,12 @@ export class SpeechQueue {
       return;
     }
 
-    // Nothing queued. Done only if nothing more is coming — otherwise wait,
-    // because the next sentence is still being synthesised.
+    // Nothing left to play right now, whether or not more is coming —
+    // exactly what drained() is asking about.
+    this.#settleDrain();
+
+    // Done only if nothing more is coming — otherwise wait, because the next
+    // sentence is still being synthesised.
     if (this.ended) {
       this.#detach();
       this.resolve({ cancelled: false, spoken: this.spoken });

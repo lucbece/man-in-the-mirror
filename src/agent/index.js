@@ -77,6 +77,31 @@ export class AgentBusyError extends Error {}
 const inFlight = new Set();
 
 /**
+ * Resolvers waiting on a guild's in-flight ask() to finish — see whenIdle().
+ * A guild only ever has entries here while it is also in `inFlight`; both
+ * are cleared together, in ask()'s outer `finally`.
+ */
+const idleWaiters = new Map();
+
+/**
+ * Resolve once nothing is being asked for `guildId`.
+ *
+ * Shutdown's drain (see SessionManager.drain) uses this to know when a
+ * session's in-flight ask(), if it has one, is done: right away if the guild
+ * is not in `inFlight` at all, otherwise once the running call reaches its
+ * own `finally` — the same moment that frees the slot a held wake is waiting
+ * on.
+ */
+export function whenIdle(guildId) {
+  if (!inFlight.has(guildId)) return Promise.resolve();
+  return new Promise((resolve) => {
+    const waiters = idleWaiters.get(guildId);
+    if (waiters) waiters.push(resolve);
+    else idleWaiters.set(guildId, [resolve]);
+  });
+}
+
+/**
  * How long a "let's speak English" request keeps the leaked-reasoning guard's
  * language rule switched off for a guild, in ms.
  *
@@ -544,6 +569,13 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, ma
     };
   } finally {
     inFlight.delete(session.guildId);
+    // Same moment the slot frees for a held wake (see manager.js's
+    // handleWake) — anyone in whenIdle() waiting on this guild gets to go too.
+    const waiters = idleWaiters.get(session.guildId);
+    if (waiters) {
+      idleWaiters.delete(session.guildId);
+      for (const resolve of waiters) resolve();
+    }
   }
 }
 

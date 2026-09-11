@@ -4,7 +4,7 @@ import { config } from '../config.js';
 import { VoiceSession } from './session.js';
 import { AudioPlayerStatus, entersState } from '@discordjs/voice';
 
-import { ask, AgentBusyError } from '../agent/index.js';
+import { ask, AgentBusyError, whenIdle as askWhenIdle } from '../agent/index.js';
 import { endAgentSession, warmAgentSession } from '../agent/agent-brain.js';
 import { recapCall } from '../agent/recap.js';
 import { presence, rejoinRecent } from './presence.js';
@@ -46,6 +46,7 @@ export class SessionManager extends EventEmitter {
     warmAgent = warmAgentSession,
     askFn = ask,
     heldWakeMaxAgeMs = HELD_WAKE_MAX_AGE_MS,
+    whenIdle = askWhenIdle,
   } = {}) {
     super();
     this.sessions = new Map();
@@ -62,6 +63,16 @@ export class SessionManager extends EventEmitter {
     // Same idea again: production waits fifteen real seconds before giving up
     // on a held wake, and a test proving that drop should not have to.
     this.heldWakeMaxAgeMs = heldWakeMaxAgeMs;
+    // Paired with askFn rather than always the real agent/index.js export:
+    // whenIdle() answers out of the real module's own `inFlight` set, which a
+    // fake askFn used in a drain() test never touches. Production leaves
+    // both at their real defaults, which do share that set.
+    this.whenIdle = whenIdle;
+    // Set by drain() on the way into shutdown — see there. Refuses new wakes
+    // (handleWake, below) and drops speakUnprompted's reminders and late
+    // answers: nobody still on the call once the process has logged
+    // "shutting down" is going to hear either played back after it exits.
+    this.draining = false;
 
     this.onConfigChange = (values, previous) => {
       describeChanges(values, previous);
@@ -156,6 +167,15 @@ export class SessionManager extends EventEmitter {
    * it in the text channel when it has to be written rather than said.
    */
   async speakUnprompted(guildId, message, tag, prefix = '⏰') {
+    // A reminder or a late answer that comes due while shutdown is draining
+    // has nobody left to speak to by the time it would play — the process is
+    // on its way out. Not persisted for the next start: reminders re-arm
+    // themselves if their own code does that, and this is not the place to
+    // add a second mechanism for it.
+    if (this.draining) {
+      console.log(`${tag} came due while shutting down — dropped: "${message}"`);
+      return false;
+    }
     const session = this.sessions.get(guildId);
     if (!session || session.destroyed) {
       console.warn(`${tag} came due but the bot is no longer in a channel — dropped: "${message}"`);
@@ -277,6 +297,14 @@ export class SessionManager extends EventEmitter {
      */
     const handleWake = async (wake, { held = false } = {}) => {
       const { question, askedBy, askedById, heard, stoppedAt, marks, viaFollowUp } = wake;
+      // Shutting down: refuse a fresh wake, and — since a held wake is
+      // replayed through this same function once its slot frees — this also
+      // catches the one already waiting when the drain began, dropping it
+      // rather than starting a new ask() after drain() has stopped counting.
+      if (this.draining) {
+        console.log(`[wake] ${askedBy}: "${heard}" — ignored, shutting down`);
+        return;
+      }
       if (!held) console.log(`[wake] ${askedBy}: "${heard}"`);
       try {
         const result = await this.askFn(session, { question, askedBy, askedById, stoppedAt, marks, viaFollowUp });
@@ -360,6 +388,51 @@ export class SessionManager extends EventEmitter {
 
   leaveAll({ comingBack = false } = {}) {
     for (const guildId of [...this.sessions.keys()]) this.leave(guildId, { comingBack });
+  }
+
+  /**
+   * Let whatever is already in progress finish before shutdown tears
+   * everything down.
+   *
+   * AUDIT.md: `leaveAll` reaches `session.destroy()`, which cancels speech
+   * and stops the player unconditionally — "a deploy that lands while the
+   * bot is mid-answer cuts it off mid-word every time." This runs first, so
+   * by the time destroy() gets to a session there is nothing left in it to
+   * cut off.
+   *
+   * Setting `draining` refuses a fresh wake and drops one already held (see
+   * handleWake in join()) and drops a reminder or late answer coming due
+   * (speakUnprompted) — none of which anyone is going to hear the far side
+   * of a process that has already logged "shutting down". Then, for every
+   * session, this waits for (a) whatever ask() is running for that guild to
+   * settle — whenIdle(), the same slot handleWake's own held-wake replay
+   * waits on — and (b) its speech queue to finish saying what it already
+   * has, which is what catches the paths that never go through ask() at
+   * all: a reminder, a late zomboid answer, already playing when the signal
+   * arrived. Bounded by `timeoutMs` as a whole, not per session, so one
+   * wedged guild cannot eat the whole budget and leave the others cut off
+   * anyway.
+   */
+  async drain({ timeoutMs }) {
+    this.draining = true;
+    const sessions = this.list();
+
+    const settled = Promise.all(
+      sessions.map((session) =>
+        Promise.all([this.whenIdle(session.guildId), session.speech?.drained() ?? Promise.resolve()]),
+      ),
+    ).then(() => true);
+
+    const timedOut = new Promise((resolve) => {
+      setTimeout(() => resolve(false), timeoutMs).unref();
+    });
+
+    const finishedInTime = sessions.length === 0 ? true : await Promise.race([settled, timedOut]);
+    console.log(
+      finishedInTime
+        ? '[shutdown] every session finished what it was saying'
+        : `[shutdown] drain timed out after ${timeoutMs}ms — at least one session may still have been mid-sentence`,
+    );
   }
 
   /** After a restart: back into the channels it was in, if anyone is still there. */

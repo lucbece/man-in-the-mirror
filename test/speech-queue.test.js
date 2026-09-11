@@ -153,4 +153,77 @@ describe('SpeechQueue', () => {
     await queue.finished;
     assert.equal(player.listenerCount('idle'), 0);
   });
+
+  describe('drained()', () => {
+    // Shutdown's drain (SessionManager.drain) calls this to know when a
+    // session's speech has said what it already has — deliberately not the
+    // same question as `finished`, which also needs end() to have been
+    // called. Without this a reminder or a late zomboid answer mid-playback
+    // when the process gets SIGTERM would be exactly the audit's "cuts it
+    // off mid-word every time", just one hop further from ask().
+
+    test('resolves right away when nothing has ever been queued', async () => {
+      const player = new FakePlayer();
+      const queue = new SpeechQueue(player);
+
+      let done = false;
+      queue.drained().then(() => {
+        done = true;
+      });
+      await Promise.resolve();
+      assert.equal(done, true);
+    });
+
+    test('waits for what is already playing, but not for end()', async () => {
+      const player = new FakePlayer();
+      const queue = new SpeechQueue(player);
+      queue.push('one', 'uno');
+
+      let done = false;
+      queue.drained().then(() => {
+        done = true;
+      });
+      await Promise.resolve();
+      assert.equal(done, false, 'still playing the one piece it has');
+
+      player.finishCurrent();
+      await Promise.resolve();
+      assert.equal(done, true, 'nothing left to play, even though end() was never called');
+    });
+
+    test('waits out everything already queued, not just the first piece', async () => {
+      const player = new FakePlayer();
+      const queue = new SpeechQueue(player);
+      queue.push('one', 'uno');
+      queue.push('two', 'dos');
+
+      let done = false;
+      queue.drained().then(() => {
+        done = true;
+      });
+
+      player.finishCurrent();
+      await Promise.resolve();
+      assert.equal(done, false, 'the second piece is still to come');
+
+      player.finishCurrent();
+      await Promise.resolve();
+      assert.equal(done, true);
+    });
+
+    test('cancel() settles a pending drained(), same as finished', async () => {
+      const player = new FakePlayer();
+      const queue = new SpeechQueue(player);
+      queue.push('one', 'uno');
+
+      let done = false;
+      queue.drained().then(() => {
+        done = true;
+      });
+
+      queue.cancel();
+      await Promise.resolve();
+      assert.equal(done, true);
+    });
+  });
 });
