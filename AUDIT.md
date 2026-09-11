@@ -97,18 +97,6 @@ The prompts are the same story — `SYSTEM_PROMPT` (`src/agent/brain.js:39`),
 (`src/agent/cascade.js:76`) each state the "never write about yourself
 answering" rule in their own words.
 
-Package: WP1
-
-### A music request phrased any other way is answered with "I can't"
-
-`MUSIC_COMMAND` (`src/agent/cascade.js:140-158`) is ten regexes of Rioplatense
-imperatives, and it is what keeps music commands away from the fast leg. The
-comment above it argues that a miss is the safe direction to fail in, because a
-miss "leaves the old behaviour" — but the old behaviour is described three
-lines earlier as "I can't put music on", two holding lines, and a spoken
-"(reproduciendo)". For anyone not speaking this dialect every music request is
-a miss, so the failure the list exists to prevent is the default.
-
 Package: WP2
 
 ### The list of voices exists three times
