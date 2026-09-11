@@ -15,7 +15,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 
 import { config } from '../config.js';
-import { DATA_DIR } from '../paths.js';
+import { dataPath } from '../data-dir.js';
 import { createTts } from './tts.js';
 
 /**
@@ -25,7 +25,7 @@ import { createTts } from './tts.js';
  * that on every restart during development is pure waste, and they never
  * change.
  */
-const CACHE_DIR = path.join(DATA_DIR, 'fillers');
+const CACHE_DIR = dataPath('fillers');
 
 function cachePath(line, voice) {
   const key = crypto.createHash('sha1').update(`${voice}:${line}`).digest('hex').slice(0, 16);

@@ -16,13 +16,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { DATA_DIR } from '../paths.js';
+import { dataPath } from '../data-dir.js';
 
 /** Longer than this away, and whoever was in the call has moved on. */
 export const REJOIN_WITHIN_MS = 15 * 60_000;
 
 export class Presence {
-  constructor({ file = path.join(DATA_DIR, 'voice.json'), now = Date.now } = {}) {
+  constructor({ file = dataPath('voice.json'), now = Date.now } = {}) {
     this.file = file;
     this.now = now;
   }
