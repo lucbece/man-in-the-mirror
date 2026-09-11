@@ -425,6 +425,9 @@ export class CascadeBrain {
 
     let usedTools = false;
     let text;
+    // False on the notice path below, where the agent never actually saw
+    // `asides` — see the splice beneath the try/catch.
+    let handedOver = true;
     try {
       text = await this.agent.answer(
         { ...context, asides },
@@ -455,12 +458,19 @@ export class CascadeBrain {
         memory.apiNoticeAt = Date.now();
         handlers.onSentence?.(NO_CREDIT_NOTICE);
         text = NO_CREDIT_NOTICE;
+        handedOver = false;
       } else {
         throw err;
       }
     }
-    memory.owed.splice(0, asides.length);
-    memory.lastUsedTools = usedTools;
+    if (handedOver) {
+      memory.owed.splice(0, asides.length);
+      memory.lastUsedTools = usedTools;
+    } else {
+      // No tool ran on this turn either, so the routing signal is left
+      // false rather than carrying over whatever an earlier turn set it to.
+      memory.lastUsedTools = false;
+    }
     remember(memory, context.question, text, { byAgent: true });
     return text;
   }

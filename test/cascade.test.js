@@ -511,6 +511,39 @@ describe('when the account is out of credit', () => {
     assert.equal(text, NO_CREDIT_NOTICE);
   });
 
+  test('a dead turn does not clear the asides it never actually delivered', async () => {
+    // The hand-over failed before the agent ever saw them, so — unlike a
+    // hand-over that succeeds — they must still be owed once credit is back.
+    const calls = [];
+    const agent = {
+      label: 'fake agent',
+      async answer(context) {
+        calls.push(context);
+        if (calls.length === 1) throw creditError('dead');
+        return 'ok';
+      },
+    };
+
+    // Answered by the fast leg, so it is owed to the agent until the agent
+    // actually hears it.
+    await brain({ agent, runFast: fast({ said: 'Rojo.' }) }).answer(ask('de qué color?'));
+
+    const dead = await brain({ agent, runFast: escalating() }).answer(ask('y guardá eso'));
+    assert.equal(dead, NO_CREDIT_NOTICE);
+    assert.deepEqual(
+      calls[0].asides,
+      [{ question: 'de qué color?', answer: 'Rojo.' }],
+      'offered to the failed hand-over',
+    );
+
+    await brain({ agent, runFast: escalating() }).answer(ask('otra vez'));
+    assert.deepEqual(
+      calls[1].asides,
+      [{ question: 'de qué color?', answer: 'Rojo.' }],
+      'still owed on the next hand-over, since the first one never actually got it',
+    );
+  });
+
   test('a second dead turn inside the window stays silent: the failure rethrows as before', async () => {
     const agent = failingAgent('dead');
     await brain({ agent, runFast: escalating() }).answer(ask('primera'));
