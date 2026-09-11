@@ -508,7 +508,9 @@ export class CascadeBrain {
       return { said: '', escalate: true, reason: 'no Anthropic key for the fast model' };
     }
 
-    const client = new Anthropic({ apiKey });
+    // Injectable so a test can assert the request shape against a fake
+    // client instead of a real key; production always takes the `?? new`.
+    const client = this.deps.anthropicClient ?? new Anthropic({ apiKey });
     // Five seconds to its first content block, or the agent takes the question:
     // escalation is the retry here, so the deadline itself tries only once.
     const deadline = new AbortController();
@@ -524,7 +526,23 @@ export class CascadeBrain {
       {
         model: this.fastModel,
         max_tokens: MAX_TOKENS,
-        system: promptWithInstructions(this.guildId, FAST_PROMPT_EXTRA),
+        // `cache_control` on this block, and nothing after it in `system`:
+        // the prefix Anthropic hashes is `tools` then `system` then
+        // `messages`, and everything that changes turn to turn — the
+        // transcript, what was already answered, the question itself — is
+        // already down in `buildFastMessage`'s user content, never here. So
+        // the same guild sends the same bytes on every turn after the first,
+        // and this is a cache hit rather than a hopeful flag. Measured on
+        // claude-sonnet-5 with this prompt cached: 430ms off time to first
+        // token (see item 15, docs/plans/performance.md). No effect while
+        // `fastModel` is gpt-4.1, the OpenAI leg below.
+        system: [
+          {
+            type: 'text',
+            text: promptWithInstructions(this.guildId, FAST_PROMPT_EXTRA),
+            cache_control: { type: 'ephemeral' },
+          },
+        ],
         tools: [ESCALATE_TOOL],
         messages: [{ role: 'user', content: buildFastMessage(context, memory) }],
       },
