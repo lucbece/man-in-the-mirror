@@ -15,7 +15,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 
 import { config } from '../config.js';
-import { DATA_DIR } from '../paths.js';
+import { dataPath } from '../data-dir.js';
 import { createTts } from './tts.js';
 
 /**
@@ -25,7 +25,7 @@ import { createTts } from './tts.js';
  * that on every restart during development is pure waste, and they never
  * change.
  */
-const CACHE_DIR = path.join(DATA_DIR, 'fillers');
+const CACHE_DIR = dataPath('fillers');
 
 function cachePath(line, voice) {
   const key = crypto.createHash('sha1').update(`${voice}:${line}`).digest('hex').slice(0, 16);
@@ -48,6 +48,7 @@ function currentVoiceKey() {
 const LINES = {
   es: ['Dame un segundo.', 'Ahí busco.', 'Esperá que fijo.'],
   en: ['Give me a second.', 'Let me check.', 'One sec.'],
+  pt: ['Peraí um segundo.', 'Já vou ver.', 'Só um instante.'],
 };
 
 /**
@@ -65,6 +66,7 @@ const LINES = {
 const WAITING_LINES = {
   es: ['Perdón, sigo buscando esto, dame un toque más.', 'Ahí lo tengo, aguantame un segundo más.'],
   en: ["Sorry, still digging, give me a moment.", "Nearly there, hang on a second."],
+  pt: ['Desculpa, ainda tô procurando isso.', 'Já tá quase, mais um segundinho.'],
 };
 
 /**
@@ -76,6 +78,7 @@ const WAITING_LINES = {
 const ACK_LINES = {
   es: ['Mmm.', 'A ver.'],
   en: ['Hmm.', 'Let me see.'],
+  pt: ['Ahn.', 'Deixa eu ver.'],
 };
 
 /** Rendered audio, keyed by the exact line. Survives for the process lifetime. */
@@ -84,10 +87,17 @@ const cache = new Map();
 const lastIndex = { first: -1, waiting: -1, ack: -1 };
 let cachedVoice = null;
 
-/** Rotate rather than repeat — the same clip every time sounds like a recording. */
+/**
+ * Rotate rather than repeat — the same clip every time sounds like a recording.
+ *
+ * No fallback to Spanish: a language with no recorded lines (German, Italian,
+ * French, or none guessed at all) gets no filler rather than a wrong one.
+ * `takeFiller` turns that into `null`, which every caller already handles.
+ */
 function pickLine(lang, set) {
   const table = set === 'waiting' ? WAITING_LINES : set === 'ack' ? ACK_LINES : LINES;
-  const lines = table[lang] ?? table.es;
+  const lines = table[lang];
+  if (!lines || lines.length === 0) return undefined;
   lastIndex[set] = (lastIndex[set] + 1) % lines.length;
   return lines[lastIndex[set]];
 }
@@ -122,7 +132,11 @@ export async function warmFillers() {
   let rendered = 0;
   let reused = 0;
 
-  for (const line of [...LINES.es, ...LINES.en, ...WAITING_LINES.es, ...WAITING_LINES.en, ...ACK_LINES.es, ...ACK_LINES.en]) {
+  for (const line of [
+    ...LINES.es, ...LINES.en, ...LINES.pt,
+    ...WAITING_LINES.es, ...WAITING_LINES.en, ...WAITING_LINES.pt,
+    ...ACK_LINES.es, ...ACK_LINES.en, ...ACK_LINES.pt,
+  ]) {
     if (cache.has(line)) continue;
 
     const file = cachePath(line, voice);
@@ -153,8 +167,9 @@ export async function warmFillers() {
  * Never synthesises on the spot: if it isn't cached, staying quiet is better
  * than making the wait longer to announce the wait.
  */
-export function takeFiller(lang = 'es', set = 'first') {
+export function takeFiller(lang = null, set = 'first') {
   const line = pickLine(lang, set);
+  if (!line) return null;
   const audio = cache.get(line);
   return audio ? { line, audio } : null;
 }
@@ -174,15 +189,123 @@ const SPANISH_WORDS = new Set([
   // The words a sentence is actually made of. Without these, "espejo, la
   // concha de tu madre" and "al fin y al cabo" were English — none of their
   // words was on the list — and everything keyed on the language (the filler
-  // clip, the leaked-reasoning guard) quietly ran in the wrong mode. Words
-  // English also uses ('no', 'a', 'me') are left out on purpose.
+  // clip, the leaked-reasoning guard) quietly ran in the wrong mode. "no" and
+  // "a" are still left out: English uses them too and nothing else in a
+  // short Spanish sentence would tip the tie. "me" is the exception — kept in
+  // both lists on purpose, since a tie between Spanish and English goes to
+  // Spanish anyway (see LANGUAGE_PRIORITY below).
   'el', 'la', 'de', 'y', 'al', 'tu', 'te', 'mi', 'un', 'lo', 'le', 'se',
   'es', 'en', 'si', 'ya', 'sos', 'soy', 'che', 'dale', 'bien', 'bueno',
   'cuando', 'tambien', 'siempre', 'ahi', 'alla', 'mucho', 'quiero', 'podes',
   'pone', 'poneme', 'cancion', 'tema', 'fin', 'cabo', 'madre', 'hermana',
+  // Short words a request or reaction is actually made of — "me gusta esa
+  // canción", "poneme otra" — which otherwise score zero against the new,
+  // wider ENGLISH_WORDS and lose the tie to English.
+  'me', 'nos', 'les', 'hay', 'tengo', 'tenes', 'gusta', 'esa', 'ese', 'esos',
+  'esas', 'otra', 'otro', 'favor', 'porfa', 'saca', 'saltea', 'siguiente',
+  'musica',
 ]);
 
-/** Rough guess at which language the person is speaking. */
+/**
+ * Common English words. Spanish overwhelmingly dominates the rooms this bot
+ * sits in, so this list exists mostly so English text doesn't fall through to
+ * `null` — see `guessLanguage` below.
+ */
+const ENGLISH_WORDS = new Set([
+  'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'you', 'your',
+  'i', 'my', 'we', 'they', 'he', 'she', 'him', 'her', 'them', 'what', 'how',
+  'do', 'does', 'can', 'this', 'that', 'these', 'those', 'with', 'for', 'and',
+  'not', 'it', 'its', 'of', 'in', 'on', 'at', 'to', 'but', 'or', 'so', 'just',
+  'here', 'there', 'when', 'where', 'why', 'who', 'which', 'yes', 'no',
+  'please', 'thanks', 'hello', 'now', 'then', 'very', 'all',
+  // Content words an actual request is made of — "play something by Queen",
+  // "tell me a joke", "skip this one" — which otherwise scored zero and lost
+  // their English filler and their leaked-reasoning guard to a false null.
+  'play', 'put', 'tell', 'give', 'show', 'let', 'me', 'something', 'anything',
+  'by', 'about', 'like', 'want', 'have', 'has', 'had', 'get', 'got', 'go',
+  'know', 'think', 'did', 'will', 'would', 'could', 'should', 'up', 'down',
+  'some', 'any', 'one', 'time', 'good', 'ok', 'okay', 'thank', 'again',
+  'really', 'right', 'well', 'too', 'also', 'from', 'if', 'skip', 'next',
+  'song', 'music',
+]);
+
+/**
+ * Common Brazilian Portuguese words, written without accents (see the note on
+ * `SPANISH_WORDS` above — the same `\b` problem applies here).
+ *
+ * Several of these spellings are shared with Spanish once accents are gone
+ * ("de", "que", "para", "esta"): they still count for both languages, and
+ * `guessLanguage` breaks the tie in Spanish's favour, since that's what this
+ * bot's rooms mostly speak. The words that are actually Portuguese-specific
+ * ("nao", "voce", "isso", "muito", "obrigado", "tambem") are what carry a
+ * Portuguese sentence past that tie.
+ */
+const PORTUGUESE_WORDS = new Set([
+  'o', 'a', 'os', 'as', 'um', 'uma', 'de', 'do', 'da', 'em', 'no', 'na',
+  'por', 'para', 'com', 'sem', 'sobre', 'que', 'quem', 'onde', 'quando',
+  'como', 'qual', 'quanto', 'nao', 'sim', 'muito', 'tambem', 'entao', 'aqui',
+  'la', 'isso', 'obrigado', 'voce', 'voces', 'eu', 'tu', 'ele', 'ela', 'meu',
+  'minha', 'seu', 'esta', 'estao', 'ser', 'estar', 'tem', 'vai', 'fazer',
+  'bem', 'ja', 'mais', 'tudo', 'nada', 'hoje', 'agora', 'depois',
+]);
+
+/** Common Italian words, accent-stripped. */
+const ITALIAN_WORDS = new Set([
+  'il', 'lo', 'la', 'i', 'gli', 'le', 'un', 'uno', 'una', 'di', 'da', 'in',
+  'con', 'su', 'per', 'tra', 'fra', 'che', 'chi', 'dove', 'quando', 'come',
+  'quale', 'quanto', 'non', 'si', 'no', 'molto', 'anche', 'allora', 'qui',
+  'qua', 'li', 'questo', 'questa', 'quello', 'grazie', 'ciao', 'io', 'tu',
+  'lui', 'lei', 'noi', 'voi', 'loro', 'mio', 'tua', 'suo', 'sono', 'hanno',
+  'fare', 'bene', 'gia', 'piu', 'tutto', 'niente', 'oggi', 'adesso', 'dopo',
+]);
+
+/** Common French words, accent-stripped. */
+const FRENCH_WORDS = new Set([
+  'le', 'la', 'les', 'un', 'une', 'des', 'de', 'du', 'en', 'dans', 'sur',
+  'avec', 'sans', 'pour', 'par', 'que', 'qui', 'quoi', 'ou', 'quand',
+  'comment', 'pourquoi', 'combien', 'ne', 'pas', 'non', 'oui', 'tres',
+  'aussi', 'alors', 'ici', 'cela', 'ca', 'merci', 'bonjour', 'je', 'tu', 'il',
+  'elle', 'nous', 'vous', 'ils', 'elles', 'mon', 'ma', 'ton', 'sa', 'son',
+  'est', 'sont', 'etre', 'avoir', 'faire', 'bien', 'deja', 'plus', 'tout',
+  'rien', 'maintenant', 'apres',
+]);
+
+/** Common German words, accent-stripped ("für" -> "fur", "schön" -> "schon"). */
+const GERMAN_WORDS = new Set([
+  'der', 'die', 'das', 'ich', 'du', 'er', 'sie', 'wir', 'ihr', 'und', 'oder',
+  'nicht', 'kein', 'ist', 'sind', 'war', 'haben', 'sein', 'werden', 'mit',
+  'von', 'zu', 'in', 'auf', 'fur', 'auch', 'aber', 'dass', 'wenn', 'wie',
+  'was', 'wer', 'wo', 'warum', 'hier', 'da', 'jetzt', 'dann', 'sehr', 'schon',
+  'noch', 'nur', 'mehr', 'alle', 'nichts', 'etwas', 'heute', 'bitte', 'danke',
+  'ja', 'nein',
+]);
+
+/**
+ * Which language wins when two score the same. Spanish first: this bot's
+ * rooms speak mostly Rioplatense Spanish, and Spanish/Portuguese share enough
+ * spelling (once accents are gone) that a short, ambiguous sentence should
+ * read as the language actually spoken here rather than its neighbour.
+ */
+const LANGUAGE_PRIORITY = ['es', 'en', 'pt', 'it', 'fr', 'de'];
+
+const WORD_LISTS = {
+  es: SPANISH_WORDS,
+  en: ENGLISH_WORDS,
+  pt: PORTUGUESE_WORDS,
+  it: ITALIAN_WORDS,
+  fr: FRENCH_WORDS,
+  de: GERMAN_WORDS,
+};
+
+/**
+ * Rough guess at which language the person is speaking.
+ *
+ * Scores every language by how many of its function words appear in the
+ * text and returns the top one — `null` when nothing matched at all, rather
+ * than defaulting to a language nobody spoke. Every caller already treats
+ * `null` (and any language with no filler lines or leaked-reasoning rule) as
+ * "unknown", so guessing wrong here used to be worse than admitting it.
+ */
 export function guessLanguage(text) {
   const words = String(text ?? '')
     .toLowerCase()
@@ -192,8 +315,15 @@ export function guessLanguage(text) {
     .split(/\s+/)
     .filter(Boolean);
 
-  const hits = words.filter((w) => SPANISH_WORDS.has(w)).length;
-  return hits > 0 ? 'es' : 'en';
+  const scores = {};
+  for (const [lang, list] of Object.entries(WORD_LISTS)) {
+    scores[lang] = words.filter((w) => list.has(w)).length;
+  }
+
+  const best = Math.max(...Object.values(scores));
+  if (best === 0) return null;
+
+  return LANGUAGE_PRIORITY.find((lang) => scores[lang] === best);
 }
 
 export { LINES, WAITING_LINES, ACK_LINES };

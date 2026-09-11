@@ -28,7 +28,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { DATA_DIR } from '../paths.js';
+import { dataPath } from '../data-dir.js';
 
 const setting = process.env.MIRROR_TRACE ?? '';
 const enabled = setting !== '' && !/^(0|false|no|off)$/i.test(setting);
@@ -36,7 +36,7 @@ const toStdout = /^(stdout|-)$/i.test(setting);
 const file = toStdout
   ? null
   : /^(1|true|yes|on)$/i.test(setting)
-    ? path.join(DATA_DIR, 'trace.log')
+    ? dataPath('trace.log')
     : setting;
 
 /** Longest single entry; tool results and transcripts can be huge. */

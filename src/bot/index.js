@@ -129,6 +129,19 @@ class BotRunner extends EventEmitter {
       }
     });
 
+    // A token reset or revoked months into a deploy doesn't throw anywhere —
+    // login already succeeded — it shows up later as the gateway session
+    // going invalid. Same cleanup as a failed login below, so /healthz sees
+    // the same 'error' state either way instead of reporting healthy forever.
+    client.on(Events.Invalidated, async () => {
+      if (this.client !== client) return; // superseded by a later start/restart
+      console.error('[bot] session invalidated — the token was reset or revoked');
+      this.client = null;
+      this.user = null;
+      await client.destroy().catch(() => {});
+      this.setState('error', 'Discord session invalidated — the token was reset or revoked');
+    });
+
     try {
       await client.login(token);
     } catch (err) {

@@ -17,7 +17,8 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
-import { DATA_DIR, ROOT_DIR } from '../paths.js';
+import { ROOT_DIR } from '../paths.js';
+import { dataPath } from '../data-dir.js';
 
 const run = promisify(execFile);
 const RUNTIME_DIR = path.join(ROOT_DIR, 'runtime');
@@ -89,7 +90,7 @@ async function download(target) {
  * the repository or the image: a Netscape-format file dropped into data/ is
  * picked up on the next request, and its absence changes nothing.
  */
-export const COOKIES_PATH = path.join(DATA_DIR, 'youtube-cookies.txt');
+export const COOKIES_PATH = dataPath('youtube-cookies.txt');
 
 /**
  * The arguments every yt-dlp call shares.

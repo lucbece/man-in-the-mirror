@@ -109,6 +109,22 @@ describe('reasoning read out loud', () => {
     const said = 'I don\'t think there is an actual question in what they said.';
     assert.equal(looksLikeLeakedReasoning(said, 'mirror, what do you think about that?'), false);
   });
+
+  test('a German question still gets the guard — the guard is not Spanish-only', () => {
+    // guessLanguage used to only ever answer 'es' or 'en', so a German room
+    // (or Portuguese, or anything else) was silently treated as English and
+    // this check switched itself off entirely. It now runs for any language
+    // that is not English.
+    const german = 'Ich weiß nicht, wo das ist. Kannst du mir helfen?';
+    const said = 'The speaker is asking about something else entirely, I think.';
+    assert.equal(looksLikeLeakedReasoning(said, german), true);
+  });
+
+  test('an English question still turns the guard off', () => {
+    const englishQuestion = 'mirror, what do you think about that?';
+    const said = 'The speaker is asking about something else entirely, I think.';
+    assert.equal(looksLikeLeakedReasoning(said, englishQuestion), false);
+  });
 });
 
 /**

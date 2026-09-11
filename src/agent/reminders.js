@@ -24,7 +24,7 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { DATA_DIR } from '../paths.js';
+import { dataPath } from '../data-dir.js';
 
 /**
  * A refusal the bot can say out loud.
@@ -46,7 +46,7 @@ const MAX_DELAY_MS = 24 * 60 * 60_000;
 const MAX_PER_GUILD = 25;
 
 export class Reminders extends EventEmitter {
-  constructor({ file = path.join(DATA_DIR, 'reminders.json') } = {}) {
+  constructor({ file = dataPath('reminders.json') } = {}) {
     super();
     this.file = file;
     this.byGuild = new Map(); // guildId → Map<id, {id, message, dueAt, timer}>

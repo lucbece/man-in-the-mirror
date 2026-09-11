@@ -40,7 +40,7 @@ import { OpenAiAgentSession } from './openai-agent.js';
 import { SentenceSplitter } from './sentences.js';
 import { modePrompt, modesParagraph } from './modes.js';
 import { botToolsServer } from './tools/index.js';
-import { DATA_DIR } from '../paths.js';
+import { dataDir } from '../data-dir.js';
 
 /**
  * A hard wall for one answer. Agentic replies legitimately take 10–30s once a
@@ -607,7 +607,7 @@ function buildSession(guildId, mode = null) {
       // cwd is not a workspace here — there is no code to edit — but the SDK
       // advertises it to MCP servers as a root, so it has to point somewhere
       // harmless. The folders the user actually wants reachable go alongside.
-      cwd: DATA_DIR,
+      cwd: dataDir(),
       ...(directories.length ? { additionalDirectories: directories } : {}),
       env: { ...process.env, ANTHROPIC_API_KEY: apiKey },
     },

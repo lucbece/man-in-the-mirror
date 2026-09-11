@@ -36,43 +36,35 @@ Nothing open.
 
 ## Medium
 
-### A rejected Discord token still reports healthy
+### One live config object is imported by eighteen modules
 
-`#start` (`src/bot/index.js:86-143`) catches a failed `client.login(token)` —
-a bad or revoked token throws discord.js's `TokenInvalid`, "An invalid token
-was provided." — and sets `this.state = 'error'` via `setState('error',
-err.message)` (`bot/index.js:139`); the only other trace is the
-`console.error` in the same `catch` (`bot/index.js:135`). `GET /api/state`
-(`src/web/server.js:63-74`) reports that state faithfully in its JSON body,
-but the container `HEALTHCHECK` in `Dockerfile` and the `healthcheck:` in
-`compose.yaml` both just fetch that URL and check `r.ok` — the HTTP status,
-which is 200 whether `bot.status().state` is `'ready'` or `'error'`. The
-Dockerfile says as much on purpose ("'healthy' means 'the process serves',
-not 'logged in to Discord'. Login problems show in the log, not here"), which
-is a fair simplification for a first boot with an obviously wrong token —
-but it applies just as much to a token revoked six months into a deploy, and
-then nothing watching the container, only someone reading its log, can tell
-the bot went from `ready` to `error` and stayed there.
+`config` is one object built at import time (`src/config.js:297-301`), and
+every `update()` persists it and notifies the running bot
+(`src/config.js:350-355`). Eighteen modules import that object directly,
+`config.js` itself among the tools that read and write it.
 
-Package: WP6
+The test-clobbering half of this entry is fixed: `CONFIG_PATH` (and every
+other path this bot builds under `data/` — YouTube cookies, cached filler
+clips, presence, the zomboid SSH keys' default location) now derives from
+`dataDir()` / `dataPath()` in `src/data-dir.js`, which reads one override,
+`MIRROR_DATA_DIR`. The test runner sets it to a fresh temp directory before
+any module loads (`test/setup.mjs`, loaded via `node --import` in the
+`test` script in `package.json`), so `test/manager.test.js:149-197`,
+`test/config.test.js` and `test/web-server.test.js` change the live
+configuration freely — a failure mid-test no longer leaves the developer's
+real `data/config.json` changed, because nothing in the test run ever
+touches it. `test/config.test.js`'s "data directory isolation" suite proves
+that: it reads the real file before the suite runs and asserts it is
+byte-identical after. `test/web-server.test.js:243` finishes the assertion
+this entry used to describe as given up on — it plants a fake token and
+checks it never reaches the browser, safe now that persisting during tests
+never touches a real file next to real keys.
 
-
-### Running the tests rewrites the developer's real configuration
-
-`config` is one object built at import time, and every `update()` persists to
-`data/config.json` and notifies the running bot (`src/config.js:266-294`).
-Fifteen modules import that object directly, so a test that needs a different
-setting has nowhere else to put it: `test/manager.test.js:155-192` and
-`test/config.test.js:29-111` change the live configuration and change it back
-afterwards. A failure between those two points leaves it changed.
-`test/web-server.test.js:154-158` documents the corner and gives up on the
-assertion it wanted rather than write a fake token into a real file next to
-real keys.
-
-Same root cause as the plan itself: one process holds one configuration, so a
-second profile, a test with its own settings, and two bots in one process are
-all impossible. The entry closes when the last of those fifteen importers is
-gone.
+What's left is the structural half, same root cause as the plan itself: one
+process still holds exactly one configuration object, so a second profile, a
+test with its own settings independent of the shared one, and two bots in
+one process are all still impossible. The entry closes when the last of
+those eighteen direct importers is gone.
 
 Package: WP1
 
@@ -88,18 +80,6 @@ by reading the code were living in it. Every rule since has been added in the
 same place, which is why it is the length it is.
 
 Package: WP3
-
-### A language it does not recognise gets Spanish
-
-`pickLine` falls back to `table.es` for any language with no clips
-(`src/agent/filler.js:77`) and `takeFiller` defaults its parameter to `'es'`
-(`src/agent/filler.js:138`), while `guessLanguage` can only ever answer `'es'`
-or `'en'` (`src/agent/filler.js:168-179`) because the only word list it has is
-Spanish. A German call therefore gets "Dame un segundo." over its silences,
-and `looksLikeLeakedReasoning` (`src/agent/spoken-guards.js:83`) switches
-itself off entirely, since it only runs when the question looks Spanish.
-
-Package: WP2
 
 ### Three brains keep three copies of the streaming rules
 
@@ -118,18 +98,6 @@ The prompts are the same story — `SYSTEM_PROMPT` (`src/agent/brain.js:39`),
 `AGENT_PROMPT_EXTRA` (`src/agent/agent-brain.js:50`) and `FAST_PROMPT_EXTRA`
 (`src/agent/cascade.js:76`) each state the "never write about yourself
 answering" rule in their own words.
-
-Package: WP1
-
-### A music request phrased any other way is answered with "I can't"
-
-`MUSIC_COMMAND` (`src/agent/cascade.js:140-158`) is ten regexes of Rioplatense
-imperatives, and it is what keeps music commands away from the fast leg. The
-comment above it argues that a miss is the safe direction to fail in, because a
-miss "leaves the old behaviour" — but the old behaviour is described three
-lines earlier as "I can't put music on", two holding lines, and a spoken
-"(reproduciendo)". For anyone not speaking this dialect every music request is
-a miss, so the failure the list exists to prevent is the default.
 
 Package: WP2
 
@@ -177,7 +145,6 @@ evenings. `MIRROR_STT_CLIP_LOG=all` restores one line per dropped clip for
 that week.
 
 Package: WP2
-
 
 - **`docker compose up` on the server warns that the volumes "already exist
   but were not created by Docker Compose".** Cosmetic: cloud-init creates
@@ -239,7 +206,6 @@ confirmation names the old model — and that line exists only so people can tel
 whether a setting took.
 
 Package: WP3
-
 
 ### The wake chain is measured now, but not yet tuned
 

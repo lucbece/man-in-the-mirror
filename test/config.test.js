@@ -1,21 +1,35 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import test, { describe } from 'node:test';
 
-import { config } from '../src/config.js';
+import { config, CONFIG_PATH } from '../src/config.js';
+import { ROOT_DIR } from '../src/paths.js';
 
 /**
- * Run a mutation against a snapshot of the config and roll it back, so these
- * tests can't clobber a real key sitting in data/config.json.
+ * The file this whole suite must never touch, whatever it does to `config`.
+ * Read before any test runs, compared again once every test has: see the
+ * 'data directory isolation' suite at the bottom of this file.
+ */
+const REAL_CONFIG_PATH = path.join(ROOT_DIR, 'data', 'config.json');
+const realConfigBefore = readRealConfig();
+
+function readRealConfig() {
+  return fs.existsSync(REAL_CONFIG_PATH) ? fs.readFileSync(REAL_CONFIG_PATH, 'utf8') : null;
+}
+
+/**
+ * Run a mutation against a snapshot of the config and roll it back, so one
+ * test's seed values don't leak into the next. Persisting is left alone —
+ * test/setup.mjs points CONFIG_PATH at a throwaway directory for the whole
+ * run, so there is no real file here left to protect.
  */
 function withConfig(seed, fn) {
   const snapshot = { ...config.values };
-  const persist = config.persist;
-  config.persist = () => {}; // don't write to disk during tests
   try {
     Object.assign(config.values, seed);
     return fn();
   } finally {
-    config.persist = persist;
     config.values = snapshot;
   }
 }
@@ -127,5 +141,36 @@ describe('clamping', () => {
       config.update({ ttsSpeed: 'fast' });
       assert.equal(config.get('ttsSpeed'), 1);
     });
+  });
+});
+
+describe('data directory isolation', () => {
+  // Must run last: it checks what every test above this point did, not just
+  // its own mutation.
+  test('this suite persists under MIRROR_DATA_DIR, never into the real data/config.json', () => {
+    assert.ok(process.env.MIRROR_DATA_DIR, 'test/setup.mjs should have set this before anything imported config.js');
+    assert.equal(
+      CONFIG_PATH,
+      path.join(process.env.MIRROR_DATA_DIR, 'config.json'),
+      'config.js must derive CONFIG_PATH from MIRROR_DATA_DIR via dataPath()',
+    );
+    assert.notEqual(CONFIG_PATH, REAL_CONFIG_PATH, 'the test config path must not be the developer\'s real one');
+
+    // withConfig() above no longer stubs out persist(), so a real
+    // config.update() call really does write — proving it lands in the
+    // throwaway directory rather than nowhere.
+    withConfig({}, () => {
+      config.update({ bufferSeconds: 123 });
+    });
+    const onDisk = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+    assert.equal(onDisk.bufferSeconds, 123, 'config.update() persisted to CONFIG_PATH under MIRROR_DATA_DIR');
+
+    // And, the actual point: whatever every test above did, the developer's
+    // real file is exactly what it was before this file ran a single test.
+    assert.equal(
+      readRealConfig(),
+      realConfigBefore,
+      'the real repo\'s data/config.json must be byte-identical to before this suite ran',
+    );
   });
 });

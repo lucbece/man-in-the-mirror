@@ -4,11 +4,12 @@ import { EventEmitter } from 'node:events';
 import dotenv from 'dotenv';
 
 import { ROOT_DIR } from './paths.js';
+import { dataPath } from './data-dir.js';
 import { parseInstructions, serialiseInstructions } from './agent/instructions.js';
 
 dotenv.config({ path: path.join(ROOT_DIR, '.env'), quiet: true });
 
-const CONFIG_PATH = path.join(ROOT_DIR, 'data', 'config.json');
+const CONFIG_PATH = dataPath('config.json');
 
 const DEFAULTS = {
   // Secrets / identity

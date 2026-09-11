@@ -3,6 +3,7 @@ import test, { describe, after, before } from 'node:test';
 
 import { createApp } from '../src/web/server.js';
 import { config } from '../src/config.js';
+import { bot } from '../src/bot/index.js';
 
 /**
  * The real app on an ephemeral port.
@@ -13,10 +14,8 @@ import { config } from '../src/config.js';
  */
 let server;
 let base;
-let saved;
 
 before(async () => {
-  saved = { ...config.values };
   server = createApp().listen(0, '127.0.0.1');
   await new Promise((resolve) => {
     server.once('listening', resolve);
@@ -25,8 +24,6 @@ before(async () => {
 });
 
 after(async () => {
-  // Whatever these tests wrote, put back — this is the developer's real config.
-  config.update(saved);
   await new Promise((resolve) => {
     server.close(resolve);
   });
@@ -243,22 +240,83 @@ describe('saving customInstructions or notebook against a stale base', () => {
   });
 });
 
+describe('/healthz, the container healthcheck', () => {
+  test('ready is 200', async (t) => {
+    bot.setState('ready');
+    t.after(() => bot.setState('stopped'));
+
+    const res = await fetch(`${base}/healthz`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { ok: true, bot: 'ready' });
+  });
+
+  test('stopped (no token configured, or stopped from the panel) is still 200', async (t) => {
+    bot.setState('stopped');
+    t.after(() => bot.setState('stopped'));
+
+    const res = await fetch(`${base}/healthz`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { ok: true, bot: 'stopped' });
+  });
+
+  test('error — a rejected or revoked token — is 503, with the message', async (t) => {
+    bot.setState('error', 'Discord session invalidated — the token was reset or revoked');
+    t.after(() => bot.setState('stopped'));
+
+    const res = await fetch(`${base}/healthz`);
+    assert.equal(res.status, 503);
+    assert.deepEqual(await res.json(), {
+      ok: false,
+      bot: 'error',
+      error: 'Discord session invalidated — the token was reset or revoked',
+    });
+  });
+});
+
 describe('the state the panel renders itself from', () => {
   test('carries no secret field at all, and says so instead', async () => {
-    // Asserted on the shape rather than by planting a fake key and looking for
-    // it: `config.update` writes to the real config file and notifies a
-    // running bot, so a test that sets a token would reconfigure the
-    // developer's live bot for as long as it ran. Checking that the fields are
-    // absent catches the regression that matters — somebody adding the raw
-    // value back — without writing anything.
-    const { config: view } = await (await fetch(`${base}/api/state`)).json();
+    // Planting a fake secret and checking it never reaches the browser is
+    // exactly the assertion this test wants — it used to settle for checking
+    // the field is merely absent, because config.update() wrote straight
+    // into the developer's real data/config.json next to real keys. Now that
+    // persisting during tests is scoped to MIRROR_DATA_DIR (test/setup.mjs),
+    // planting one is safe.
+    const before = {
+      token: config.get('token'),
+      openaiApiKey: config.get('openaiApiKey'),
+      anthropicApiKey: config.get('anthropicApiKey'),
+    };
+    const fakes = {
+      token: 'MTUzMzYxNzQzNDM5MTYxMzUyMg.GxXxXx.faketokenfortestingonly',
+      openaiApiKey: 'sk-proj-faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      anthropicApiKey: 'sk-ant-api03-faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    };
+    config.update(fakes);
+    try {
+      const res = await fetch(`${base}/api/state`);
+      const text = await res.text();
+      for (const fake of Object.values(fakes)) {
+        assert.ok(!text.includes(fake), 'a raw secret must never reach the browser, not even folded into another field');
+      }
 
-    for (const secret of ['token', 'openaiApiKey', 'anthropicApiKey']) {
-      assert.ok(!(secret in view), `${secret} must not reach the browser at all`);
-    }
-    // What it sends instead: enough to render the form, never the value.
-    for (const field of ['hasToken', 'tokenPreview', 'hasOpenaiApiKey', 'hasAnthropicApiKey']) {
-      assert.ok(field in view, `the panel needs ${field} to render`);
+      const { config: view } = JSON.parse(text);
+      for (const secret of ['token', 'openaiApiKey', 'anthropicApiKey']) {
+        assert.ok(!(secret in view), `${secret} must not reach the browser at all`);
+      }
+      // What it sends instead: enough to render the form, never the value.
+      for (const field of ['hasToken', 'tokenPreview', 'hasOpenaiApiKey', 'hasAnthropicApiKey']) {
+        assert.ok(field in view, `the panel needs ${field} to render`);
+      }
+      assert.equal(view.hasToken, true);
+      assert.equal(
+        view.tokenPreview,
+        `${fakes.token.slice(0, 6)}${'•'.repeat(12)}${fakes.token.slice(-4)}`,
+        'the preview masks the middle rather than leaking it',
+      );
+    } finally {
+      // Bypass config.update(): a blank secret means "unchanged" there (see
+      // SECRET_KEYS in src/config.js), which would leave the fakes in place.
+      Object.assign(config.values, before);
     }
   });
 

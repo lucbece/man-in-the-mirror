@@ -74,6 +74,21 @@ export function createApp(deps = {}) {
     });
   });
 
+  // What the container healthcheck fetches instead of /api/state: 'stopped'
+  // (no token configured yet, or stopped from the panel) and 'starting' are
+  // both still 200 — the process serves either way, and the panel is how a
+  // missing token gets fixed. Only 'error' — a login that was rejected, or a
+  // session invalidated later — turns this red, which is the one case
+  // /api/state's 200-no-matter-what used to hide from anything but a person
+  // reading the log.
+  app.get('/healthz', (_req, res) => {
+    const status = bot.status();
+    if (status.state === 'error') {
+      return res.status(503).json({ ok: false, bot: status.state, error: status.error });
+    }
+    res.json({ ok: true, bot: status.state });
+  });
+
   // --- configuration -------------------------------------------------------
 
   app.post('/api/config', async (req, res) => {
