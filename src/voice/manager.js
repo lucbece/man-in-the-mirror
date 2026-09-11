@@ -423,11 +423,17 @@ export class SessionManager extends EventEmitter {
       ),
     ).then(() => true);
 
+    // Ref'd on purpose: this timer is what keeps the process alive while it
+    // waits, so an unref'd one would let an otherwise idle loop exit before
+    // the timeout fires (Node 20/22 cancel the wait outright). The hard exit
+    // in index.js is the unref'd one.
+    let timer;
     const timedOut = new Promise((resolve) => {
-      setTimeout(() => resolve(false), timeoutMs).unref();
+      timer = setTimeout(() => resolve(false), timeoutMs);
     });
 
     const finishedInTime = sessions.length === 0 ? true : await Promise.race([settled, timedOut]);
+    clearTimeout(timer);
     console.log(
       finishedInTime
         ? '[shutdown] every session finished what it was saying'
