@@ -32,29 +32,6 @@ should close it, so a package's brief can be its goal plus its entries.
 
 ## High
 
-### Saving the panel can erase a note or instruction added by voice
-
-`POST /api/config` (`src/web/server.js:78-155`) writes `customInstructions`
-and `notebook` with `config.update(body)` at line 146, and `Config.update`
-(`src/config.js:328-345`) replaces each field wholesale —
-`next[key] = coerced` — there is nothing to merge with, only the string the
-request sent. That string is whatever the panel's Instructions tab last
-rendered into its two lists: `SettingsForm.update()`
-(`src/web/public/panel/form.js:56-59`) stops copying the server's config into
-those lists the moment the tab is edited or simply has focus
-(`isEditing()`, `form.js:51-54`), and stays stopped until Save or Discard.
-Meanwhile "remember this" and "note this down", said out loud, go through
-`remember_instruction` (`src/agent/tools/config.js:265-266`) and
-`remember_fact` (`src/agent/tools/notebook.js:39-41`), which read the live
-`customInstructions` or `notebook`, append a line, and `config.update()` it
-straight back — no version check, nothing to tell the panel's next save that
-the field moved under it. Open the Instructions tab, have the bot learn
-something by voice, then hit Save: the line the room just heard the bot
-repeat back is gone from disk, with no error and nothing in the log to say
-so.
-
-Package: WP1
-
 ### Shutdown cuts the bot off mid-sentence instead of letting it finish
 
 `shutdown()` (`src/index.js:42-53`) calls `sessionManager.leaveAll({

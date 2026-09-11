@@ -148,6 +148,58 @@ describe('what the panel refuses to save', () => {
   });
 });
 
+describe('saving customInstructions or notebook against a stale base', () => {
+  const sameOrigin = () => ({ 'sec-fetch-site': 'same-origin' });
+
+  test('a line added by voice after the panel loaded survives a save that never saw it', async () => {
+    // What the panel had loaded, before anyone touched the tab.
+    const before = config.get('customInstructions');
+    config.update({ customInstructions: 'Call Vero jefa.' });
+    const base = config.get('customInstructions');
+
+    // remember_instruction, said out loud while the tab sits open — the
+    // change the panel's next save does not know about.
+    config.update({ customInstructions: 'Call Vero jefa.\nFede hates pineapple on pizza.' });
+
+    // The panel saves its own edit (a second line, added in the browser)
+    // against the `base` it loaded before the voice line existed.
+    const res = await post('/api/config', {
+      headers: sameOrigin(),
+      body: {
+        customInstructions: 'Call Vero jefa.\nSpeak slowly.',
+        base: { customInstructions: base },
+      },
+    });
+
+    assert.equal(res.status, 200);
+    const { config: result } = await res.json();
+    assert.equal(
+      result.customInstructions,
+      'Call Vero jefa.\nFede hates pineapple on pizza.\nSpeak slowly.',
+      'keeps the voice line and adds the panel\'s edit, rather than replacing one with the other',
+    );
+    assert.equal(config.get('customInstructions'), result.customInstructions, 'and it is what got persisted');
+
+    config.update({ customInstructions: before });
+  });
+
+  test('no base sent (an older page, a script, curl) keeps the plain replace', async () => {
+    const before = config.get('notebook');
+    config.update({ notebook: 'Nico is the DM.\nPato plays the healer.' });
+
+    const res = await post('/api/config', {
+      headers: sameOrigin(),
+      body: { notebook: 'Pato plays the healer.' },
+    });
+
+    assert.equal(res.status, 200);
+    const { config: result } = await res.json();
+    assert.equal(result.notebook, 'Pato plays the healer.', 'no base means replace, same as before this fix');
+
+    config.update({ notebook: before });
+  });
+});
+
 describe('the state the panel renders itself from', () => {
   test('carries no secret field at all, and says so instead', async () => {
     // Asserted on the shape rather than by planting a fake key and looking for
