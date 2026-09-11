@@ -183,30 +183,59 @@ export function endsWithQuestion(text) {
  * own instead of dragging the whole answer into the match. Spanish marks
  * where a question starts with "¿" — the last one in the text is used; without
  * one (English, or a stray missing mark) the last clause is used instead.
+ *
+ * Also drops a trailing vocative — "¿Qué se cuenta, Fede?" is addressed to
+ * Fede, not asking about someone named Fede. Detected on the punctuation and
+ * capitalisation of the model's own written answer (a comma then one
+ * capitalised word right before the end), not on knowing who's in the call.
  */
 function closingClause(text) {
   const trimmed = String(text ?? '').trim();
   const invertedAt = trimmed.lastIndexOf('¿');
-  if (invertedAt !== -1) return trimmed.slice(invertedAt);
-  const clauses = trimmed.split(/[,.;:!?]+/).map((c) => c.trim()).filter(Boolean);
-  return clauses.length ? clauses[clauses.length - 1] : trimmed;
+  const clause =
+    invertedAt !== -1
+      ? trimmed.slice(invertedAt)
+      : (trimmed.split(/[,.;:!?]+/).map((c) => c.trim()).filter(Boolean).pop() ?? trimmed);
+  return clause.replace(/,\s*\p{Lu}\p{L}*\s*([?!.]*)$/u, '$1');
 }
 
-/** Small-talk closers and tag questions, as exact normalised forms. */
-const RETURN_QUESTIONS = new Set(
-  [
-    'y vos', 'vos',
-    'vos cómo andás', 'vos cómo venís', 'vos cómo vas', 'vos cómo estás',
-    'cómo va', 'cómo vas',
-    'qué onda', 'qué pasa', 'qué tal', 'qué se cuenta', 'qué necesitás',
-    'todo bien', 'todo en orden', 'algo más',
-    'no', 'verdad', 'viste', 'eh', 'dale', 'ok',
-    'what about you', 'how about you', 'you',
-    "what's up", "what's up with you",
-    'how are you', 'how are you doing',
-    'anything else', 'right',
-  ].map(normalise),
-);
+/**
+ * Words that turn a question into one the bot actually needs answered, no
+ * matter how much it otherwise reads like small talk — "¿Vos desde qué
+ * ciudad?" and "¿Vos querés la de Rada o la de Casero?" both open with "vos"
+ * but are not return questions.
+ */
+const VALUE_ASKING_WORDS =
+  /\b(desde|hasta|cual|cuales|cuando|donde|quien|quienes|cuanto|cuanta|cuantos|cuantas|por que|which|when|where|who|how many|how much)\b/;
+
+/**
+ * Small-talk closers and tag questions, as patterns over the normalised
+ * closing clause rather than an exact list — real ones vary in wording far
+ * more than a fixed set can enumerate: "¿vos qué onda?", "¿Y vos cómo vas?",
+ * "¿Qué onda vos?", "¿Cómo va vos, todo en orden?" were all measured and none
+ * of them match each other literally. Each pattern allows for the person's
+ * own name tying it to what came before ("y …") and a trailing "vos" / "por
+ * ahi" / "por alla" / "che" tacked on the end.
+ */
+const RETURN_QUESTION_PATTERNS = [
+  // The listener's own state: "vos", "vos qué onda", "vos cómo andás"...
+  /^(y )?(vos|tu|usted|ustedes)( (que|como))?( (onda|tal|andas|venis|vas|estas|tranqui|todo bien|todo en orden))?$/,
+  /^(y )?del tuyo$/,
+  // The same, opener-first: "cómo va", "qué onda vos", "cómo va vos, todo en orden"...
+  /^(y )?(como|que) (va|vas|andas|venis|onda|tal)( vos)?( todo (bien|en orden))?$/,
+  // Small-talk closers with no reference to "vos" at all.
+  /^(que onda|que pasa|que tal|que se cuenta|que necesitas|todo bien|todo en orden|algo mas)( vos| por ahi| por alla| che)?$/,
+  // Tag questions.
+  /^(no|verdad|viste|eh|dale|ok|right)$/,
+  // English.
+  /^(and )?(what|how) about you$/,
+  /^you$/,
+  // `normalise` turns "what's" into "what s" — the apostrophe becomes a space
+  // like any other punctuation, so the pattern matches that, not the raw text.
+  /^what s up( with you)?$/,
+  /^how are you( doing)?$/,
+  /^anything else$/,
+];
 
 /**
  * Is the question an answer closes on a return question — "¿y vos?", "¿qué
@@ -219,10 +248,13 @@ const RETURN_QUESTIONS = new Set(
  * on the *last* question sentence of the answer (see `closingClause`), so it
  * still catches "Todo bien, ¿vos cómo andás?" and still leaves alone a real
  * question that happens to have a comma in it, like "¿Cuál de las dos, la de
- * Rada o la de Casero?".
+ * Rada o la de Casero?" — which a value-asking word rules out regardless of
+ * shape.
  */
 export function isReturnQuestion(sentence) {
-  return RETURN_QUESTIONS.has(normalise(closingClause(sentence)));
+  const clause = normalise(closingClause(sentence));
+  if (!clause || VALUE_ASKING_WORDS.test(clause)) return false;
+  return RETURN_QUESTION_PATTERNS.some((pattern) => pattern.test(clause));
 }
 
 /**

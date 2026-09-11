@@ -477,12 +477,39 @@ describe('isReturnQuestion', () => {
     assert.equal(isReturnQuestion('…ni el delivery mejora ese remix, ¿no?'), true);
   });
 
+  test('real closers measured in production, worded differently every time', () => {
+    // An exact-phrase list missed every one of these — none matches another
+    // literally, which is why the check is patterns over the closing clause,
+    // not a fixed set.
+    for (const closer of [
+      '¿vos qué onda?',
+      '¿Y vos cómo vas?',
+      '¿Y vos cómo venís?',
+      '¿vos tranqui?',
+      '¿Y del tuyo?',
+      '¿Qué onda vos?',
+      '¿Cómo va vos, todo en orden?',
+      '¿Vos qué tal?',
+      // "Fede" here is a vocative — addressed to Fede, not asking about
+      // someone by that name — and is dropped before matching.
+      '¿Y vos? ¿Qué se cuenta, Fede?',
+    ]) {
+      assert.equal(isReturnQuestion(closer), true, closer);
+    }
+  });
+
   test('a question the bot actually needs answered is not a return question', () => {
     for (const real of [
       '¿Desde qué ciudad lo calculo?',
       '¿Cuál de las dos, la de Rada o la de Casero?',
       '¿Probaste bajar y subir el volumen?',
       '¿Por qué tengo que ver con esto?',
+      // Opens with "vos", like several closers above, but asks for
+      // something — a value-asking word rules out the small-talk reading
+      // regardless of shape.
+      '¿Vos desde qué ciudad?',
+      '¿Vos querés la de Rada o la de Casero?',
+      '¿Cuál de las dos?',
     ]) {
       assert.equal(isReturnQuestion(real), false, real);
     }
