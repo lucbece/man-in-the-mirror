@@ -61,7 +61,8 @@ async function main() {
       sessionManager.leaveAll({ comingBack: true });
       await bot.stop();
       server.close();
-      process.exit(0);
+      // Give the voice connections a beat to close cleanly.
+      setTimeout(() => process.exit(0), 300).unref();
       return;
     }
     shuttingDown = true;
@@ -83,7 +84,8 @@ async function main() {
     sessionManager.leaveAll({ comingBack: true });
     await bot.stop();
     server.close();
-    process.exit(0);
+    // Give the voice connections a beat to close cleanly.
+    setTimeout(() => process.exit(0), 300).unref();
   };
 
   process.on('SIGINT', () => shutdown('SIGINT'));
