@@ -37,8 +37,8 @@ A declaration, in code, because a mode wires tools and cannot be only text:
 {
   name: 'zomboid',
   spoken: ['modo zomboid', 'modo admin', 'zomboid admin'],
-  enterRole: 'kpos',          // who may turn it on
-  actRole: 'kpos',            // who may run the verbs that change something
+  enterRole: 'admins',        // who may turn it on
+  actRole: 'admins',          // who may run the verbs that change something
   prompt: <its own rules>,
   keepRoomInstructions: false,
   tools: { zomboid: ['ask', 'status', 'start'] },
@@ -67,9 +67,9 @@ is not slow, it is wrong.
 **Where it lives.** On the voice session, like `quiet`: a mode that survived a
 restart would leave the bot in character with nobody knowing why.
 
-**How it ends.** Explicitly ("salí del modo"), on leaving the channel, and —
-recommended, see the open questions — after a stretch with nothing asked of it,
-with one line to say it is itself again.
+**How it ends.** Explicitly ("salí del modo") or on leaving the channel. A mode
+does not time out on its own — that was tried and removed because a character
+that switches back silently is confusing in a call.
 
 ## What already exists
 
@@ -304,13 +304,14 @@ what tells "off" from "unreachable" from "up".
 
 ## Two permission tiers
 
-**Turning the mode on** is a Discord role: `kpos`. The bot has
+**Turning the mode on** is a Discord role, the admins' role. The bot has
 `requirePermission(guild, askerId, flag, what)` for permission flags; this needs
 the same for a role.
 
 **Acting** is checked per tool call against the asker of that turn, using the
 `turn.askerId` the bot's own tools already use. Anyone in the call may ask "¿cómo
-está el server?"; only a kpo may say "reinicialo" or "prendelo".
+está el server?"; only someone in the admins' role may say "reinicialo" or
+"prendelo".
 
 The asker's sentence is what reaches the VM — never the room transcript. Ten
 friends talking is untrusted input, and an ops agent should not be reading it
@@ -445,26 +446,35 @@ Known limitation, left unsolved: the agent's own session does not remember
 what a late answer said, since it was spoken outside any turn. Someone asking
 a follow-up right after has to be told again, at least for now.
 
-## Open questions for Luc
+## Decisions and open questions
 
-1. **How a mode ends.** Explicit and on leaving the channel are obvious. Should
-   it also time out after a quiet stretch and announce that it is itself again?
-   A bot left serious all night is a bot nobody talks to; a bot that changes
-   character silently is confusing. Recommendation: time out, and say one line.
-2. **The role.** Is `kpos` an existing Discord role, and is it the right set for
-   *acting* on the server, or only for turning the mode on? The two checks are
-   separate so this can change later.
-3. **Read questions open to the room?** "¿cómo está el server?" answered for
-   anyone in the call is useful and harmless. Recommended, but it is a choice.
-4. **Autonomy on the VM.** Does a spoken request get the same latitude as the
-   3 a.m. watchdog — which may restart the server and disable a mod — or less,
-   because the person asking is awake and can be asked back? Recommendation:
-   same rules, read-only by default, every acting run announced in the channel.
-5. **The upgrade to route 2.** Adding a narrow endpoint to `pz-bot` so the
-   mode can start the VM without anyone typing is a change to *that* repo, and
-   it trades a permission check for convenience (see part 2). Worth doing after
-   the first version has been used, and worth not doing if "tirá `/pz start`"
-   turns out to be fine.
+Updated 2026-09-11: 1–3 decided, 4–5 open.
+
+1. **How a mode ends.** Decided 2026-09-10. A mode ends explicitly ("salí del
+   modo") or on leaving the channel. It does not time out on its own. That
+   design was tried, built, and removed: a character that switches back
+   silently is confusing in a call, and a serious character left on overnight
+   costs nothing.
+
+2. **The role.** Decided 2026-09-10. The admins' role exists; the same role
+   gates both turning the mode on (`enterRole`) and acting on the server
+   (`actRole`). The two checks stay separate in the code so they can diverge
+   later.
+
+3. **Read questions open to the room.** Decided as built. Once the mode is on,
+   anyone in the call may ask read-only questions (e.g. "¿cómo está el server?").
+   Only entering the mode and acting on the server are role-gated.
+
+4. **Autonomy on the VM.** Still open. The read key is authorised on the server;
+   the acting key is deliberately not (the server refuses it). Every acting run
+   would be announced in the detail channel. What remains is the owner's call
+   on whether to authorise the acting key at all.
+
+5. **The upgrade to route 2.** Still open. The first version has been in use
+   since 2026-09-11. Adding a narrow endpoint to `pz-bot` so the mode can
+   start the VM without anyone typing is a change to *that* repo, and it trades
+   a permission check for convenience (see part 2). The question is to be
+   revisited after a few weeks of use.
 
 ## What was measured, and when
 
