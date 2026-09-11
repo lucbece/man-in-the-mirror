@@ -32,24 +32,7 @@ should close it, so a package's brief can be its goal plus its entries.
 
 ## High
 
-### Shutdown cuts the bot off mid-sentence instead of letting it finish
-
-`shutdown()` (`src/index.js:42-53`) calls `sessionManager.leaveAll({
-comingBack: true })` before anything else, and `leaveAll` reaches
-`session.destroy()` for every session (`src/voice/manager.js:248-256`
-→ `src/voice/session.js:717-748`), which calls `this.speech?.cancel()` and
-`this.player.stop(true)` unconditionally — there is no check for a sentence
-still queued or playing, and no check for an `ask()` still running for that
-guild. Only after every session is torn down does it `await bot.stop()`, and
-regardless of what that left in flight, `setTimeout(() => process.exit(0),
-300).unref()` force-exits 300 ms later — the comment above it, "give the
-voice connections a beat to close cleanly," describes a wait that nothing
-upstream of it was designed to need, since the speech was already cancelled
-before the beat starts. A deploy that lands while the bot is mid-answer
-therefore cuts it off mid-word every time, not on some rare edge.
-
-Package: WP3
-
+Nothing open.
 
 ## Medium
 
