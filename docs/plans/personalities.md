@@ -37,8 +37,8 @@ A declaration, in code, because a mode wires tools and cannot be only text:
 {
   name: 'zomboid',
   spoken: ['modo zomboid', 'modo admin', 'zomboid admin'],
-  enterRole: 'kpos',          // who may turn it on
-  actRole: 'kpos',            // who may run the verbs that change something
+  enterRole: 'admins',        // who may turn it on
+  actRole: 'admins',          // who may run the verbs that change something
   prompt: <its own rules>,
   keepRoomInstructions: false,
   tools: { zomboid: ['ask', 'status', 'start'] },
