@@ -36,27 +36,6 @@ Nothing open.
 
 ## Medium
 
-### A rejected Discord token still reports healthy
-
-`#start` (`src/bot/index.js:86-143`) catches a failed `client.login(token)` —
-a bad or revoked token throws discord.js's `TokenInvalid`, "An invalid token
-was provided." — and sets `this.state = 'error'` via `setState('error',
-err.message)` (`bot/index.js:139`); the only other trace is the
-`console.error` in the same `catch` (`bot/index.js:135`). `GET /api/state`
-(`src/web/server.js:63-74`) reports that state faithfully in its JSON body,
-but the container `HEALTHCHECK` in `Dockerfile` and the `healthcheck:` in
-`compose.yaml` both just fetch that URL and check `r.ok` — the HTTP status,
-which is 200 whether `bot.status().state` is `'ready'` or `'error'`. The
-Dockerfile says as much on purpose ("'healthy' means 'the process serves',
-not 'logged in to Discord'. Login problems show in the log, not here"), which
-is a fair simplification for a first boot with an obviously wrong token —
-but it applies just as much to a token revoked six months into a deploy, and
-then nothing watching the container, only someone reading its log, can tell
-the bot went from `ready` to `error` and stayed there.
-
-Package: WP6
-
-
 ### Transcription can lag by tens of seconds during music
 
 Seen 2026-09-04 while an album played: `heard 27.0s` on a turn, against the
