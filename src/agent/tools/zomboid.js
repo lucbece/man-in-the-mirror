@@ -148,31 +148,70 @@ export const QUICK_ANSWER_MS = 20_000;
 export const lateAnswers = new EventEmitter();
 
 /**
- * Turn an ssh failure into the one sentence the room should hear.
+ * Which of the named failure states an ssh rejection is.
  *
- * Pulled out of the on-time path so a late failure says exactly what an
- * on-time one would have. Three named states — KeyRefused, DoorMissing, and
- * the machine being asleep, which is the normal state most of the day by
- * design and the reason "I could not reach the server" would be a lie most
- * evenings — told apart from a fault by the cheap A2S probe rather than by
- * the failure of the expensive call. Anything else keeps whatever the call
- * itself said.
+ * Pulled out of the on-time path so a late failure is told apart the same
+ * way an on-time one would have been. Three named states — KeyRefused,
+ * DoorMissing, and the machine being asleep, which is the normal state most
+ * of the day by design and the reason "I could not reach the server" would
+ * be a lie most evenings — told apart from a fault by the cheap A2S probe
+ * rather than by the failure of the expensive call. `'other'` is everything
+ * else, which the two callers below handle differently: the on-time path
+ * still has a model to hand the original error to, the late path does not.
  */
-async function explainAskFailure(err, { act } = {}) {
-  if (err instanceof KeyRefused) {
-    return act
-      ? 'the server lets me look but has not been told to let me change anything — say that in one sentence, and that somebody with access has to allow it'
-      : 'the server did not accept my key — say that in one sentence';
-  }
-  if (err instanceof DoorMissing) {
-    return 'I can reach the server but the part of it that answers questions is not installed yet — say that in one sentence';
-  }
+async function classifyAskFailure(err) {
+  if (err instanceof KeyRefused) return 'keyRefused';
+  if (err instanceof DoorMissing) return 'doorMissing';
   const at = splitAddress(config.get('zomboidAddress'));
   const asleep = at ? await query(at).then(() => false, () => true) : true;
-  if (asleep) {
-    return 'the machine is not up, which is normal — say so and that whoever wants it can type /pz start';
+  return asleep ? 'asleep' : 'other';
+}
+
+/**
+ * The instruction the on-time path hands the model for a named state.
+ *
+ * `null` for `'other'` on purpose: that case is not a sentence to say, it is
+ * the original error, rethrown as before so `discordTool`'s own handling of
+ * a non-`DiscordToolError` (see wrappers.js) applies exactly as it always
+ * did — this function has nothing useful to add there.
+ */
+function askFailureInstruction(state, { act } = {}) {
+  switch (state) {
+    case 'keyRefused':
+      return act
+        ? 'the server lets me look but has not been told to let me change anything — say that in one sentence, and that somebody with access has to allow it'
+        : 'the server did not accept my key — say that in one sentence';
+    case 'doorMissing':
+      return 'I can reach the server but the part of it that answers questions is not installed yet — say that in one sentence';
+    case 'asleep':
+      return 'the machine is not up, which is normal — say so and that whoever wants it can type /pz start';
+    default:
+      return null;
   }
-  return err instanceof DiscordToolError ? err.message : `Discord refused: ${err.message}`;
+}
+
+/**
+ * The sentence the late path speaks directly for a failure.
+ *
+ * `askFailureInstruction`'s strings are not it — those are written to be
+ * rewritten by the model ("say that in one sentence"), and the late path has
+ * no model in the loop to do the rewriting; said verbatim they would come out
+ * of the bot's mouth as stage directions. This is the room-facing sentence
+ * itself, in the room's language.
+ */
+function askFailureSpoken(state, { act } = {}) {
+  switch (state) {
+    case 'keyRefused':
+      return act
+        ? 'El servidor me deja mirar, pero no le dijeron que me deje cambiar nada.'
+        : 'El servidor no aceptó mi llave.';
+    case 'doorMissing':
+      return 'Llego al servidor, pero la parte que responde preguntas no está instalada.';
+    case 'asleep':
+      return 'La máquina está apagada, que es lo normal; cualquiera la prende con /pz start.';
+    default:
+      return 'No pude conseguir la respuesta del servidor.';
+  }
 }
 
 /**
@@ -398,12 +437,17 @@ export function zomboidTools(turn, deps = {}, mode = null) {
           (err) => ({ ok: false, err }),
         );
 
+        // The handle is kept and cleared the moment the race is decided
+        // either way — otherwise a question the door answers quickly still
+        // leaves a stray quickAnswerMs timer running for nothing.
+        let raceTimer;
         const quick = await Promise.race([
           outcome,
           new Promise((resolve) => {
-            setTimeout(() => resolve(null), quickAnswerMs);
+            raceTimer = setTimeout(() => resolve(null), quickAnswerMs);
           }),
         ]);
+        clearTimeout(raceTimer);
 
         if (quick === null) {
           // Not back in time. The turn ends now — see QUICK_ANSWER_MS for
@@ -427,7 +471,7 @@ export function zomboidTools(turn, deps = {}, mode = null) {
               }
               lateAnswers.emit('late', {
                 guildId: turn.guildId,
-                spoken: await explainAskFailure(result.err, { act }),
+                spoken: askFailureSpoken(await classifyAskFailure(result.err), { act }),
                 detail: '',
                 question,
               });
@@ -447,7 +491,12 @@ export function zomboidTools(turn, deps = {}, mode = null) {
         }
 
         if (!quick.ok) {
-          throw new DiscordToolError(await explainAskFailure(quick.err, { act }));
+          const instruction = askFailureInstruction(await classifyAskFailure(quick.err), { act });
+          // 'other': nothing named here applies, so the original error goes
+          // up exactly as it did before this tool learned to wait — through
+          // `discordTool`'s own handling of a non-DiscordToolError.
+          if (!instruction) throw quick.err;
+          throw new DiscordToolError(instruction);
         }
 
         const { spoken, wrote } = await deliverAnswer(guild, mode, turn, quick.answer, act);

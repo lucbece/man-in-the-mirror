@@ -563,7 +563,10 @@ describe('a door that takes its time', () => {
     assert.equal(lateFired, false);
   });
 
-  test('a late failure says exactly what the on-time path would have said', async () => {
+  test('a late KeyRefused is a Spanish sentence, not the model instruction verbatim', async () => {
+    // There is no model in the loop for a late answer to rewrite "say that
+    // in one sentence" into something sayable — see askFailureSpoken. Said
+    // verbatim, that instruction text would come out of the bot's mouth.
     const late = nextLate();
     const tools = zomboidTools(turnFor('kpo'), {
       keys: { read: '/dev/null', act: '/dev/null' },
@@ -576,10 +579,26 @@ describe('a door that takes its time', () => {
 
     await toolNamed(tools, 'zomboid_ask').handler({ question: '¿anda?' });
     const payload = await late;
-    // Same sentence `explainAskFailure` gives the on-time path for a
-    // read-only KeyRefused — see "a key the server will not take" below.
-    assert.match(payload.spoken, /did not accept my key/i);
+    assert.match(payload.spoken, /no aceptó mi llave/i);
+    assert.doesNotMatch(payload.spoken, /say that|say so|say in one sentence/i, 'not the model-facing instruction');
     assert.doesNotMatch(payload.spoken, /255|publickey/i);
+  });
+
+  test('the same failure, acting: a different Spanish sentence, still no instruction text', async () => {
+    const late = nextLate();
+    const tools = zomboidTools(turnFor('kpo'), {
+      keys: { read: '/dev/null', act: '/dev/null' },
+      quickAnswerMs: 10,
+      ask: async () => {
+        await new Promise((resolve) => { setTimeout(resolve, 50); });
+        throw new KeyRefused('the server did not accept this key');
+      },
+    }, modeByName('faro'));
+
+    await toolNamed(tools, 'zomboid_ask').handler({ question: 'reinicialo', act: true });
+    const payload = await late;
+    assert.match(payload.spoken, /no le dijeron que me deje cambiar/i);
+    assert.doesNotMatch(payload.spoken, /say that|say so|say in one sentence/i);
   });
 });
 
