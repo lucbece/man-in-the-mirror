@@ -57,17 +57,6 @@ the bot went from `ready` to `error` and stayed there.
 Package: WP6
 
 
-### Transcription can lag by tens of seconds during music
-
-Seen 2026-09-04 while an album played: `heard 27.0s` on a turn, against the
-usual 1–3 s. Whether the eager queue was starved by the resolve of the next
-track, by the API, or by the clip gate's decode is not known; the `[stt]`
-lines (each sent clip, and the per-minute tally of dropped ones) carry the
-timings needed to tell.
-
-Package: WP2
-
-
 ### Running the tests rewrites the developer's real configuration
 
 `config` is one object built at import time, and every `update()` persists to
