@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
 import test, { describe, beforeEach } from 'node:test';
 
-import { CascadeBrain, FAST_PROMPT_EXTRA, resetCascade, withoutToolName } from '../src/agent/cascade.js';
+import {
+  CascadeBrain,
+  FAST_PROMPT_EXTRA,
+  NO_CREDIT_NOTICE,
+  NO_CREDIT_NOTICE_INTERVAL_MS,
+  resetCascade,
+  withoutToolName,
+} from '../src/agent/cascade.js';
 
 /** A fast leg that answers, or defers, without an API call. */
 function fast(result) {
@@ -461,5 +468,119 @@ describe('commands carried out without a model', () => {
     });
     await b.answer(ask('espejo, qué tema es este'));
     assert.equal(fastRan, true);
+  });
+});
+
+describe('when the account is out of credit', () => {
+  beforeEach(resetCascade);
+
+  /** What agent-brain.js's AgentSession rejects with for these two failures. */
+  function creditError(code) {
+    const err = new Error(`fake ${code} failure`);
+    err.code = code;
+    return err;
+  }
+
+  function failingAgent(code) {
+    return {
+      label: 'fake agent',
+      async answer() {
+        throw creditError(code);
+      },
+    };
+  }
+
+  const escalating = () => fast({ said: '', escalate: true, reason: 'needs a tool' });
+
+  test('a dead turn gets the notice, spoken through onSentence and returned as the text', async () => {
+    // 2026-09-10: 22 of 23 agent turns that day were dead ones, and the room
+    // heard nothing — not even an apology — while people asked the same
+    // question up to five times.
+    const spoken = [];
+    const text = await brain({ agent: failingAgent('dead'), runFast: escalating() }).answer(
+      ask('poné algo de Spinetta'),
+      { onSentence: (s) => spoken.push(s) },
+    );
+
+    assert.equal(text, NO_CREDIT_NOTICE);
+    assert.deepEqual(spoken, [NO_CREDIT_NOTICE], 'said once, through the normal sentence path');
+  });
+
+  test('an API error gets the same notice', async () => {
+    const text = await brain({ agent: failingAgent('api'), runFast: escalating() }).answer(ask('mové a Fede a general'));
+    assert.equal(text, NO_CREDIT_NOTICE);
+  });
+
+  test('a dead turn does not clear the asides it never actually delivered', async () => {
+    // The hand-over failed before the agent ever saw them, so — unlike a
+    // hand-over that succeeds — they must still be owed once credit is back.
+    const calls = [];
+    const agent = {
+      label: 'fake agent',
+      async answer(context) {
+        calls.push(context);
+        if (calls.length === 1) throw creditError('dead');
+        return 'ok';
+      },
+    };
+
+    // Answered by the fast leg, so it is owed to the agent until the agent
+    // actually hears it.
+    await brain({ agent, runFast: fast({ said: 'Rojo.' }) }).answer(ask('de qué color?'));
+
+    const dead = await brain({ agent, runFast: escalating() }).answer(ask('y guardá eso'));
+    assert.equal(dead, NO_CREDIT_NOTICE);
+    assert.deepEqual(
+      calls[0].asides,
+      [{ question: 'de qué color?', answer: 'Rojo.' }],
+      'offered to the failed hand-over',
+    );
+
+    await brain({ agent, runFast: escalating() }).answer(ask('otra vez'));
+    assert.deepEqual(
+      calls[1].asides,
+      [{ question: 'de qué color?', answer: 'Rojo.' }],
+      'still owed on the next hand-over, since the first one never actually got it',
+    );
+  });
+
+  test('a second dead turn inside the window stays silent: the failure rethrows as before', async () => {
+    const agent = failingAgent('dead');
+    await brain({ agent, runFast: escalating() }).answer(ask('primera'));
+
+    // The room already heard it; asking again a moment later must not repeat
+    // the sentence — it has to fail the ordinary way instead, the one
+    // src/agent/index.js already turns into "me trabé" and the manager logs
+    // as "could not answer".
+    await assert.rejects(
+      brain({ agent, runFast: escalating() }).answer(ask('segunda')),
+      /fake dead failure/,
+    );
+  });
+
+  test('speaks again once the window has passed', async (t) => {
+    t.mock.timers.enable({ apis: ['Date'] });
+    const agent = failingAgent('dead');
+
+    const first = await brain({ agent, runFast: escalating() }).answer(ask('q1'));
+    assert.equal(first, NO_CREDIT_NOTICE);
+
+    t.mock.timers.tick(NO_CREDIT_NOTICE_INTERVAL_MS + 1);
+
+    const second = await brain({ agent, runFast: escalating() }).answer(ask('q2'));
+    assert.equal(second, NO_CREDIT_NOTICE, 'the window passed, so it is said again');
+  });
+
+  test('a failure of any other kind is unaffected — no notice, straight rethrow', async () => {
+    const agent = {
+      label: 'a',
+      async answer() {
+        throw new Error('The agent took over two minutes — gave up on that one.');
+      },
+    };
+    await assert.rejects(
+      brain({ agent, runFast: escalating() }).answer(ask('q')),
+      /gave up on that one/,
+    );
   });
 });

@@ -234,9 +234,30 @@ export const withoutToolName = (text) => String(text ?? '').replace(LEAKED_TOOL_
 const state = new Map();
 
 function stateFor(guildId) {
-  if (!state.has(guildId)) state.set(guildId, { lastUsedTools: false, spoken: [], owed: [] });
+  if (!state.has(guildId)) {
+    // -Infinity rather than 0: "never said it yet" has to outlast any
+    // window check on its own, without assuming Date.now() is comfortably
+    // past epoch zero — true of the real clock, not of a mocked one.
+    state.set(guildId, { lastUsedTools: false, spoken: [], owed: [], apiNoticeAt: -Infinity });
+  }
   return state.get(guildId);
 }
+
+/**
+ * How long a "no credit" notice, once spoken, keeps the room from hearing it
+ * again. Measured 2026-09-06..10: an exhausted account produced silence, not
+ * an error — an API error remembered as something the bot had said, then a
+ * run of $0 "successes" with no text and no tool use, 22 of 23 agent turns
+ * on 2026-09-10 alone. The fix is not to say nothing and not to say this on
+ * every single turn either — a dead key does not clear itself between
+ * questions, and repeating the sentence is its own kind of broken. Exported
+ * so a test can shrink the window rather than wait ten real minutes.
+ */
+export const NO_CREDIT_NOTICE_INTERVAL_MS = 10 * 60_000;
+
+/** Spoken in Spanish because the room speaks Spanish. */
+export const NO_CREDIT_NOTICE =
+  'No puedo hacer eso ahora: me quedé sin crédito para pensar. Avisale a quien me administra.';
 
 function remember(memory, question, answer, { byAgent }) {
   if (!answer) return;
@@ -403,24 +424,53 @@ export class CascadeBrain {
     const asides = memory.owed.slice();
 
     let usedTools = false;
-    const text = await this.agent.answer(
-      { ...context, asides },
-      {
-        ...handlers,
-        // The agent has no idea anything has been said yet, so its first tool
-        // call would ask for the canned "dame un segundo" clip on top of the
-        // line the fast leg just spoke. Two fillers back to back is worse than
-        // none, and the one already said is better — it is the bot's own
-        // voice, in the right language, about this question.
-        onSearchStart: context.alreadySaid ? undefined : handlers.onSearchStart,
-        onToolUse: (name) => {
-          usedTools = true;
-          handlers.onToolUse?.(name);
+    let text;
+    // False on the notice path below, where the agent never actually saw
+    // `asides` — see the splice beneath the try/catch.
+    let handedOver = true;
+    try {
+      text = await this.agent.answer(
+        { ...context, asides },
+        {
+          ...handlers,
+          // The agent has no idea anything has been said yet, so its first tool
+          // call would ask for the canned "dame un segundo" clip on top of the
+          // line the fast leg just spoke. Two fillers back to back is worse than
+          // none, and the one already said is better — it is the bot's own
+          // voice, in the right language, about this question.
+          onSearchStart: context.alreadySaid ? undefined : handlers.onSearchStart,
+          onToolUse: (name) => {
+            usedTools = true;
+            handlers.onToolUse?.(name);
+          },
         },
-      },
-    );
-    memory.owed.splice(0, asides.length);
-    memory.lastUsedTools = usedTools;
+      );
+    } catch (err) {
+      // agent-brain.js's AgentSession rejects with code 'api' (the model
+      // reported an error — a rejected key, no credit) or 'dead' (a success
+      // that produced nothing) for exactly the two failures that used to
+      // reach the room as unexplained silence. Told apart from an ordinary
+      // failure — a timeout, a wedged tool — which still rethrows below and
+      // reaches the room the way it always did (the manager's own "could not
+      // answer"). A dead key does not fix itself between turns, so the
+      // notice plays once per window rather than once per question.
+      if ((err?.code === 'api' || err?.code === 'dead') && Date.now() - memory.apiNoticeAt > NO_CREDIT_NOTICE_INTERVAL_MS) {
+        memory.apiNoticeAt = Date.now();
+        handlers.onSentence?.(NO_CREDIT_NOTICE);
+        text = NO_CREDIT_NOTICE;
+        handedOver = false;
+      } else {
+        throw err;
+      }
+    }
+    if (handedOver) {
+      memory.owed.splice(0, asides.length);
+      memory.lastUsedTools = usedTools;
+    } else {
+      // No tool ran on this turn either, so the routing signal is left
+      // false rather than carrying over whatever an earlier turn set it to.
+      memory.lastUsedTools = false;
+    }
     remember(memory, context.question, text, { byAgent: true });
     return text;
   }

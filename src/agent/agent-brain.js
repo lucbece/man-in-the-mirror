@@ -102,7 +102,21 @@ You can also act on the voice call: move people between channels, disconnect the
 - Use who_is_in_voice when you're unsure who is around or how a name is spelled.
 - Say what you did in one short sentence. Don't ask for confirmation first — the person asking already has the permission, and a call is not a place for an approval dialogue.`;
 
-class AgentError extends Error {}
+class AgentError extends Error {
+  /**
+   * `code` tells a caller what kind of failure this is without parsing the
+   * message: `'api'` for an error the model itself reported (a rejected key,
+   * no credit), `'dead'` for a success that produced nothing at all.
+   * `apiError` is only set for `'api'` — the SDK's own classification
+   * (`billing_error`, `rate_limit`, …), kept alongside the message rather
+   * than only inside it.
+   */
+  constructor(message, { code, apiError } = {}) {
+    super(message);
+    if (code) this.code = code;
+    if (apiError) this.apiError = apiError;
+  }
+}
 
 /**
  * The live Discord client, or null.
@@ -152,6 +166,15 @@ export class AgentSession {
     this.startedAt = Date.now();
     this.spentUsd = 0;
     this.answers = 0;
+    // Consecutive turns that ended as an API error or a dead turn (see
+    // #recordFailure) — reset the moment a turn actually answers. What
+    // agentSessionStatus reports so the panel can show a run of silence
+    // that never once surfaced as an error message anywhere else. Measured
+    // 2026-09-10: 22 of 23 agent turns that day were dead ones in a row,
+    // and nothing before this counted them.
+    this.consecutiveFailures = 0;
+    this.lastErrorCode = null;
+    this.lastErrorAt = null;
 
     this.stream = run({ prompt: this.#input(), options });
     this.#pump();
@@ -204,6 +227,26 @@ export class AgentSession {
             }
           }
         } else if (message.type === 'assistant') {
+          // An API error arrives dressed as an ordinary assistant message.
+          // Measured 2026-09-09 19:36–19:38, the account out of credit: the
+          // SDK delivered it as text — "Credit balance is too low" — with
+          // message.error: 'billing_error', and the result that followed
+          // still reported subtype 'success'. Caught here, before anything
+          // below gets a chance to treat the text as an answer: the flush a
+          // few lines down is the same one every ordinary message gets, and
+          // with includePartialMessages on this text streamed as
+          // content_block_delta events like any other, so it can already be
+          // sitting in the splitter waiting for that flush. Dropped rather
+          // than spoken, and the block loop below — which would otherwise
+          // store it as turn.lastText, the fallback the result resolves
+          // with on error_max_turns — is skipped entirely for this message.
+          if (message.error) {
+            if (this.turn) {
+              this.turn.splitter.flush(); // discarded, not said
+              this.turn.apiError = message.error;
+            }
+            continue;
+          }
           // A finished message is a finished thought, so anything still held
           // back gets said now. Without this the last sentence of one message
           // and the first of the next are glued together — "dame un segundo
@@ -217,6 +260,7 @@ export class AgentSession {
             if (block.type === 'tool_use') {
               trace('TOOL', block.name, block.input);
               this.turn?.onToolUse?.(block.name);
+              if (this.turn) this.turn.usedTool = true;
             }
             // Kept as the fallback answer: on error_max_turns the result
             // message carries no text, but the last thing it said usually
@@ -232,6 +276,11 @@ export class AgentSession {
             `${message.num_turns} round(s) · ${((message.duration_ms ?? 0) / 1000).toFixed(1)}s · ` +
               `$${(message.total_cost_usd ?? 0).toFixed(4)} so far this session`,
           );
+          // Captured before the update below, so a turn's own cost delta —
+          // what the dead-turn check needs — is "what this result added",
+          // not the running total. 0 on the very first result, same as
+          // spentUsd starts.
+          const previousSpendUsd = this.spentUsd;
           this.spentUsd = message.total_cost_usd ?? this.spentUsd;
           // The tail of a turn that timed out and was interrupted: nobody is
           // waiting for it, and the next turn must not receive it. Told apart
@@ -252,9 +301,36 @@ export class AgentSession {
           const tail = turn.splitter.flush();
           if (tail) turn.onSentence?.(tail);
           this.answers += 1;
-          if (message.subtype === 'success') {
-            turn.resolve(message.result?.trim() || turn.lastText || '');
+          if (turn.apiError) {
+            // Set on the assistant message above; still true here whatever
+            // subtype this result reports — 2026-09-09 it was 'success',
+            // which is exactly why checking the subtype alone missed it.
+            console.error(
+              `[agent-brain] API error from the model: ${turn.apiError} — check the Anthropic key and credit balance`,
+            );
+            this.#recordFailure('api');
+            turn.reject(new AgentError(`Agent API error: ${turn.apiError}`, { code: 'api', apiError: turn.apiError }));
+          } else if (message.subtype === 'success') {
+            const answer = message.result?.trim() || turn.lastText || '';
+            // 2026-09-10: 22 of 23 agent results that day looked exactly like
+            // this — subtype 'success', one round, no text, no tool use,
+            // $0.0000 so far — and the room heard silence for every request
+            // that needed a tool while the fast leg kept answering the small
+            // talk around it; people repeated themselves up to five times.
+            // A real turn always moves at least one of the three: it says
+            // something, it uses a tool, or the session's cost went up.
+            if (!answer && !turn.usedTool && this.spentUsd - previousSpendUsd <= 0) {
+              console.error(
+                '[agent-brain] dead turn: success with no text, no tools and $0 — the model produced nothing; check credit',
+              );
+              this.#recordFailure('dead');
+              turn.reject(new AgentError('Agent turn produced nothing: no text, no tools, $0 spent.', { code: 'dead' }));
+            } else {
+              this.#recordHealthy();
+              turn.resolve(answer);
+            }
           } else if (message.subtype === 'error_max_turns' && turn.lastText) {
+            this.#recordHealthy();
             turn.resolve(turn.lastText);
           } else {
             const detail = message.errors?.join('; ') || message.subtype;
@@ -298,6 +374,23 @@ export class AgentSession {
     const turn = this.turn;
     this.turn = null;
     turn?.reject(err);
+  }
+
+  /**
+   * An API error or a dead turn — the two kinds that used to reach the room
+   * as silence with nothing in the logs to explain it. Counted consecutively
+   * rather than as a lifetime total, because what matters operationally is
+   * "is this happening right now", not "did it happen once a week ago".
+   */
+  #recordFailure(code) {
+    this.consecutiveFailures += 1;
+    this.lastErrorCode = code;
+    this.lastErrorAt = Date.now();
+  }
+
+  /** Any turn that actually resolved — the run of failures is over. */
+  #recordHealthy() {
+    this.consecutiveFailures = 0;
   }
 
   /** Closed for a reason every later question should hear: a rejected key. */
@@ -344,6 +437,11 @@ export class AgentSession {
         onSentence,
         splitter: new SentenceSplitter(),
         lastText: '',
+        // Set from the assistant message's tool_use blocks / message.error,
+        // and read back when the result arrives — see #pump's 'result'
+        // branch for what a dead turn and an API error are.
+        usedTool: false,
+        apiError: null,
         startedAt: Date.now(),
         arrived: () => clearTimeout(firstBlock),
         resolve: (v) => {
@@ -616,6 +714,14 @@ export function agentSessionStatus(guildId) {
     spentUsd: session.spentUsd,
     answering: Boolean(session.turn),
     tools: session.toolNames ?? [],
+    // The two silent failure modes of 2026-09-06..10 (an API error taken as
+    // an answer, a $0 success with nothing in it), so the panel can show a
+    // run of them even though neither ever produced an error message
+    // anywhere else. 0 / null / null on the OpenAI leg, which doesn't track
+    // these — a session that has never failed this way looks the same.
+    consecutiveFailures: session.consecutiveFailures ?? 0,
+    lastErrorCode: session.lastErrorCode ?? null,
+    lastErrorAt: session.lastErrorAt ?? null,
   };
 }
 

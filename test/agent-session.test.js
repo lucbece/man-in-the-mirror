@@ -70,6 +70,8 @@ const delta = (text) => ({
   event: { type: 'content_block_delta', delta: { type: 'text_delta', text } },
 });
 const assistant = (...content) => ({ type: 'assistant', message: { content } });
+/** An assistant message the SDK has flagged as an API error rather than text the model chose to say. */
+const assistantError = (error, ...content) => ({ type: 'assistant', message: { content }, error });
 const result = (extra) => ({ type: 'result', subtype: 'success', ...extra });
 
 describe('answering', () => {
@@ -148,6 +150,111 @@ describe('answering', () => {
 
     assert.equal(s.spentUsd, 0.042);
     assert.equal(s.answers, 1);
+  });
+});
+
+describe('a credit-exhausted account, measured 2026-09-06..10', () => {
+  test('an API error dressed as text is never spoken and rejects the turn with code "api"', async (t) => {
+    // 2026-09-09 19:36–19:38: the SDK delivered the billing failure as an
+    // assistant message whose text was "Credit balance is too low", then a
+    // result with subtype 'success'. It streamed like any other text too —
+    // it is sitting in the splitter, unflushed, when the assistant message
+    // naming it an error arrives — so both the flush that message would
+    // normally get and the fallback lastText it would normally leave behind
+    // have to be guarded, not just the subtype the result reports.
+    const sdk = fakeSdk();
+    const s = session(sdk);
+    t.after(() => s.end());
+
+    const spoken = [];
+    const failed = s.ask('q', { onSentence: (c) => spoken.push(c) }).then(() => null, (err) => err);
+
+    await sdk.emit(delta('Credit balance is too low'));
+    await sdk.emit(assistantError('billing_error', { type: 'text', text: 'Credit balance is too low' }));
+    await sdk.emit(result({ result: 'Credit balance is too low' }));
+
+    const err = await failed;
+    assert.equal(err.code, 'api');
+    assert.equal(err.apiError, 'billing_error');
+    assert.deepEqual(spoken, [], 'the error text must never reach onSentence');
+  });
+
+  test('a success with no text, no tool use and no new spend is a dead turn', async (t) => {
+    // 2026-09-10: 22 of 23 agent results that day were exactly this —
+    // subtype 'success', no text, no tool use, $0.0000 so far — and the
+    // room heard silence for every request that needed a tool.
+    const sdk = fakeSdk();
+    const s = session(sdk);
+    t.after(() => s.end());
+
+    const failed = s.ask('q').then(() => null, (err) => err);
+    await sdk.emit(result({ result: '', total_cost_usd: 0 }));
+
+    const err = await failed;
+    assert.equal(err.code, 'dead');
+  });
+
+  test('unchanged cost from an earlier nonzero spend is still a dead turn', async (t) => {
+    const sdk = fakeSdk();
+    const s = session(sdk);
+    t.after(() => s.end());
+
+    const first = s.ask('q1');
+    await sdk.emit(result({ result: 'ok', total_cost_usd: 0.01 }));
+    await first;
+
+    const failed = s.ask('q2').then(() => null, (err) => err);
+    await sdk.emit(result({ result: '', total_cost_usd: 0.01 })); // unchanged from the previous result
+    assert.equal((await failed).code, 'dead');
+  });
+
+  test('a success with a cost delta still resolves, even with no text and no tools', async (t) => {
+    // The one thing that must not become collateral damage: a real turn
+    // that spent something is left alone, whatever it did or didn't say.
+    const sdk = fakeSdk();
+    const s = session(sdk);
+    t.after(() => s.end());
+
+    const answer = s.ask('q');
+    await sdk.emit(result({ result: '', total_cost_usd: 0.003 }));
+
+    assert.equal(await answer, '');
+  });
+
+  test('text still resolves normally alongside a cost delta', async (t) => {
+    const sdk = fakeSdk();
+    const s = session(sdk);
+    t.after(() => s.end());
+
+    const answer = s.ask('q');
+    await sdk.emit(result({ result: 'Tres archivos.', total_cost_usd: 0.003 }));
+
+    assert.equal(await answer, 'Tres archivos.');
+  });
+
+  test('consecutive failures of these two kinds are counted, and a healthy turn resets it', async (t) => {
+    const sdk = fakeSdk();
+    const s = session(sdk);
+    t.after(() => s.end());
+
+    const first = s.ask('q1').catch(() => {});
+    await sdk.emit(result({ result: '', total_cost_usd: 0 }));
+    await first;
+    assert.equal(s.consecutiveFailures, 1);
+    assert.equal(s.lastErrorCode, 'dead');
+
+    const second = s.ask('q2').catch(() => {});
+    await sdk.emit(assistantError('rate_limit'));
+    await sdk.emit(result({ result: '' }));
+    await second;
+    assert.equal(s.consecutiveFailures, 2);
+    assert.equal(s.lastErrorCode, 'api');
+
+    const third = s.ask('q3');
+    await sdk.emit(result({ result: 'ok', total_cost_usd: 0.01 }));
+    await third;
+    assert.equal(s.consecutiveFailures, 0, 'a healthy turn resets the run');
+    assert.equal(s.lastErrorCode, 'api', 'but the last error itself is not erased by recovering');
   });
 });
 
