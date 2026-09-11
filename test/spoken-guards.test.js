@@ -169,6 +169,25 @@ describe('an English answer after a language request is not reasoning', () => {
       );
     }
   });
+
+  test('nor does it drop ordinary English lines that merely echo the broadened wording', () => {
+    // Each of these was a plausible spoken answer that the first, wider draft
+    // of these patterns would have caught: "let me check", "the speaker is",
+    // "they're talking about" are all things a normal reply says. Narrowed so
+    // only the actual leaks' wording ("i need to work out", "the user is",
+    // "is actually asking") trips them.
+    for (const said of [
+      'Let me check the server.',
+      'The speaker is muted, Fede.',
+      "They're talking about the server, Fede.",
+    ]) {
+      assert.equal(
+        looksLikeLeakedReasoning(said, askedForEnglish, { languageRequested: true }),
+        false,
+        said,
+      );
+    }
+  });
 });
 
 describe('mentionsLanguageSwitch', () => {

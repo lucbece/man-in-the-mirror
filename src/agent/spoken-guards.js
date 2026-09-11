@@ -86,10 +86,11 @@ const DELIBERATION = [
   /\b(me quedo|voy a quedarme|mejor me quedo) (callad[oa]|en silencio)\b/i,
   /\bno (hay|es) (una )?pregunta (dirigida|para) (a )?m[ií]\b/i,
   /\bno me (est[aá]n?|esta) (preguntando|pidiendo) nada\b/i,
-  /\b(i need to|let me) (work out|figure out|think about|check|look at)\b/i,
+  /\bi need to (work out|figure out)\b/i,
+  /\blet me (work out|figure out) what\b/i,
   /\blooking at the (context|transcript|conversation)\b/i,
-  /\bthe (user|speaker|person) (is|was|seems|wants|asked)\b/i,
-  /\bthey('re| are) (asking|talking about|saying)\b/i,
+  /\bthe user (is|was|seems|wants|asked)\b/i,
+  /\b(is|are|was) (actually|really) asking\b/i,
   /\b(there('s| is) )?no (clear|direct|actual) question\b/i,
   /\bwithout a question directed at me\b/i,
 ];
@@ -119,7 +120,7 @@ export function mentionsLanguageSwitch(text) {
   const normalized = String(text ?? '')
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '');
+    .replace(/[\u0300-\u036f]/g, '');
   return LANGUAGE_SWITCH_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
