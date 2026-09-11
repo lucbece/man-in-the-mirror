@@ -4,6 +4,7 @@ import test, { describe } from 'node:test';
 import {
   isStageDirection,
   looksLikeLeakedReasoning,
+  mentionsLanguageSwitch,
   withoutOpeningAside,
 } from '../src/agent/spoken-guards.js';
 
@@ -107,5 +108,119 @@ describe('reasoning read out loud', () => {
     // would break the bot for anyone who speaks it.
     const said = 'I don\'t think there is an actual question in what they said.';
     assert.equal(looksLikeLeakedReasoning(said, 'mirror, what do you think about that?'), false);
+  });
+});
+
+/**
+ * The other side of the same guard: measured over five days of production
+ * logs (2026-09-06..10), the language rule above dropped 19 sentences, all
+ * legitimate, zero real leaks. Every one was an English answer given after
+ * someone in the call had asked, in Spanish, for the bot to switch — so
+ * `languageRequested` exists to tell the guard that's what happened.
+ */
+describe('an English answer after a language request is not reasoning', () => {
+  const askedForEnglish = 'Espejo, ¿podemos hablar en inglés de ahora en más, por favor?';
+
+  // Nicknames replaced with placeholders (Vero, Fede, Pato, Nico), as in the
+  // rest of this file. Verbatim from the logs otherwise.
+  const legitimateReplies = [
+    "Sure thing Fede, from now on I'll speak in English.",
+    "Alright, from now on, I'll speak in English, Fede.",
+    'I can speak in English if you want.',
+    "Got it, I'll stick to English — you have my word, Fede.",
+    'All good, Fede. Just chilling here, ready for whatever you need.',
+    "Right now I'm just vibing with you all, Fede.",
+    'Sticking to English only from here on, promise.',
+    'Just let me know if you wanna go back to Spanish later.',
+    "Sure, from now on, let's switch to English, just like Fede asked.",
+  ];
+
+  test('every one of them survives once the caller says the language was requested', () => {
+    for (const line of legitimateReplies) {
+      assert.equal(
+        looksLikeLeakedReasoning(line, askedForEnglish, { languageRequested: true }),
+        false,
+        line,
+      );
+    }
+  });
+
+  test('the same lines were dropped without the flag — the bug this fixes', () => {
+    for (const line of legitimateReplies) {
+      assert.equal(looksLikeLeakedReasoning(line, askedForEnglish), true, line);
+    }
+  });
+
+  test('the flag does not open the door for actual reasoning', () => {
+    // languageRequested only skips the language arithmetic. DELIBERATION is
+    // checked first and still applies.
+    const openers = [
+      'I need to work out what fede is actually asking here.',
+      'Looking at the context:',
+      'I\'m only hearing "¡No!" without a question directed at me. ' +
+        "I'll stay quiet and let the chat continue.",
+    ];
+    for (const said of openers) {
+      assert.equal(looksLikeLeakedReasoning(said, askedForEnglish), true, said);
+      assert.equal(
+        looksLikeLeakedReasoning(said, askedForEnglish, { languageRequested: true }),
+        true,
+        said,
+      );
+    }
+  });
+
+  test('nor does it drop ordinary English lines that merely echo the broadened wording', () => {
+    // Each of these was a plausible spoken answer that the first, wider draft
+    // of these patterns would have caught: "let me check", "the speaker is",
+    // "they're talking about" are all things a normal reply says. Narrowed so
+    // only the actual leaks' wording ("i need to work out", "the user is",
+    // "is actually asking") trips them.
+    for (const said of [
+      'Let me check the server.',
+      'The speaker is muted, Fede.',
+      "They're talking about the server, Fede.",
+    ]) {
+      assert.equal(
+        looksLikeLeakedReasoning(said, askedForEnglish, { languageRequested: true }),
+        false,
+        said,
+      );
+    }
+  });
+});
+
+describe('mentionsLanguageSwitch', () => {
+  test('the actual requests heard in the channel', () => {
+    for (const said of [
+      'Espejo, ¿podemos hablar en inglés de ahora en más, por favor?',
+      'Espejo, cambiá tu idioma.',
+    ]) {
+      assert.equal(mentionsLanguageSwitch(said), true, said);
+    }
+  });
+
+  test('asking for or about a language, in either language, accents or not', () => {
+    for (const said of [
+      'can you speak in english from now on?',
+      'hablemos en espanol de nuevo',
+      'en castellano, por favor',
+      'what language are you using?',
+      'ese es tu idioma nativo?',
+      'is spanish your first language?',
+    ]) {
+      assert.equal(mentionsLanguageSwitch(said), true, said);
+    }
+  });
+
+  test('unrelated Spanish and English sentences are left alone', () => {
+    for (const said of [
+      '¿Qué hacés, espejo?',
+      'Está sonando Californication, del disco que se llama igual.',
+      'what time is it',
+      'Sticking to this only from here on, promise.',
+    ]) {
+      assert.equal(mentionsLanguageSwitch(said), false, said);
+    }
   });
 });
