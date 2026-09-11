@@ -4,7 +4,7 @@ import test, { after, before, beforeEach, describe } from 'node:test';
 import { DEFAULT_PERSONA, characters, describeModes, findMode, looksLikeModeCommand, modeByName, modePrompt } from '../src/agent/modes.js';
 import { VOICES } from '../src/config.js';
 import { botTools } from '../src/agent/tools/index.js';
-import { DoorMissing, KeyRefused, describeServer, describeSilence, splitAddress, sshArgs, zomboidTools } from '../src/agent/tools/zomboid.js';
+import { DoorMissing, KeyRefused, describeServer, describeSilence, lateAnswers, splitAddress, sshArgs, zomboidTools } from '../src/agent/tools/zomboid.js';
 import { promptWithInstructions } from '../src/agent/brain.js';
 import { config } from '../src/config.js';
 import { CascadeBrain, resetCascade } from '../src/agent/cascade.js';
@@ -462,6 +462,124 @@ describe('asking the operator that lives on the server', () => {
     }, modeByName('faro'));
     const said = textOf(await toolNamed(tools, 'zomboid_ask').handler({ question: 'hola' }));
     assert.match(said, /could not get a clear answer/i);
+  });
+});
+
+describe('a door that takes its time', () => {
+  // A status question measured at 85 s on the real door; nothing in these
+  // tests should take anywhere near that, so QUICK_ANSWER_MS is shrunk
+  // through `deps.quickAnswerMs` rather than through the real constant.
+  let configured;
+  before(() => {
+    configured = config.values.zomboidSsh;
+    config.values.zomboidSsh = 'pz@10.0.0.1';
+  });
+  after(() => {
+    config.values.zomboidSsh = configured;
+  });
+
+  const guild = {
+    members: { cache: new Map([['kpo', { displayName: 'Vero', roles: { cache: [{ name: 'guardianes' }] } }]]), me: {} },
+    channels: { cache: new Map() },
+  };
+  function withChannel(name) {
+    const posted = [];
+    const channel = {
+      name,
+      isTextBased: () => true,
+      isVoiceBased: () => false,
+      permissionsFor: () => ({ has: () => true }),
+      send: async (text) => posted.push(text),
+    };
+    return { posted, guild: { ...guild, channels: { cache: new Map([['c', channel]]) } } };
+  }
+  const turnFor = (askerId, g = guild) => ({ guildId: 'g1', guild: () => g, askerId, askerName: 'Vero' });
+  const toolNamed = (tools, name) => tools.find((t) => t.name === name);
+  const textOf = (result) => result.content[0].text;
+
+  /** The next `late` event, or a rejection if none arrives in time. */
+  function nextLate(timeoutMs = 1000) {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        lateAnswers.off('late', onLate);
+        reject(new Error('no late event arrived'));
+      }, timeoutMs);
+      const onLate = (payload) => {
+        clearTimeout(timer);
+        lateAnswers.off('late', onLate);
+        resolve(payload);
+      };
+      lateAnswers.on('late', onLate);
+    });
+  }
+
+  test('past the quick window: the turn is told to say "te aviso" and stop, and the answer surfaces later', async () => {
+    const { posted, guild: g } = withChannel('sala-de-maquinas');
+    const late = nextLate();
+    const tools = zomboidTools(turnFor('kpo', g), {
+      keys: { read: '/dev/null', act: '/dev/null' },
+      quickAnswerMs: 10,
+      ask: async () => {
+        await new Promise((resolve) => { setTimeout(resolve, 50); });
+        return {
+          ok: true,
+          spoken: 'Se cayó por un mod.',
+          detail: '## Qué encontré\nEl mod BetterSorting no cargó.',
+        };
+      },
+    }, modeByName('faro'));
+
+    const said = textOf(await toolNamed(tools, 'zomboid_ask').handler({ question: '¿por qué se cayó?' }));
+    assert.match(said, /still working|up to two minutes/i);
+    assert.match(said, /stop/i);
+    assert.doesNotMatch(said, /se cayó/i, 'the real answer is not in this turn at all');
+
+    const payload = await late;
+    assert.equal(payload.guildId, 'g1');
+    assert.match(payload.spoken, /Se cayó por un mod/);
+    assert.equal(posted.length, 1, 'written to the detail channel exactly like an on-time answer');
+    assert.match(posted[0], /BetterSorting/);
+  });
+
+  test('inside the window: unchanged, no late event follows', async () => {
+    let lateFired = false;
+    const onLate = () => { lateFired = true; };
+    lateAnswers.on('late', onLate);
+    try {
+      const tools = zomboidTools(turnFor('kpo'), {
+        keys: { read: '/dev/null', act: '/dev/null' },
+        quickAnswerMs: 500,
+        ask: async () => ({ ok: true, spoken: 'Está arriba, hay tres jugando.' }),
+      }, modeByName('faro'));
+      const said = textOf(await toolNamed(tools, 'zomboid_ask').handler({ question: '¿anda?' }));
+      assert.match(said, /Está arriba/);
+      assert.doesNotMatch(said, /still working/i);
+      // Give a settled ask's microtasks a turn, in case a late event were
+      // (wrongly) queued anyway.
+      await new Promise((resolve) => { setImmediate(resolve); });
+    } finally {
+      lateAnswers.off('late', onLate);
+    }
+    assert.equal(lateFired, false);
+  });
+
+  test('a late failure says exactly what the on-time path would have said', async () => {
+    const late = nextLate();
+    const tools = zomboidTools(turnFor('kpo'), {
+      keys: { read: '/dev/null', act: '/dev/null' },
+      quickAnswerMs: 10,
+      ask: async () => {
+        await new Promise((resolve) => { setTimeout(resolve, 50); });
+        throw new KeyRefused('the server did not accept this key');
+      },
+    }, modeByName('faro'));
+
+    await toolNamed(tools, 'zomboid_ask').handler({ question: '¿anda?' });
+    const payload = await late;
+    // Same sentence `explainAskFailure` gives the on-time path for a
+    // read-only KeyRefused — see "a key the server will not take" below.
+    assert.match(payload.spoken, /did not accept my key/i);
+    assert.doesNotMatch(payload.spoken, /255|publickey/i);
   });
 });
 

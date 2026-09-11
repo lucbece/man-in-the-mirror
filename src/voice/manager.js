@@ -10,7 +10,9 @@ import { recapCall } from '../agent/recap.js';
 import { presence, rejoinRecent } from './presence.js';
 import { forgetCascade } from '../agent/cascade.js';
 import { providerFor } from '../agent/models.js';
+import { modeByName } from '../agent/modes.js';
 import { reminders } from '../agent/reminders.js';
+import { lateAnswers } from '../agent/tools/zomboid.js';
 import { noteInMusicChannel } from '../agent/tools/music.js';
 import { createTts, toAudioResource } from '../agent/tts.js';
 import { clampForSpeech } from '../agent/brain.js';
@@ -79,18 +81,27 @@ export class SessionManager extends EventEmitter {
       this.speakUnprompted(guildId, message, `[reminders] #${id}`);
 
     reminders.on('fire', this.onReminderFire);
+
+    // A door that took its time answering finally did — see zomboid.js. The
+    // turn that asked already told the room "te aviso" and ended; this is
+    // the same unprompted path a reminder uses to say the rest once it's in.
+    this.onLateZomboidAnswer = ({ guildId, spoken }) =>
+      this.speakUnprompted(guildId, spoken, '[zomboid] late answer', '🧟');
+
+    lateAnswers.on('late', this.onLateZomboidAnswer);
   }
 
   /**
-   * Detach from the two process-wide emitters.
+   * Detach from the process-wide emitters.
    *
    * The singleton below never needs this — it lives as long as the process.
-   * A second instance does, or it keeps answering config changes and reminders
-   * for sessions nobody is in.
+   * A second instance does, or it keeps answering config changes, reminders
+   * and late zomboid answers for sessions nobody is in.
    */
   dispose() {
     config.off('change', this.onConfigChange);
     reminders.off('fire', this.onReminderFire);
+    lateAnswers.off('late', this.onLateZomboidAnswer);
     this.leaveAll();
   }
 
@@ -106,9 +117,11 @@ export class SessionManager extends EventEmitter {
   /**
    * Say something into the channel that nobody just asked for.
    *
-   * The bot speaks when spoken to, with two exceptions and soon a third: a
+   * The bot speaks when spoken to, with a growing list of exceptions: a
    * reminder coming due, a mode ending on its own, and — see
-   * docs/plans/personalities.md — something a mode was watching finishing.
+   * docs/plans/personalities.md — something a mode was watching finishing,
+   * which now includes a zomboid door answering after its own turn already
+   * ended (zomboid.js, `lateAnswers`).
    * They all need the same four decisions, which is why they share one path:
    * drop it when the bot has left, write it instead of speaking it when the
    * room has asked for quiet, wait for a sentence in flight, and go out
@@ -142,7 +155,14 @@ export class SessionManager extends EventEmitter {
       return false;
     }
     try {
-      const tts = createTts();
+      // A character's own voice is most of what makes it audible as somebody
+      // else — see `voice()`/`mouthpiece()` in agent/index.js, which do the
+      // same lookup per sentence inside a turn. This is a single sentence
+      // spoken outside any turn, so one lookup at the top is enough; without
+      // it a late zomboid answer would come back in the room's usual voice
+      // wearing somebody else's words.
+      const mode = modeByName(session.mode);
+      const tts = createTts(mode?.voice ? { voice: mode.voice } : undefined);
       const audio = await tts.synthesizeStream(clampForSpeech(message));
       // If it's mid-answer, let the sentence finish — an alarm that talks
       // over the answer to someone else's question serves nobody.

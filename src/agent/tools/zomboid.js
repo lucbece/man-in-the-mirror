@@ -21,6 +21,7 @@
  */
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 
+import { EventEmitter } from 'node:events';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -114,6 +115,87 @@ export const KEYS = {
 
 /** Long enough for a real diagnosis, short enough that a room is still listening. */
 export const ASK_TIMEOUT_MS = 150_000;
+
+/**
+ * How long `zomboid_ask` waits inside the turn before it stops waiting and
+ * tells the room the answer is coming later.
+ *
+ * Measured on the real door: a status question takes 12 turns and 85 s end to
+ * end, a refusal 13 s. The agent's own turn is cut at `TURN_TIMEOUT_MS =
+ * 120_000` (agent-brain.js) — past that the answer is not late, it is gone.
+ * Waiting anywhere near the full 85 s risks losing the slow ones to that
+ * ceiling, and the room hears nothing for most of a minute and a half either
+ * way, which reads as the bot being broken well before either number is
+ * reached. Twenty seconds still lets the common case — a refusal, an answer
+ * the door already had cached — come back directly, and is short enough that
+ * "still working, te aviso" never feels like a stall.
+ *
+ * Read through `deps.quickAnswerMs` rather than compared against directly, so
+ * a test can shrink the wait without the run itself taking twenty seconds.
+ */
+export const QUICK_ANSWER_MS = 20_000;
+
+/**
+ * Where a late answer surfaces once the ssh call it belongs to finally
+ * settles, after the turn has already ended.
+ *
+ * `zomboid_ask` keeps listening after telling the model to say "te aviso" and
+ * stop; when the door answers, it writes the detail channel itself — that
+ * needs `guild` and `mode`, which only the tool has — and emits here with
+ * just what a listener needs to speak it. `manager.js` is that listener, the
+ * same way it already is for `reminders`: `speakUnprompted(guildId, spoken, …)`.
+ */
+export const lateAnswers = new EventEmitter();
+
+/**
+ * Turn an ssh failure into the one sentence the room should hear.
+ *
+ * Pulled out of the on-time path so a late failure says exactly what an
+ * on-time one would have. Three named states — KeyRefused, DoorMissing, and
+ * the machine being asleep, which is the normal state most of the day by
+ * design and the reason "I could not reach the server" would be a lie most
+ * evenings — told apart from a fault by the cheap A2S probe rather than by
+ * the failure of the expensive call. Anything else keeps whatever the call
+ * itself said.
+ */
+async function explainAskFailure(err, { act } = {}) {
+  if (err instanceof KeyRefused) {
+    return act
+      ? 'the server lets me look but has not been told to let me change anything — say that in one sentence, and that somebody with access has to allow it'
+      : 'the server did not accept my key — say that in one sentence';
+  }
+  if (err instanceof DoorMissing) {
+    return 'I can reach the server but the part of it that answers questions is not installed yet — say that in one sentence';
+  }
+  const at = splitAddress(config.get('zomboidAddress'));
+  const asleep = at ? await query(at).then(() => false, () => true) : true;
+  if (asleep) {
+    return 'the machine is not up, which is normal — say so and that whoever wants it can type /pz start';
+  }
+  return err instanceof DiscordToolError ? err.message : `Discord refused: ${err.message}`;
+}
+
+/**
+ * Write the long half to the detail channel and hand back what to say.
+ *
+ * Shared by the on-time and late paths so a question answered after the turn
+ * ended is written up exactly like one answered inside it.
+ */
+async function deliverAnswer(guild, mode, turn, answer, act) {
+  const spoken = String(answer?.spoken ?? '').trim();
+  const detail = String(answer?.detail ?? '').trim();
+  // The long half never gets spoken. It goes where the room already
+  // reads about this server, and the voice says one line about it.
+  let wrote = false;
+  if (detail && detail !== spoken) {
+    wrote = await writeToChannel(
+      guild,
+      mode?.detailChannel,
+      `🧟  **${act ? 'Hice' : 'Miré'}, a pedido de ${turn.askerName ?? 'alguien'}**\n${detail}`.slice(0, 1900),
+    );
+  }
+  return { spoken, detail, wrote };
+}
 
 /**
  * Send a question through the door and bring back what came out.
@@ -266,7 +348,11 @@ export function zomboidTools(turn, deps = {}, mode = null) {
       'zomboid_ask',
       'Ask the operator that lives on the server itself — it can read the logs, the configuration and the state of the machine, and answer with what it found.\n\n' +
         'Use this for anything that needs looking at something rather than knowing it: "¿por qué se cayó?", "fijate si hay errores de un mod", "¿cuánto disco queda?", "revisá el log de hace una hora". Not for the state of the server, which zomboid_status answers in a second and for free.\n\n' +
-        'It takes up to a couple of minutes. Say one short line first — "dame un segundo que me fijo" — before calling it.\n\n' +
+        'It can take up to two minutes. Say one short line first — "dame un segundo que me fijo" — before calling it. ' +
+        'If it answers within about twenty seconds you get the real answer directly, same as always. If it comes back ' +
+        'sooner than that saying the server is still working on it, that IS the whole answer for this turn: say one ' +
+        'short line telling the room you will say it when it arrives, then stop. Do not call this tool again for the ' +
+        'same question — the answer will be spoken on its own once the door replies.\n\n' +
         'Set `act` to true ONLY when they asked you to change something: restart it, fix a configuration file, disable a mod. Anything that only looks stays false, and false is the default. Acting needs a role, and you will be refused if the person asking does not have it — say the refusal out loud.\n\n' +
         'Pass their request as they made it, in their own words. Do not add what the room was talking about.',
       {
@@ -303,58 +389,69 @@ export function zomboidTools(turn, deps = {}, mode = null) {
         }
 
         const send = deps.ask ?? askOverSsh;
-        let answer;
-        try {
-          answer = await send({ destination, keyPath, question, act });
-        } catch (err) {
-          // The machine is asleep most of the day by design, and then there is
-          // no ssh either. Telling the room "I could not reach the server"
-          // when the truth is "it is off, and anyone can start it" is the
-          // difference between a fault and a normal evening — so the cheap
-          // probe decides which of the two happened, rather than the failure
-          // of the expensive call.
-          // Three states behind one failure, and they need three sentences.
-          if (err instanceof KeyRefused) {
-            throw new DiscordToolError(
-              act
-                ? 'the server lets me look but has not been told to let me change anything — say that in one sentence, and that somebody with access has to allow it'
-                : 'the server did not accept my key — say that in one sentence',
-            );
-          }
-          if (err instanceof DoorMissing) {
-            throw new DiscordToolError(
-              'I can reach the server but the part of it that answers questions is not installed yet — say that in one sentence',
-            );
-          }
-          // The machine is asleep most of the day by design, and then there is
-          // no ssh either. Telling the room "I could not reach the server"
-          // when the truth is "it is off, and anyone can start it" is the
-          // difference between a fault and a normal evening — so the cheap
-          // probe decides which of the two happened, rather than the failure
-          // of the expensive call.
-          const at = splitAddress(config.get('zomboidAddress'));
-          const asleep = at ? await query(at).then(() => false, () => true) : true;
-          if (asleep) {
-            throw new DiscordToolError(
-              'the machine is not up, which is normal — say so and that whoever wants it can type /pz start',
-            );
-          }
-          throw err;
-        }
-        const spoken = String(answer?.spoken ?? '').trim();
-        const detail = String(answer?.detail ?? '').trim();
+        const quickAnswerMs = deps.quickAnswerMs ?? QUICK_ANSWER_MS;
+        // Settled once, either way, so both the quick branch below and the
+        // late one that may follow it can read the same outcome without
+        // asking the door twice.
+        const outcome = send({ destination, keyPath, question, act }).then(
+          (answer) => ({ ok: true, answer }),
+          (err) => ({ ok: false, err }),
+        );
 
-        // The long half never gets spoken. It goes where the room already
-        // reads about this server, and the voice says one line about it.
-        let wrote = false;
-        if (detail && detail !== spoken) {
-          wrote = await writeToChannel(
-            guild,
-            mode?.detailChannel,
-            `🧟  **${act ? 'Hice' : 'Miré'}, a pedido de ${turn.askerName ?? 'alguien'}**\n${detail}`.slice(0, 1900),
+        const quick = await Promise.race([
+          outcome,
+          new Promise((resolve) => {
+            setTimeout(() => resolve(null), quickAnswerMs);
+          }),
+        ]);
+
+        if (quick === null) {
+          // Not back in time. The turn ends now — see QUICK_ANSWER_MS for
+          // why — and the ssh call keeps running on its own; the far side
+          // holds the connection open for up to ASK_TIMEOUT_MS regardless of
+          // whether anything here is still listening for it.
+          outcome
+            .then(async (result) => {
+              if (result.ok) {
+                const { spoken, detail } = await deliverAnswer(guild, mode, turn, result.answer, act);
+                console.log(
+                  `[zomboid] late answer (${act ? 'act' : 'read'}): "${String(question).slice(0, 80)}" → ${result.answer?.ok ? 'ok' : 'not ok'}`,
+                );
+                lateAnswers.emit('late', {
+                  guildId: turn.guildId,
+                  spoken: spoken || 'La respuesta llegó, pero no hay nada para decir.',
+                  detail,
+                  question,
+                });
+                return;
+              }
+              lateAnswers.emit('late', {
+                guildId: turn.guildId,
+                spoken: await explainAskFailure(result.err, { act }),
+                detail: '',
+                question,
+              });
+            })
+            .catch((err) => {
+              // Delivering the late answer failed on this side — writing to
+              // the channel, most likely. A late answer that throws into
+              // nowhere is worse than one that is merely logged.
+              console.warn(`[zomboid] could not deliver the late answer: ${err.message}`);
+            });
+
+          return (
+            'The server is still working on this — it can take up to two minutes. Say one short line ' +
+            'telling the room you will say the answer as soon as it arrives, then stop there. Do not call ' +
+            'this tool again for the same question: the answer will be spoken on its own when the door replies.'
           );
         }
-        console.log(`[zomboid] asked (${act ? 'act' : 'read'}): "${String(question).slice(0, 80)}" → ${answer?.ok ? 'ok' : 'not ok'}`);
+
+        if (!quick.ok) {
+          throw new DiscordToolError(await explainAskFailure(quick.err, { act }));
+        }
+
+        const { spoken, wrote } = await deliverAnswer(guild, mode, turn, quick.answer, act);
+        console.log(`[zomboid] asked (${act ? 'act' : 'read'}): "${String(question).slice(0, 80)}" → ${quick.answer?.ok ? 'ok' : 'not ok'}`);
 
         if (!spoken) {
           return 'The server answered, but with nothing sayable. Say you could not get a clear answer.';
