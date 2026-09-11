@@ -426,17 +426,24 @@ generous as a patience limit and let the spend cap be the real control.
 
 ## What is still missing, and it will be obvious in the first call
 
-**A long answer cannot be a long silence.** That status question took **85
-seconds**. The bot says "dame un segundo que me fijo" and then the room hears a
-minute and a half of nothing. The path out already exists —
-`sessionManager.speakUnprompted`, which reminders use — so a slow question
-should answer "te aviso cuando sepa" and speak on its own when the answer
-lands.
+**Done.** A long answer cannot be a long silence — that status question took
+**85 seconds**, and the bot said "dame un segundo que me fijo" into a minute
+and a half of nothing after it. `zomboid_ask` now waits at most
+`QUICK_ANSWER_MS` (20 s) inside the turn; past that it tells the model to say
+"te aviso cuando sepa" and stop, while the ssh call keeps running on its own.
+When it settles — success or failure — it reaches the room through the path
+already built for this, `sessionManager.speakUnprompted`, the same one
+reminders use, via `lateAnswers` (`src/agent/tools/zomboid.js`).
 
-One constraint on building that, from the far side: the door holds its ssh
-connection until it answers or its own five-minute timeout expires. So whatever
-waits for it must not be the thing that serves the room — answering early means
-handing the wait to something else, not shortening it.
+The constraint from the far side held: the door holds its ssh connection
+until it answers or its own five-minute timeout (`ASK_TIMEOUT_MS`) expires,
+so the wait was moved off the thing serving the room rather than shortened —
+the promise keeps running detached from the turn that started it, not
+cancelled and not blocking a reply.
+
+Known limitation, left unsolved: the agent's own session does not remember
+what a late answer said, since it was spoken outside any turn. Someone asking
+a follow-up right after has to be told again, at least for now.
 
 ## Open questions for Luc
 

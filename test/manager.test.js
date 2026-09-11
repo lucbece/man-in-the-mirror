@@ -5,6 +5,7 @@ import { EventEmitter } from 'node:events';
 import { SessionManager, describeChanges } from '../src/voice/manager.js';
 import { config } from '../src/config.js';
 import { reminders } from '../src/agent/reminders.js';
+import { lateAnswers } from '../src/agent/tools/zomboid.js';
 
 /**
  * The registry, without a gateway.
@@ -325,6 +326,66 @@ describe('a reminder that comes due in music mode', () => {
     await fire(t, { guild: { channels: { cache: new Map() }, members: { me: {} } }, spoke });
 
     assert.deepEqual(spoke, []);
+  });
+});
+
+describe('a late zomboid answer', () => {
+  // Same path as a reminder — see the block above — and the same cheap way
+  // to prove the wiring without a real TTS call anywhere near the test:
+  // music mode never reaches for the player, so reaching for one at all is
+  // what "it spoke" looks like.
+  function guildWithMusicChannel(sent) {
+    const musicChannel = {
+      name: 'music',
+      isTextBased: () => true,
+      isVoiceBased: () => false,
+      permissionsFor: () => ({ has: () => true }),
+      send: (text) => {
+        sent.push(text);
+        return Promise.resolve();
+      },
+    };
+    return {
+      channels: { cache: new Map([['music', musicChannel]]) },
+      members: { me: {} },
+    };
+  }
+
+  test('reaches speakUnprompted through the same door as a reminder, marked 🧟', async (t) => {
+    const m = manager(t);
+    const session = await m.join(channel('general'));
+    session.quiet = true;
+    const sent = [];
+    session.client = { guilds: { cache: new Map([['g1', guildWithMusicChannel(sent)]]) } };
+
+    lateAnswers.emit('late', {
+      guildId: 'g1',
+      spoken: 'Se cayó por un mod.',
+      detail: 'El mod X no cargó.',
+      question: '¿por qué se cayó?',
+    });
+    await new Promise((resolve) => { setImmediate(resolve); });
+    await new Promise((resolve) => { setImmediate(resolve); });
+
+    assert.deepEqual(sent, ['🧟  Se cayó por un mod.']);
+  });
+
+  test('a late answer for a guild the bot has left is dropped, not thrown', async (t) => {
+    const m = manager(t);
+
+    lateAnswers.emit('late', { guildId: 'nobody-here', spoken: 'hola', detail: '', question: 'x' });
+    await new Promise((resolve) => { setImmediate(resolve); });
+
+    assert.equal(m.get('nobody-here'), null);
+  });
+
+  test('dispose unsubscribes, so a later late answer reaches nothing', async (t) => {
+    const before = lateAnswers.listenerCount('late');
+    const m = manager(t);
+    assert.equal(lateAnswers.listenerCount('late'), before + 1);
+
+    m.dispose();
+    assert.equal(lateAnswers.listenerCount('late'), before);
   });
 });
 
