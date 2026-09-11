@@ -342,6 +342,41 @@ describe('reasoning read aloud is dropped for the rest of the turn', () => {
   });
 });
 
+describe('a language request is remembered for the rest of the call', () => {
+  // The request and the English answer that follows it are rarely in the
+  // same turn — in the logs behind this, both the ask and a reply given
+  // minutes later were dropped by the old language rule. `ask()` remembers
+  // the request per guild (see LANGUAGE_REQUEST_TTL_MS in index.js) so a
+  // later turn's English reply to a Spanish question survives.
+  test('an English reply, turns later, is not dropped once someone asked for English', async () => {
+    const session = fakeSession('language-memory');
+
+    // Turn 1: the request itself. Nothing about it should be dropped either.
+    const first = await ask(
+      session,
+      { question: 'Espejo, ¿podemos hablar en inglés de ahora en más, por favor?', askedBy: 'Fede' },
+      deps({ sentences: ['Dale, hablamos en inglés.'] }),
+    );
+    assert.equal(first.timings.droppedReasoning, undefined);
+
+    // Turn 2: an ordinary Spanish question, answered in English as agreed.
+    // Without the memory this is exactly what the old rule dropped.
+    const d = deps({ sentences: ["Right now I'm just vibing with you all, Fede."] });
+    const second = await ask(session, { question: '¿Qué hacés, espejo?', askedBy: 'Fede' }, d);
+
+    assert.deepEqual(d.rendered, ["Right now I'm just vibing with you all, Fede."]);
+    assert.equal(second.timings.droppedReasoning, undefined);
+  });
+
+  test('the same reply is dropped for a guild that never asked', async () => {
+    const d = deps({ sentences: ["Right now I'm just vibing with you all, Fede."] });
+    const result = await ask(fakeSession('language-memory-control'), { question: '¿Qué hacés, espejo?', askedBy: 'Fede' }, d);
+
+    assert.deepEqual(d.rendered, []);
+    assert.equal(result.timings.droppedReasoning, 1);
+  });
+});
+
 describe('stage directions are written, never spoken', () => {
   test('a parenthetical alone is dropped rather than read out', async () => {
     // Asked to answer a music command with nothing, the model produced

@@ -14,6 +14,7 @@ import { recordAnswer } from './answers.js';
 import {
   isStageDirection,
   looksLikeLeakedReasoning,
+  mentionsLanguageSwitch,
   withoutOpeningAside,
 } from './spoken-guards.js';
 import { createTts, toAudioResource } from './tts.js';
@@ -74,6 +75,33 @@ export class AgentBusyError extends Error {}
 
 /** Guilds with a request in flight — one conversation at a time per channel. */
 const inFlight = new Set();
+
+/**
+ * How long a "let's speak English" request keeps the leaked-reasoning guard's
+ * language rule switched off for a guild, in ms.
+ *
+ * The request and the answer it's about are rarely in the same turn — in the
+ * logs behind this, the ask and the reply minutes later that finally used it
+ * were both dropped, along with ordinary questions asked once the switch was
+ * already in effect. Half an hour outlasts a normal conversation gap without
+ * outlasting the call itself.
+ */
+export const LANGUAGE_REQUEST_TTL_MS = 30 * 60 * 1000;
+
+/**
+ * Guilds where someone recently asked, in either language, to switch
+ * language — and when. See `looksLikeLeakedReasoning`'s `languageRequested`
+ * option in spoken-guards.js for why this exists: the transcript buffer this
+ * turn can see rarely still holds the request that explains an English
+ * answer to a Spanish question.
+ */
+const languageRequestedAt = new Map();
+
+/** True if a guild asked to switch language within the last `LANGUAGE_REQUEST_TTL_MS`. */
+function languageRequestedRecently(guildId) {
+  const at = languageRequestedAt.get(guildId);
+  return typeof at === 'number' && Date.now() - at < LANGUAGE_REQUEST_TTL_MS;
+}
 
 /**
  * Tools whose whole job is doing something, not answering.
@@ -167,6 +195,10 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, ma
       transcript = format(utterances);
     }
     timings.transcribeMs = Date.now() - t0;
+    // Remembered for the leaked-reasoning guard: see LANGUAGE_REQUEST_TTL_MS.
+    if (mentionsLanguageSwitch(question) || mentionsLanguageSwitch(transcript)) {
+      languageRequestedAt.set(session.guildId, Date.now());
+    }
 
     // 2 and 3, at the same time. The reply is spoken sentence by sentence as
     //    the model produces it, rather than after it finishes: measured, the
@@ -275,7 +307,9 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, ma
       if (isStageDirection(text)) return;
       // Reasoning read aloud, four prompts deep. Dropped rather than asked
       // about — see spoken-guards.js for why the language mismatch is the
-      // signal.
+      // signal, and for `languageRequested`: 19 sentences dropped in five
+      // days of production logs were legitimate English answers given after
+      // someone asked, in Spanish, for the bot to switch — not leaks.
       //
       // And once it starts, the rest of the turn goes with it. The one heard
       // in a real call opened with "I need to work out what fede is actually
@@ -284,7 +318,13 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, ma
       // Judged one at a time, only the first is clearly English; the rest are
       // too short, or half Spanish, and were spoken. A model that has begun
       // deliberating does not switch back into an answer mid-turn.
-      if (leaking || looksLikeLeakedReasoning(text, question, { room: guessLanguage(transcript) })) {
+      if (
+        leaking ||
+        looksLikeLeakedReasoning(text, question, {
+          room: guessLanguage(transcript),
+          languageRequested: languageRequestedRecently(session.guildId),
+        })
+      ) {
         if (!leaking) {
           console.warn(`[agent] dropped what looks like reasoning: "${String(text).slice(0, 70)}"`);
         }

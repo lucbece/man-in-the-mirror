@@ -64,7 +64,68 @@ const words = (text) =>
     .filter(Boolean);
 
 /**
- * An answer in English to a question asked in Spanish.
+ * Sentences a model writes about answering, in either language. They have no
+ * place in a reply whatever the room speaks, so they are caught on their own,
+ * before any language arithmetic. The fifth leak (2026-09-04) was a whole
+ * paragraph of them: "I'm only hearing '¡No!' without a question directed at
+ * me... I'll stay quiet and let the chat continue."
+ *
+ * Broadened after the language rule turned out to be the wrong tool for the
+ * job (see below): these are the actual meta-markers of the three documented
+ * leaks — "I need to work out what fede is actually asking here", "Looking
+ * at the context:", "...without a question directed at me" — matched on
+ * their own words instead of on what language they happen to be in.
+ */
+const DELIBERATION = [
+  /\b(i'?ll|i will|i should|i'?d better) (stay|remain|keep) (quiet|silent)\b/i,
+  /\b(not|no|isn'?t|is not) (a )?(question|request) (directed|addressed) (at|to) me\b/i,
+  /\bnot asking me (anything|for anything)\b/i,
+  /\b(let|letting) the (chat|conversation) (continue|go on|flow)\b/i,
+  /\bi'?m only hearing\b/i,
+  /\bi (don'?t|do not) see an? (actual )?question\b/i,
+  /\b(me quedo|voy a quedarme|mejor me quedo) (callad[oa]|en silencio)\b/i,
+  /\bno (hay|es) (una )?pregunta (dirigida|para) (a )?m[ií]\b/i,
+  /\bno me (est[aá]n?|esta) (preguntando|pidiendo) nada\b/i,
+  /\b(i need to|let me) (work out|figure out|think about|check|look at)\b/i,
+  /\blooking at the (context|transcript|conversation)\b/i,
+  /\bthe (user|speaker|person) (is|was|seems|wants|asked)\b/i,
+  /\bthey('re| are) (asking|talking about|saying)\b/i,
+  /\b(there('s| is) )?no (clear|direct|actual) question\b/i,
+  /\bwithout a question directed at me\b/i,
+];
+
+const FEW_WORDS = 3;
+
+/**
+ * Words that mean "someone asked about which language to use here".
+ *
+ * A hint, not a parser: it does not know what was decided, only that the
+ * topic came up. That is all `looksLikeLeakedReasoning` needs it for — see
+ * `languageRequested` below.
+ */
+const LANGUAGE_SWITCH_PATTERNS = [
+  /\bingles\b/i,
+  /\benglish\b/i,
+  /\bidioma\b/i,
+  /\blanguage\b/i,
+  /\bhablar?\s+en\b/i,
+  /\bspeak\s+in\b/i,
+  /\ben\s+(espanol|castellano)\b/i,
+  /\bspanish\b/i,
+];
+
+/** Accent/case-insensitive: true for text that asks for or about a language. */
+export function mentionsLanguageSwitch(text) {
+  const normalized = String(text ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '');
+  return LANGUAGE_SWITCH_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+/**
+ * An answer in English to a question asked in Spanish — the fallback signal,
+ * checked only once the `DELIBERATION` patterns above have not matched.
  *
  * Not a language-policing rule — a leak detector. Three times now the model
  * has narrated its deliberation out loud, and every time it did so in English
@@ -78,30 +139,23 @@ const words = (text) =>
  * inside a Spanish sentence, or a short "dale", never trips it. A question
  * actually asked in English is left alone entirely, because then an English
  * answer is the right one.
+ *
+ * Except it wasn't conservative enough. Measured over five days of
+ * production logs (2026-09-06..10): 19 dropped in five days, all legitimate,
+ * zero real leaks — every one of the 19 was an answer given after someone in
+ * the call had asked, in Spanish, for the bot to speak English ("Espejo,
+ * ¿podemos hablar en inglés de ahora en más, por favor?"), including replies
+ * given minutes later to ordinary Spanish questions once the bot was already
+ * speaking English as agreed. `languageRequested` is the fix: once that
+ * request has been made, an English reply to a Spanish question is exactly
+ * the point, not evidence of anything leaking, so the caller passes `true`
+ * to skip this whole check. The `DELIBERATION` patterns above still apply
+ * regardless — they catch reasoning by its own words, not by what language
+ * it's in.
  */
-/**
- * Sentences a model writes about answering, in either language. They have no
- * place in a reply whatever the room speaks, so they are caught on their own,
- * before any language arithmetic. The fifth leak (2026-09-04) was a whole
- * paragraph of them: "I'm only hearing '¡No!' without a question directed at
- * me... I'll stay quiet and let the chat continue."
- */
-const DELIBERATION = [
-  /\b(i'?ll|i will|i should|i'?d better) (stay|remain|keep) (quiet|silent)\b/i,
-  /\b(not|no|isn'?t|is not) (a )?(question|request) (directed|addressed) (at|to) me\b/i,
-  /\bnot asking me (anything|for anything)\b/i,
-  /\b(let|letting) the (chat|conversation) (continue|go on|flow)\b/i,
-  /\bi'?m only hearing\b/i,
-  /\bi (don'?t|do not) see an? (actual )?question\b/i,
-  /\b(me quedo|voy a quedarme|mejor me quedo) (callad[oa]|en silencio)\b/i,
-  /\bno (hay|es) (una )?pregunta (dirigida|para) (a )?m[ií]\b/i,
-  /\bno me (est[aá]n?|esta) (preguntando|pidiendo) nada\b/i,
-];
-
-const FEW_WORDS = 3;
-
-export function looksLikeLeakedReasoning(text, question, { room } = {}) {
+export function looksLikeLeakedReasoning(text, question, { room, languageRequested } = {}) {
   if (DELIBERATION.some((pattern) => pattern.test(String(text ?? '')))) return true;
+  if (languageRequested) return false;
 
   // A question of one or two words cannot say what language the room speaks
   // ("¡No!" is both), so the caller's reading of the room decides instead.
