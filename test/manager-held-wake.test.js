@@ -145,6 +145,35 @@ describe('a wake heard while ask() is still working', () => {
     );
   });
 
+  test('a held wake is still answered when the in-flight ask() fails outright', async (t) => {
+    // Settling isn't only succeeding: 19 "could not answer"s in five days,
+    // a number the credit problem is only going to raise. A held wake must
+    // get its turn after one of those exactly as it would after a success —
+    // otherwise it sits in the slot until the *next* answer settles, by
+    // which time it has usually gone stale and is dropped for nothing.
+    const askFn = fakeAsk();
+    const m = manager(t, { askFn });
+    const session = await m.join(channel('general'));
+
+    const lines = await logsOf(async () => {
+      session.emit('wake', wake({ askedBy: 'Vero', heard: 'primera pregunta' }));
+      await flush();
+
+      session.emit('wake', wake({ askedBy: 'Fede', heard: 'segunda pregunta' }));
+      await flush();
+      assert.equal(askFn.started.length, 1, 'Fede is held, not asked yet');
+
+      askFn.started[0].reject(new Error('boom'));
+      await flush();
+    });
+
+    assert.equal(askFn.started.length, 2, 'the held question is answered right after the failure');
+    assert.equal(askFn.started[1].payload.askedBy, 'Fede');
+
+    assert.ok(lines.some((l) => l === '[wake] could not answer: boom'));
+    assert.ok(lines.some((l) => l === "[wake] answering Fede's held question"));
+  });
+
   test('a third wake replaces the second, held one, which is logged as dropped', async (t) => {
     const askFn = fakeAsk();
     const m = manager(t, { askFn });

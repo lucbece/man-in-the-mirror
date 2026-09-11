@@ -240,8 +240,9 @@ export class SessionManager extends EventEmitter {
     // takes ~12s median from question to end of playback was still being
     // spoken. Instead of dropping it, the latest one heard while busy is
     // held — one slot, a newer one replaces an older one — and answered
-    // through this same handler once the in-flight ask() settles, as long as
-    // it is still fresh enough (heldWakeMaxAgeMs) to be worth answering.
+    // through this same handler once the in-flight ask() settles, success or
+    // failure alike, as long as it is still fresh enough (heldWakeMaxAgeMs)
+    // to be worth answering.
     let heldWake = null;
 
     /**
@@ -275,13 +276,20 @@ export class SessionManager extends EventEmitter {
             if (heldWake) {
               console.log(`[wake] ${heldWake.askedBy} asked while it was still answering — dropped: "${heldWake.heard}"`);
             }
-            heldWake = { ...wake, askedAt: Date.now() };
+            // Aged from stoppedAt — when the person actually stopped talking
+            // — rather than from now: the busy check that just caught this
+            // already ran some way behind that moment, and heldWakeMaxAgeMs
+            // is a budget for the question's own age, not for how long the
+            // busy check took to notice.
+            heldWake = { ...wake, askedAt: stoppedAt ?? Date.now() };
             console.log(`[wake] ${askedBy} asked while it was still answering — held: "${heard}"`);
           }
-        } else {
-          console.warn(`[wake] could not answer: ${err.message}`);
+          return;
         }
-        return;
+        // Anything else still frees the slot below in ask()'s `finally`,
+        // same as a success — 19 of these in five days, and more once the
+        // credit problem lands, so a held wake must not starve behind one.
+        console.warn(`[wake] could not answer: ${err.message}`);
       }
 
       // The slot this call held just freed up in ask()'s `finally` — if
