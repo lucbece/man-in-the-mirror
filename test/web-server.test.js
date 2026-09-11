@@ -148,6 +148,101 @@ describe('what the panel refuses to save', () => {
   });
 });
 
+describe('saving customInstructions or notebook against a stale base', () => {
+  const sameOrigin = () => ({ 'sec-fetch-site': 'same-origin' });
+
+  test('a line added by voice after the panel loaded survives a save that never saw it', async () => {
+    // What the panel had loaded, before anyone touched the tab.
+    const before = config.get('customInstructions');
+    config.update({ customInstructions: 'Call Vero jefa.' });
+    const base = config.get('customInstructions');
+
+    // remember_instruction, said out loud while the tab sits open — the
+    // change the panel's next save does not know about.
+    config.update({ customInstructions: 'Call Vero jefa.\nFede hates pineapple on pizza.' });
+
+    // The panel saves its own edit (a second line, added in the browser)
+    // against the `base` it loaded before the voice line existed.
+    const res = await post('/api/config', {
+      headers: sameOrigin(),
+      body: {
+        customInstructions: 'Call Vero jefa.\nSpeak slowly.',
+        base: { customInstructions: base },
+      },
+    });
+
+    assert.equal(res.status, 200);
+    const { config: result } = await res.json();
+    assert.equal(
+      result.customInstructions,
+      'Call Vero jefa.\nFede hates pineapple on pizza.\nSpeak slowly.',
+      'keeps the voice line and adds the panel\'s edit, rather than replacing one with the other',
+    );
+    assert.equal(config.get('customInstructions'), result.customInstructions, 'and it is what got persisted');
+
+    config.update({ customInstructions: before });
+  });
+
+  test('no base sent (an older page, a script, curl) keeps the plain replace', async () => {
+    const before = config.get('notebook');
+    config.update({ notebook: 'Nico is the DM.\nPato plays the healer.' });
+
+    const res = await post('/api/config', {
+      headers: sameOrigin(),
+      body: { notebook: 'Pato plays the healer.' },
+    });
+
+    assert.equal(res.status, 200);
+    const { config: result } = await res.json();
+    assert.equal(result.notebook, 'Pato plays the healer.', 'no base means replace, same as before this fix');
+
+    config.update({ notebook: before });
+  });
+
+  test('base === next: the field is left out of the patch entirely, not merged and not replaced', async () => {
+    // The interesting failure mode this guards isn't visible in config.get()
+    // afterwards: Config.update() runs clampConfig() over its *whole* merged
+    // object on every call, patched key or not (src/config.js), so
+    // notebook/customInstructions always come back re-serialised regardless
+    // of whether this route touches them — a blank separator line, for
+    // instance, never survives any config.update() call, with or without
+    // this fix. What this fix actually controls, and what's worth pinning,
+    // is upstream of that: whether the route hands the field to
+    // config.update() at all when the panel never touched it. Spying on
+    // config.update() is what makes that checkable — asserting on the
+    // persisted value afterwards would pass or fail for the wrong reason.
+    const real = config.update.bind(config);
+    let seenPatch = null;
+    config.update = (patch) => {
+      seenPatch = patch;
+      return real(patch);
+    };
+
+    const before = config.get('bufferSeconds');
+    try {
+      const res = await post('/api/config', {
+        headers: sameOrigin(),
+        body: {
+          // Unedited relative to base — a blank line included, the shape
+          // that would be silently stripped if this field were run through
+          // mergeLines() (or any other rewrite) for no reason.
+          notebook: 'Nico is the DM.\n\nPato plays the healer.',
+          base: { notebook: 'Nico is the DM.\n\nPato plays the healer.' },
+          bufferSeconds: 123, // the setting actually being changed on this save
+        },
+      });
+      assert.equal(res.status, 200);
+    } finally {
+      config.update = real;
+      config.update({ bufferSeconds: before });
+    }
+
+    assert.ok(seenPatch && !('notebook' in seenPatch), 'an untouched field must never reach config.update at all');
+    assert.ok(!('base' in seenPatch), 'base is bookkeeping for the route, never a config key');
+    assert.equal(seenPatch.bufferSeconds, 123, 'the field that actually changed is still saved');
+  });
+});
+
 describe('the state the panel renders itself from', () => {
   test('carries no secret field at all, and says so instead', async () => {
     // Asserted on the shape rather than by planting a fake key and looking for

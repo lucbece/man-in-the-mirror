@@ -26,6 +26,13 @@ export class SettingsForm {
     this.onSaved = onSaved;
     this.unsaved = false;
     this.last = null;
+    // The config as last written into the controls — not merely fetched, but
+    // actually rendered, since `update()` skips writing while the section is
+    // being edited. This is what customInstructions and notebook are diffed
+    // against on save (see save() and src/web/merge-lines.js), so a voice
+    // line added while this tab sat open survives instead of being replaced
+    // by the stale copy the controls have been showing.
+    this.loaded = null;
 
     this.noteEl = h('span.note');
     this.bar = h(
@@ -55,7 +62,13 @@ export class SettingsForm {
 
   update(cfg) {
     this.last = cfg;
-    if (!this.isEditing()) this.write(cfg);
+    if (!this.isEditing()) this.writeLoaded(cfg);
+  }
+
+  /** write(cfg), and remember it as the base the next save's merge diffs against. */
+  writeLoaded(cfg) {
+    this.loaded = cfg;
+    this.write(cfg);
   }
 
   markDirty() {
@@ -67,11 +80,24 @@ export class SettingsForm {
 
   async save() {
     try {
-      const result = await post('/api/config', this.read());
+      // `base` says what customInstructions/notebook looked like when this
+      // form last wrote them into the controls — the copy the person has
+      // been editing on top of. The server merges against it rather than
+      // overwriting, so a line the bot learned by voice after that point
+      // isn't lost under the panel's stale copy. Sections with neither field
+      // just send a `base` the server ignores.
+      const patch = this.read();
+      if (this.loaded) {
+        patch.base = { customInstructions: this.loaded.customInstructions, notebook: this.loaded.notebook };
+      }
+      const result = await post('/api/config', patch);
       this.unsaved = false;
       this.bar.hidden = true;
       toast(t('form.saved'));
-      if (result.config) this.write(result.config);
+      // Re-render from what was actually saved: with a merge on the server,
+      // that can differ from what this save sent (a voice line folded back
+      // in), and the person should see the result, not their own request.
+      if (result.config) this.writeLoaded(result.config);
       this.onSaved?.(result);
     } catch (err) {
       // The typed values stay, protected from the poll, so the error is
@@ -83,7 +109,7 @@ export class SettingsForm {
   discard() {
     this.unsaved = false;
     this.bar.hidden = true;
-    if (this.last) this.write(this.last);
+    if (this.last) this.writeLoaded(this.last);
   }
 }
 
