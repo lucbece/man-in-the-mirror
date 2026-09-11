@@ -17,6 +17,20 @@ import { clampForSpeech } from '../agent/brain.js';
 import { warmFillers } from '../agent/filler.js';
 
 /**
+ * How long a held wake is still worth answering.
+ *
+ * An answer takes ~12s median from question to end of playback, so this only
+ * has to cover the one answer that was already in flight when the held wake
+ * arrived. Any older than that and the room has moved on — replaying it would
+ * be the bot suddenly answering a question from two topics ago, which is a
+ * stranger experience than the silence it replaces.
+ *
+ * Exported (and, on the manager, overridable via the constructor) so a test
+ * can prove the drop without actually waiting fifteen seconds for it.
+ */
+export const HELD_WAKE_MAX_AGE_MS = 15_000;
+
+/**
  * Tracks one VoiceSession per guild.
  *
  * `createSession` exists so this can be exercised without a Discord gateway:
@@ -28,6 +42,8 @@ export class SessionManager extends EventEmitter {
   constructor({
     createSession = (channel) => new VoiceSession(channel),
     warmAgent = warmAgentSession,
+    askFn = ask,
+    heldWakeMaxAgeMs = HELD_WAKE_MAX_AGE_MS,
   } = {}) {
     super();
     this.sessions = new Map();
@@ -36,6 +52,14 @@ export class SessionManager extends EventEmitter {
     // unstubbed, joining a channel starts a real Agent SDK subprocess holding
     // about a gigabyte. A test for a Map should not do that.
     this.warmAgent = warmAgent;
+    // Injected so a test can control exactly when a wake's ask() resolves
+    // and when it throws AgentBusyError — the real one goes through the
+    // brain, the TTS and the transcriber, none of which a held-wake test has
+    // any business starting.
+    this.askFn = askFn;
+    // Same idea again: production waits fifteen real seconds before giving up
+    // on a held wake, and a test proving that drop should not have to.
+    this.heldWakeMaxAgeMs = heldWakeMaxAgeMs;
 
     this.onConfigChange = (values, previous) => {
       describeChanges(values, previous);
@@ -178,6 +202,10 @@ export class SessionManager extends EventEmitter {
     presence.remember(channel.guild.id, channel.id);
 
     session.on('destroyed', () => {
+      // Whatever this session was holding dies with it — answering a held
+      // wake into a channel the bot already left makes no sense, and nothing
+      // else ever clears this closure's slot.
+      heldWake = null;
       // Inside the identity check, not beside it. This event arrives from the
       // voice connection's state handler, so it is late: moving the bot between
       // channels destroys session A, builds B, pre-warms B's agent, and only
@@ -203,10 +231,34 @@ export class SessionManager extends EventEmitter {
     session.on('update', () => this.emit('update'));
 
     // Someone said the wake phrase out loud. This is the whole point.
-    session.on('wake', async ({ question, askedBy, askedById, heard, stoppedAt, marks, viaFollowUp }) => {
-      console.log(`[wake] ${askedBy}: "${heard}"`);
+    //
+    // ask() allows one request in flight per guild and throws AgentBusyError
+    // for a second caller; this used to just drop that second one. Measured
+    // over five days of production logs (2026-09-06..10) that dropped 54 real
+    // questions — "¿podemos hablar en inglés de ahora en más, por favor?",
+    // "qué es esto que estás haciendo ahora?" — asked while an answer that
+    // takes ~12s median from question to end of playback was still being
+    // spoken. Instead of dropping it, the latest one heard while busy is
+    // held — one slot, a newer one replaces an older one — and answered
+    // through this same handler once the in-flight ask() settles, as long as
+    // it is still fresh enough (heldWakeMaxAgeMs) to be worth answering.
+    let heldWake = null;
+
+    /**
+     * Handle a wake, or replay one that was held.
+     *
+     * `held` is only true on the replay call: it skips the "arrived" log
+     * line, already printed when the wake first came in, and if ask() is
+     * somehow still busy — it shouldn't be, since the slot is freed in
+     * ask()'s `finally` before a held wake is ever replayed, but be
+     * defensive — drops it rather than holding it again, so a held question
+     * can never end up waiting behind its own replacement.
+     */
+    const handleWake = async (wake, { held = false } = {}) => {
+      const { question, askedBy, askedById, heard, stoppedAt, marks, viaFollowUp } = wake;
+      if (!held) console.log(`[wake] ${askedBy}: "${heard}"`);
       try {
-        const result = await ask(session, { question, askedBy, askedById, stoppedAt, marks, viaFollowUp });
+        const result = await this.askFn(session, { question, askedBy, askedById, stoppedAt, marks, viaFollowUp });
         console.log(`[wake] answered: "${result.spoken}"`);
         // If it ended by asking something, the person it asked can answer
         // without saying its name again. Set after playback rather than
@@ -217,12 +269,35 @@ export class SessionManager extends EventEmitter {
       } catch (err) {
         // Don't speak errors into the channel — that's worse than silence.
         if (err instanceof AgentBusyError) {
-          console.log(`[wake] ${askedBy} asked while it was still answering — dropped: "${heard}"`);
+          if (held) {
+            console.log(`[wake] ${askedBy}'s held question hit a busy agent — dropped: "${heard}"`);
+          } else {
+            if (heldWake) {
+              console.log(`[wake] ${heldWake.askedBy} asked while it was still answering — dropped: "${heldWake.heard}"`);
+            }
+            heldWake = { ...wake, askedAt: Date.now() };
+            console.log(`[wake] ${askedBy} asked while it was still answering — held: "${heard}"`);
+          }
         } else {
           console.warn(`[wake] could not answer: ${err.message}`);
         }
+        return;
       }
-    });
+
+      // The slot this call held just freed up in ask()'s `finally` — if
+      // something was waiting on it, this is its turn.
+      if (!heldWake) return;
+      const next = heldWake;
+      heldWake = null;
+      if (Date.now() - next.askedAt > this.heldWakeMaxAgeMs) {
+        console.log(`[wake] dropped ${next.askedBy}'s held question, too old`);
+        return;
+      }
+      console.log(`[wake] answering ${next.askedBy}'s held question`);
+      await handleWake(next, { held: true });
+    };
+
+    session.on('wake', handleWake);
 
     try {
       await session.waitUntilReady();
