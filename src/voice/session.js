@@ -69,15 +69,25 @@ const WAKE_SETTLE_MS = 800;
 /**
  * How long a question the bot asked stays open for its answer.
  *
- * When the bot ends its reply with a question — "¿desde qué ciudad?" — it is
- * waiting for something, and making the person say its name again to hand it
- * over is a bug in the conversation rather than a policy. So for a short while
+ * When the bot ends its reply with a question it actually needs answered —
+ * "¿desde qué ciudad?" — making the person say its name again to hand it over
+ * is a bug in the conversation rather than a policy. So for a short while
  * afterwards, the next thing *that person* says counts as addressing it.
  *
  * Deliberately narrow, because the cost of being wrong here is the one failure
  * that gets a bot removed from a server: speaking when nobody asked. It only
- * opens when the bot actually asked something, only for the person it asked,
- * and it is spent on the first thing they say.
+ * opens when the bot actually needs the answer — see `isReturnQuestion` below
+ * — only for the person it asked, and it is spent on the first thing they say
+ * that has anything to it.
+ *
+ * It used to open on *any* trailing "?", and that was most of the bug:
+ * measured over 2026-09-06..10, this window fired 121 times in five days.
+ * Most casual answers end with a return question ("¿vos cómo andás?", "¿qué
+ * onda?") rather than a real one, so whatever the asker said next — "Jajaja",
+ * "Ssss", "nifres.", "¡Gracias a todos!" — was taken as their reply.
+ * `isReturnQuestion` is what keeps this window closed for those; the 2-word
+ * substance check in `takeExpectedReply` is what keeps a laugh from spending
+ * it even when a real question did open it.
  */
 const REPLY_WINDOW_MS = 12_000;
 
@@ -85,26 +95,67 @@ const REPLY_WINDOW_MS = 12_000;
  * How long the person who just asked can follow up without the name.
  *
  * Shorter than the reply window and narrower in what it accepts: only
- * something shaped like a follow-up ("y por qué", "pero cuándo fue",
- * anything ending in a question mark), from the person who asked, in the
- * seconds after the answer. "Qué largo che" to the room is not one.
+ * something shaped like a follow-up, from the person who asked, in the
+ * seconds after the answer. This is also where a plain answer lands — one
+ * that didn't end in a question, or ended in a return question like "¿y
+ * vos?" — instead of the wide window above. "Qué largo che" to the room is
+ * not a follow-up.
  */
 const FOLLOW_UP_MS = 7_000;
 
-/** Openers that make the next thing a continuation rather than new talk. */
-const FOLLOW_UP_OPENERS = new Set([
-  'y', 'pero', 'entonces', 'o', 'osea', 'aunque',
-  'and', 'but', 'so', 'then', 'or', 'why', 'how', 'what', 'when', 'where', 'who',
-  'por', 'como', 'cuando', 'donde', 'quien', 'cuanto', 'cuanta', 'cuantos', 'cuantas', 'cual', 'cuales',
-]);
+/**
+ * Openers that make the next thing a continuation rather than new talk.
+ *
+ * Used to be twice this size — "y", "o", "por", "como", "cuando"… — and that
+ * was the other half of the bug: measured over the same five days, this
+ * window fired 77 times and roughly 70 of them were false, because almost any
+ * short sentence to the room starts with one of those in normal speech ("Y
+ * buenas tardes.", "y se me va la baja.", "Por favor."). Cut down to the
+ * words that only ever mean "more of what I was just saying" rather than the
+ * start of a new thought; a real question built on one of the dropped words
+ * ("y por qué", "por qué tenés que ver con esto") still gets through below on
+ * the trailing "?".
+ */
+const FOLLOW_UP_OPENERS = new Set(['pero', 'entonces', 'osea', 'aunque', 'but', 'so', 'then']);
 
-/** Does this read as a follow-up to what was just said, rather than talk to the room? */
-export function looksLikeFollowUp(text) {
+/**
+ * Laughter and bare interjections — heard, but not an answer.
+ *
+ * "Jajaja" and "Ssss" landing inside an open reply window were two of the
+ * 121; stripped out here so a follow-up shape or a reply's substance is
+ * judged on what's actually said, not on a laugh.
+ */
+const FILLER_TOKEN = /^(?:(?:ja|je|ji)+|s+|m+|eh|ah|oh|uh|uy|ay|wow)$/;
+
+/** What's left of an utterance once laughter and interjections are stripped. */
+function substantiveWords(text) {
+  return normalise(text)
+    .split(' ')
+    .filter(Boolean)
+    .filter((word) => !FILLER_TOKEN.test(word));
+}
+
+/**
+ * Does this read as a follow-up to what was just said, rather than talk to
+ * the room?
+ *
+ * Needs at least three words — "dale", "en serio?", "¿no?" are all one or two,
+ * and none of them carry a follow-up. A trailing "?" only counts alongside
+ * that length, and a bare opener only from the narrow set above.
+ *
+ * `otherNames`, when the caller has them cheap (see `otherDisplayNames`), is
+ * the other people in the call: "Fede, ¿vos tenés Cooking 1?" is four words
+ * and ends in a question mark, but it's addressed to Fede, not a follow-up to
+ * the bot.
+ */
+export function looksLikeFollowUp(text, otherNames = []) {
   const raw = String(text ?? '').trim();
   if (!raw) return false;
+  const words = normalise(raw).split(' ').filter(Boolean);
+  if (words.length < 3) return false;
+  if (otherNames.some((name) => normalise(name).split(' ')[0] === words[0])) return false;
   if (/\?\s*$/.test(raw)) return true;
-  const first = normalise(raw).split(' ').filter(Boolean)[0];
-  return Boolean(first && FOLLOW_UP_OPENERS.has(first));
+  return FOLLOW_UP_OPENERS.has(words[0]);
 }
 
 /**
@@ -124,6 +175,86 @@ export const WAKE_TIMING = {
 export function endsWithQuestion(text) {
   const trimmed = String(text ?? '').trim().replace(/["'»)\]]+$/, '');
   return trimmed.endsWith('?');
+}
+
+/**
+ * Pull out the question an answer actually closes on, so a return question
+ * tacked onto a real sentence ("Todo bien, ¿vos cómo andás?") is judged on its
+ * own instead of dragging the whole answer into the match. Spanish marks
+ * where a question starts with "¿" — the last one in the text is used; without
+ * one (English, or a stray missing mark) the last clause is used instead.
+ *
+ * Also drops a trailing vocative — "¿Qué se cuenta, Fede?" is addressed to
+ * Fede, not asking about someone named Fede. Detected on the punctuation and
+ * capitalisation of the model's own written answer (a comma then one
+ * capitalised word right before the end), not on knowing who's in the call.
+ */
+function closingClause(text) {
+  const trimmed = String(text ?? '').trim();
+  const invertedAt = trimmed.lastIndexOf('¿');
+  const clause =
+    invertedAt !== -1
+      ? trimmed.slice(invertedAt)
+      : (trimmed.split(/[,.;:!?]+/).map((c) => c.trim()).filter(Boolean).pop() ?? trimmed);
+  return clause.replace(/,\s*\p{Lu}\p{L}*\s*([?!.]*)$/u, '$1');
+}
+
+/**
+ * Words that turn a question into one the bot actually needs answered, no
+ * matter how much it otherwise reads like small talk — "¿Vos desde qué
+ * ciudad?" and "¿Vos querés la de Rada o la de Casero?" both open with "vos"
+ * but are not return questions.
+ */
+const VALUE_ASKING_WORDS =
+  /\b(desde|hasta|cual|cuales|cuando|donde|quien|quienes|cuanto|cuanta|cuantos|cuantas|por que|which|when|where|who|how many|how much)\b/;
+
+/**
+ * Small-talk closers and tag questions, as patterns over the normalised
+ * closing clause rather than an exact list — real ones vary in wording far
+ * more than a fixed set can enumerate: "¿vos qué onda?", "¿Y vos cómo vas?",
+ * "¿Qué onda vos?", "¿Cómo va vos, todo en orden?" were all measured and none
+ * of them match each other literally. Each pattern allows for the person's
+ * own name tying it to what came before ("y …") and a trailing "vos" / "por
+ * ahi" / "por alla" / "che" tacked on the end.
+ */
+const RETURN_QUESTION_PATTERNS = [
+  // The listener's own state: "vos", "vos qué onda", "vos cómo andás"...
+  /^(y )?(vos|tu|usted|ustedes)( (que|como))?( (onda|tal|andas|venis|vas|estas|tranqui|todo bien|todo en orden))?$/,
+  /^(y )?del tuyo$/,
+  // The same, opener-first: "cómo va", "qué onda vos", "cómo va vos, todo en orden"...
+  /^(y )?(como|que) (va|vas|andas|venis|onda|tal)( vos)?( todo (bien|en orden))?$/,
+  // Small-talk closers with no reference to "vos" at all.
+  /^(que onda|que pasa|que tal|que se cuenta|que necesitas|todo bien|todo en orden|algo mas)( vos| por ahi| por alla| che)?$/,
+  // Tag questions.
+  /^(no|verdad|viste|eh|dale|ok|right)$/,
+  // English.
+  /^(and )?(what|how) about you$/,
+  /^you$/,
+  // `normalise` turns "what's" into "what s" — the apostrophe becomes a space
+  // like any other punctuation, so the pattern matches that, not the raw text.
+  /^what s up( with you)?$/,
+  /^how are you( doing)?$/,
+  /^anything else$/,
+];
+
+/**
+ * Is the question an answer closes on a return question — "¿y vos?", "¿qué
+ * onda?", "what about you?" — rather than something the bot actually needs
+ * answered?
+ *
+ * This is the other half of the 121 reply-window hits: the bot habitually
+ * closes a casual answer with a return question, and that used to open the
+ * same wide window as a real one like "¿desde qué ciudad lo calculo?". Judged
+ * on the *last* question sentence of the answer (see `closingClause`), so it
+ * still catches "Todo bien, ¿vos cómo andás?" and still leaves alone a real
+ * question that happens to have a comma in it, like "¿Cuál de las dos, la de
+ * Rada o la de Casero?" — which a value-asking word rules out regardless of
+ * shape.
+ */
+export function isReturnQuestion(sentence) {
+  const clause = normalise(closingClause(sentence));
+  if (!clause || VALUE_ASKING_WORDS.test(clause)) return false;
+  return RETURN_QUESTION_PATTERNS.some((pattern) => pattern.test(clause));
 }
 
 /**
@@ -258,9 +389,11 @@ export class VoiceSession extends EventEmitter {
   /**
    * Is this the answer to a question the bot just asked?
    *
-   * Spent on the first thing that person says, so a window cannot linger and
-   * catch an unrelated sentence a minute later. Somebody *else* speaking does
-   * not spend it — they are not who was asked.
+   * Spent on the first thing that person says that has anything to it, so a
+   * window cannot linger and catch an unrelated sentence a minute later.
+   * Somebody *else* speaking does not spend it — they are not who was asked.
+   * A laugh or a bare interjection ("Jajaja") does not spend it either — it
+   * isn't an answer, and the real one may still be a beat away.
    */
   takeExpectedReply(utterance) {
     const expected = this.awaitingReply;
@@ -270,27 +403,50 @@ export class VoiceSession extends EventEmitter {
       return false;
     }
     if (utterance.userId !== expected.userId || !utterance.text?.trim()) return false;
-    // After a plain answer only a follow-up-shaped sentence counts, and a
-    // sentence that is not one leaves the window open for one that is.
-    if (!expected.asked && !looksLikeFollowUp(utterance.text)) return false;
+    if (expected.asked) {
+      if (substantiveWords(utterance.text).length < 2) return false;
+    } else if (!looksLikeFollowUp(utterance.text, this.otherDisplayNames(utterance.userId))) {
+      // After a plain answer — including one that closed on a return
+      // question, see `isReturnQuestion` — only a follow-up-shaped sentence
+      // counts, and a sentence that is not one leaves the window open for one
+      // that is.
+      return false;
+    }
     this.awaitingReply = null;
     return expected.asked ? 'reply' : 'follow-up';
   }
 
   /**
-   * The bot has finished speaking. If it ended by asking something, the person
-   * it asked may answer without saying its name again, for a while; after any
-   * other answer they may still follow up without it, for less time and only
-   * with something that reads as a follow-up.
+   * Display names of the other humans in the call, for `looksLikeFollowUp`'s
+   * "addressed to someone else, not the bot" check. Cheap to ask for:
+   * `channel.members` is the same cached collection `humansInChannel` reads,
+   * no network round trip.
+   */
+  otherDisplayNames(excludeUserId) {
+    const channel = this.client?.channels?.cache?.get(this.channelId);
+    if (!channel) return [];
+    return channel.members
+      .filter((m) => !m.user.bot && m.id !== excludeUserId)
+      .map((m) => m.displayName);
+  }
+
+  /**
+   * The bot has finished speaking. If it ended by asking something it
+   * actually needs answered, the person it asked may answer without saying
+   * its name again, for a while; after any other answer — including one that
+   * ends with a return question like "¿y vos?" — they may still follow up
+   * without it, for less time and only with something that reads as a
+   * follow-up.
    *
-   * Returns whether it asked something, which is the case worth a log line.
+   * Returns whether it opened the wide reply window, which is the case worth
+   * a log line.
    */
   expectReply(userId, spoken) {
     if (!userId || !String(spoken ?? '').trim()) {
       this.awaitingReply = null;
       return false;
     }
-    const asked = endsWithQuestion(spoken);
+    const asked = endsWithQuestion(spoken) && !isReturnQuestion(spoken);
     this.awaitingReply = {
       userId,
       asked,
