@@ -8,16 +8,26 @@
  * variable, so every test in the suite writes into a throwaway directory
  * rather than the developer's real data/config.json.
  *
- * `node --test` runs each test file in its own child process; `--import`
- * flags are inherited by those children, so this hook runs again in each one
- * (confirmed by hand — see the commit this file was added in). Each gets a
- * fresh temp directory unless MIRROR_DATA_DIR is already set in the parent
- * environment, in which case every process shares that one instead.
+ * `node --test`'s default process-per-file isolation forks a genuinely new
+ * OS process for every test file, and `--import` runs again in each one —
+ * confirmed by hand, with a value made fresh on every run rather than a
+ * fixed string, which is what a first pass at this check got wrong. Each of
+ * those processes gets its *own* temp directory: none of them inherit one
+ * set dynamically by a sibling or by this same hook running earlier in a
+ * parent, only a MIRROR_DATA_DIR that was already in the environment before
+ * `node` itself started (set by hand, or by CI). So a single `npm test` run
+ * creates one directory per test file, and each is responsible for cleaning
+ * up only the one it made: whichever process actually calls mkdtempSync
+ * removes that directory on its own exit, never another process's.
  */
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
 if (!process.env.MIRROR_DATA_DIR) {
-  process.env.MIRROR_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'mirror-test-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mirror-test-'));
+  process.env.MIRROR_DATA_DIR = dir;
+  process.on('exit', () => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
 }
