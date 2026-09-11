@@ -77,6 +77,28 @@ describe('guessLanguage', () => {
     // rooms speak mostly Rioplatense Spanish, so Spanish is the tiebreaker.
     assert.equal(guessLanguage('que para de'), 'es');
   });
+
+  test('recognises an English request made of content words, not just grammar words', () => {
+    // Regression: these scored zero against the original, narrower
+    // ENGLISH_WORDS list, so they came back null instead of 'en' — losing
+    // their English filler and switching the leaked-reasoning guard on for
+    // what was actually an English question.
+    for (const text of ['play something by Queen', 'put on some jazz', 'tell me a joke']) {
+      assert.equal(guessLanguage(text), 'en', `should be English: ${text}`);
+    }
+  });
+
+  test('a short Spanish request or reaction still wins the tie against English', () => {
+    // Widening ENGLISH_WORDS meant "me" alone could tip a short Spanish
+    // sentence toward English; these words keep it Spanish.
+    assert.equal(guessLanguage('me gusta esa canción'), 'es');
+    assert.equal(guessLanguage('poneme otra'), 'es');
+  });
+
+  test('Portuguese and gibberish are unaffected by the wider English list', () => {
+    assert.equal(guessLanguage('não sei'), 'pt');
+    assert.equal(guessLanguage('asdf qwer'), null);
+  });
 });
 
 describe('takeFiller', () => {

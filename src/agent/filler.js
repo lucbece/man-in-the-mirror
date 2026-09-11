@@ -189,12 +189,21 @@ const SPANISH_WORDS = new Set([
   // The words a sentence is actually made of. Without these, "espejo, la
   // concha de tu madre" and "al fin y al cabo" were English — none of their
   // words was on the list — and everything keyed on the language (the filler
-  // clip, the leaked-reasoning guard) quietly ran in the wrong mode. Words
-  // English also uses ('no', 'a', 'me') are left out on purpose.
+  // clip, the leaked-reasoning guard) quietly ran in the wrong mode. "no" and
+  // "a" are still left out: English uses them too and nothing else in a
+  // short Spanish sentence would tip the tie. "me" is the exception — kept in
+  // both lists on purpose, since a tie between Spanish and English goes to
+  // Spanish anyway (see LANGUAGE_PRIORITY below).
   'el', 'la', 'de', 'y', 'al', 'tu', 'te', 'mi', 'un', 'lo', 'le', 'se',
   'es', 'en', 'si', 'ya', 'sos', 'soy', 'che', 'dale', 'bien', 'bueno',
   'cuando', 'tambien', 'siempre', 'ahi', 'alla', 'mucho', 'quiero', 'podes',
   'pone', 'poneme', 'cancion', 'tema', 'fin', 'cabo', 'madre', 'hermana',
+  // Short words a request or reaction is actually made of — "me gusta esa
+  // canción", "poneme otra" — which otherwise score zero against the new,
+  // wider ENGLISH_WORDS and lose the tie to English.
+  'me', 'nos', 'les', 'hay', 'tengo', 'tenes', 'gusta', 'esa', 'ese', 'esos',
+  'esas', 'otra', 'otro', 'favor', 'porfa', 'saca', 'saltea', 'siguiente',
+  'musica',
 ]);
 
 /**
@@ -209,6 +218,15 @@ const ENGLISH_WORDS = new Set([
   'not', 'it', 'its', 'of', 'in', 'on', 'at', 'to', 'but', 'or', 'so', 'just',
   'here', 'there', 'when', 'where', 'why', 'who', 'which', 'yes', 'no',
   'please', 'thanks', 'hello', 'now', 'then', 'very', 'all',
+  // Content words an actual request is made of — "play something by Queen",
+  // "tell me a joke", "skip this one" — which otherwise scored zero and lost
+  // their English filler and their leaked-reasoning guard to a false null.
+  'play', 'put', 'tell', 'give', 'show', 'let', 'me', 'something', 'anything',
+  'by', 'about', 'like', 'want', 'have', 'has', 'had', 'get', 'got', 'go',
+  'know', 'think', 'did', 'will', 'would', 'could', 'should', 'up', 'down',
+  'some', 'any', 'one', 'time', 'good', 'ok', 'okay', 'thank', 'again',
+  'really', 'right', 'well', 'too', 'also', 'from', 'if', 'skip', 'next',
+  'song', 'music',
 ]);
 
 /**
