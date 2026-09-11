@@ -173,7 +173,12 @@ const MUSIC_COMMAND = [
   // Trailing boundaries are a lookahead rather than \b: in JavaScript \b is
   // ASCII, so there is no word boundary after "salteá" or "pará" and the
   // obvious pattern silently never matches.
-  /(^|\s)(skip|next\s+(song|track)|saltea|salteá|salta|saltá|pula|pr[oó]xima|pasá de (tema|canción)|pasa de (tema|cancion)|siguiente (tema|canción)|siguiente (tema|cancion))(?=\s|$|[,.!?¡¿])/i,
+  /(^|\s)(skip|next\s+(song|track)|saltea|salteá|salta|saltá|pula|pasá de (tema|canción)|pasa de (tema|cancion)|siguiente (tema|canción)|siguiente (tema|cancion))(?=\s|$|[,.!?¡¿])/i,
+  // "próxima" alone is common Rioplatense Spanish for "next time/week", not
+  // a music command — "la próxima vez", "hasta la próxima". Only count it
+  // with a music noun after it, or the Portuguese skip verb before it.
+  /(^|\s)pr[oó]xima\s+(m[uú]sica|faixa|can[cç][aã]o)(?=\s|$|[,.!?])/i,
+  /(^|\s)(pula|passa)\s+(pra|para)\s+pr[oó]xima(?=\s|$|[,.!?])/i,
 
   // Stop/pause/resume, naming the music explicitly. Spanish "para" and
   // Portuguese "para" are the same word, so this one line covers both.
@@ -185,16 +190,19 @@ const MUSIC_COMMAND = [
 
   // "<title> de <artist>" — the object is a proper name, so this doesn't
   // need a music word nearby. "de" is the same preposition in Spanish and
-  // Portuguese.
-  /(^|\s)(poné|pone|pon|play|toca|coloca|bota)\s+\S+.{0,40}\sde\s+\S+/i,
+  // Portuguese. Not "toca": see below.
+  /(^|\s)(poné|pone|pon|play|coloca|bota)\s+\S+.{0,40}\sde\s+\S+/i,
 
   // "put some X on" — the object sits between the verb and "on".
   /(^|\s)put\s+some\s+.{0,40}\son(?=\s|$|[,.!?])/i,
 
-  // Play, unqualified: "play", "toca", "coloca" and "bota" opening a
-  // request are rare enough outside music that the false positives are
-  // worth it — the whole point of this list.
-  /(^|\s)(play|toca|coloca|bota)\s+\S/i,
+  // Play, unqualified: "play", "coloca" and "bota" opening a request are
+  // rare enough outside music that the false positives are worth it — the
+  // whole point of this list. Not "toca": in Spanish it's mostly "it's
+  // your turn" ("me toca", "te toca jugar", "¿a quién le toca?"), common
+  // enough in this room's dialect that it stays in the family above, which
+  // requires an explicit music noun alongside it.
+  /(^|\s)(play|coloca|bota)\s+\S/i,
 
   // Volume, naming it or the music. Spanish, English.
   /(^|\s)(bajá|baja|bajame|bajale|subí|subi|subime|subile)(?=\s).{0,30}(volumen|música|musica)/i,

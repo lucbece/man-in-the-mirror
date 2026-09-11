@@ -391,6 +391,17 @@ describe('looksLikeMusicCommand, in the phrasings people actually use', () => {
     'aquele show foi incrível',
     'what a great song that was',
     'turn that frown upside down',
+    // "toca" as Rioplatense "it's your/someone's turn", not the Portuguese
+    // verb for "play".
+    'me toca',
+    'te toca jugar',
+    '¿a quién le toca?',
+    'toca jugar de noche',
+    'no me toca todavía',
+    // "próxima" as "next time/week", not the next track.
+    'la próxima vez lo hacemos',
+    'hasta la próxima',
+    'la próxima semana no estoy',
   ];
 
   for (const phrase of mustNotMatch) {
