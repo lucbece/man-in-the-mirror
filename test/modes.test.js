@@ -1,10 +1,11 @@
+import { EventEmitter } from 'node:events';
 import assert from 'node:assert/strict';
 import test, { after, before, beforeEach, describe } from 'node:test';
 
 import { DEFAULT_PERSONA, characters, describeModes, findMode, looksLikeModeCommand, modeByName, modePrompt } from '../src/agent/modes.js';
 import { VOICES } from '../src/config.js';
 import { botTools } from '../src/agent/tools/index.js';
-import { DoorMissing, KeyRefused, describeServer, describeSilence, lateAnswers, splitAddress, sshArgs, zomboidTools } from '../src/agent/tools/zomboid.js';
+import { DOOR_BRIEF_FOOTER, DoorMissing, KeyRefused, askOverSsh, describeServer, describeSilence, doorBrief, lateAnswers, splitAddress, sshArgs, zomboidTools } from '../src/agent/tools/zomboid.js';
 import { promptWithInstructions } from '../src/agent/brain.js';
 import { config } from '../src/config.js';
 import { CascadeBrain, resetCascade } from '../src/agent/cascade.js';
@@ -632,6 +633,41 @@ describe('the ssh call is explicit about which identity it uses', () => {
       assert.equal(args.filter((a) => a === '-i').length, 1, 'exactly one identity');
       assert.equal(args[args.indexOf('-i') + 1], key);
     }
+  });
+});
+
+describe('what travels through the door with the question', () => {
+  test('the brief is the asker\'s words plus the bot\'s fixed note about bounded reads', () => {
+    const brief = doorBrief('  ¿por qué se cayó anoche?  ');
+    assert.ok(brief.startsWith('¿por qué se cayó anoche?'), 'the person\'s words come first, trimmed');
+    assert.ok(brief.endsWith(DOOR_BRIEF_FOOTER));
+    assert.match(DOOR_BRIEF_FOOTER, /Nota del bot, no de quien pregunta/, 'labelled so the operator never takes it for the person\'s words');
+    assert.match(DOOR_BRIEF_FOOTER, /--tail 200/);
+    assert.match(DOOR_BRIEF_FOOTER, /journalctl --no-pager -n 200/);
+    assert.match(DOOR_BRIEF_FOOTER, /primero nombres y tamaños/);
+  });
+
+  test('askOverSsh writes exactly that brief to the door\'s stdin', async () => {
+    let written = null;
+    const spawnImpl = () => {
+      const child = new EventEmitter();
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.kill = () => {};
+      child.stdin = {
+        end(text) {
+          written = text;
+          setImmediate(() => {
+            child.stdout.emit('data', '{"ok":true,"spoken":"todo bien"}\n');
+            child.emit('close', 0);
+          });
+        },
+      };
+      return child;
+    };
+    const answer = await askOverSsh({ destination: 'pz@host', keyPath: '/k/read', question: '¿cómo está el server?', act: false, spawnImpl });
+    assert.deepEqual(answer, { ok: true, spoken: 'todo bien' });
+    assert.equal(written, doorBrief('¿cómo está el server?'));
   });
 });
 
