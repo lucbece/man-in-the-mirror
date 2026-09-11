@@ -32,10 +32,70 @@ should close it, so a package's brief can be its goal plus its entries.
 
 ## High
 
-Nothing open.
+### Saving the panel can erase a note or instruction added by voice
+
+`POST /api/config` (`src/web/server.js:78-155`) writes `customInstructions`
+and `notebook` with `config.update(body)` at line 146, and `Config.update`
+(`src/config.js:328-345`) replaces each field wholesale —
+`next[key] = coerced` — there is nothing to merge with, only the string the
+request sent. That string is whatever the panel's Instructions tab last
+rendered into its two lists: `SettingsForm.update()`
+(`src/web/public/panel/form.js:56-59`) stops copying the server's config into
+those lists the moment the tab is edited or simply has focus
+(`isEditing()`, `form.js:51-54`), and stays stopped until Save or Discard.
+Meanwhile "remember this" and "note this down", said out loud, go through
+`remember_instruction` (`src/agent/tools/config.js:265-266`) and
+`remember_fact` (`src/agent/tools/notebook.js:39-41`), which read the live
+`customInstructions` or `notebook`, append a line, and `config.update()` it
+straight back — no version check, nothing to tell the panel's next save that
+the field moved under it. Open the Instructions tab, have the bot learn
+something by voice, then hit Save: the line the room just heard the bot
+repeat back is gone from disk, with no error and nothing in the log to say
+so.
+
+Package: WP1
+
+### Shutdown cuts the bot off mid-sentence instead of letting it finish
+
+`shutdown()` (`src/index.js:42-53`) calls `sessionManager.leaveAll({
+comingBack: true })` before anything else, and `leaveAll` reaches
+`session.destroy()` for every session (`src/voice/manager.js:248-256`
+→ `src/voice/session.js:717-748`), which calls `this.speech?.cancel()` and
+`this.player.stop(true)` unconditionally — there is no check for a sentence
+still queued or playing, and no check for an `ask()` still running for that
+guild. Only after every session is torn down does it `await bot.stop()`, and
+regardless of what that left in flight, `setTimeout(() => process.exit(0),
+300).unref()` force-exits 300 ms later — the comment above it, "give the
+voice connections a beat to close cleanly," describes a wait that nothing
+upstream of it was designed to need, since the speech was already cancelled
+before the beat starts. A deploy that lands while the bot is mid-answer
+therefore cuts it off mid-word every time, not on some rare edge.
+
+Package: WP3
 
 
 ## Medium
+
+### A rejected Discord token still reports healthy
+
+`#start` (`src/bot/index.js:86-143`) catches a failed `client.login(token)` —
+a bad or revoked token throws discord.js's `TokenInvalid`, "An invalid token
+was provided." — and sets `this.state = 'error'` via `setState('error',
+err.message)` (`bot/index.js:139`); the only other trace is the
+`console.error` in the same `catch` (`bot/index.js:135`). `GET /api/state`
+(`src/web/server.js:63-74`) reports that state faithfully in its JSON body,
+but the container `HEALTHCHECK` in `Dockerfile` and the `healthcheck:` in
+`compose.yaml` both just fetch that URL and check `r.ok` — the HTTP status,
+which is 200 whether `bot.status().state` is `'ready'` or `'error'`. The
+Dockerfile says as much on purpose ("'healthy' means 'the process serves',
+not 'logged in to Discord'. Login problems show in the log, not here"), which
+is a fair simplification for a first boot with an obviously wrong token —
+but it applies just as much to a token revoked six months into a deploy, and
+then nothing watching the container, only someone reading its log, can tell
+the bot went from `ready` to `error` and stayed there.
+
+Package: WP6
+
 
 ### Transcription can lag by tens of seconds during music
 
@@ -152,16 +212,6 @@ does: a music tool added or renamed without editing this file makes the bot
 pause the track to announce that it changed the track. It is also the reason a
 profile with music switched off still ships a list of music tool names through
 the middle of the pipeline.
-
-Package: WP3
-
-### `/mj ask` reports "voiced NaNs"
-
-`src/bot/commands.js:253` formats `t.speakMs`, and nothing ever sets it: the
-timings `ask()` returns are `transcribeMs`, `firstAudioMs`, `thinkMs`,
-`totalMs`, `beforeAskMs` and the counters (`src/agent/index.js:122-302`).
-Every answer given through the slash command therefore ends with a footer
-reading `voiced NaNs`.
 
 Package: WP3
 
