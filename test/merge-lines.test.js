@@ -67,15 +67,20 @@ describe('mergeLines', () => {
     assert.equal(mergeLines(base, next, current), 'Call Vero jefa.\nSpeak slowly.');
   });
 
-  test('next identical to base: current is left exactly as it is, voice line included', () => {
+  test('next identical to base: current\'s lines survive, but mergeLines still normalises formatting', () => {
     // The panel saved without touching this field at all, while current has
     // moved on — a save with nothing to say about a field must not undo what
-    // voice did to it.
+    // voice did to it. mergeLines itself always rebuilds the text from
+    // normalised lines, so a blank separator line in `current` does not
+    // survive a call to it — that is exactly why the route
+    // (src/web/server.js) special-cases "base === next" to skip calling
+    // mergeLines at all and leave the field untouched on disk. This test
+    // documents mergeLines' own behaviour in isolation, not the route's.
     const base = 'Call Vero jefa.';
     const next = 'Call Vero jefa.';
-    const current = 'Call Vero jefa.\nNico is the DM.';
+    const current = 'Call Vero jefa.\n\nNico is the DM.';
 
-    assert.equal(mergeLines(base, next, current), current);
+    assert.equal(mergeLines(base, next, current), 'Call Vero jefa.\nNico is the DM.');
   });
 
   test('an added line already present in current is not duplicated', () => {

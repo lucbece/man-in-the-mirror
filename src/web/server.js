@@ -21,7 +21,7 @@ import { answerStats } from '../agent/answers.js';
 import { MODELS } from '../agent/models.js';
 import { createTts } from '../agent/tts.js';
 import { isPiperInstalled } from '../agent/piper.js';
-import { mergeLines } from './merge-lines.js';
+import { lines, mergeLines } from './merge-lines.js';
 import { sameOriginOnly } from './same-origin.js';
 
 const HOST = process.env.WEB_HOST || '127.0.0.1';
@@ -152,10 +152,26 @@ export function createApp(deps = {}) {
     // (an older page, a script, curl, a test) means keep today's plain
     // replace, so nothing else here changes.
     for (const field of ['customInstructions', 'notebook']) {
-      if (typeof body[field] === 'string' && typeof body.base?.[field] === 'string') {
-        body[field] = mergeLines(body.base[field], body[field], config.get(field));
-      }
+      if (typeof body[field] !== 'string' || typeof body.base?.[field] !== 'string') continue;
+
+      // Identical once normalised means the panel never touched this field —
+      // saving some other setting on the same card must not rewrite it.
+      // Calling mergeLines here regardless would be harmless today (it just
+      // re-derives the same normalised text config already holds), but it
+      // is the wrong instruction to give: "nothing changed" should mean
+      // config.update() is never told about this field at all, not "rewrite
+      // it with what turns out to be the same value".
+      const baseLines = lines(body.base[field]);
+      const nextLines = lines(body[field]);
+      const unchanged =
+        baseLines.length === nextLines.length && baseLines.every((line, i) => line === nextLines[i]);
+
+      if (unchanged) delete body[field];
+      else body[field] = mergeLines(body.base[field], body[field], config.get(field));
     }
+    // Never a real config key; config.update() would ignore it today, but a
+    // future DEFAULTS entry named "base" is not a risk worth taking.
+    delete body.base;
 
     config.update(body);
 

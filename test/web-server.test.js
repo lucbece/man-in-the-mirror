@@ -198,6 +198,49 @@ describe('saving customInstructions or notebook against a stale base', () => {
 
     config.update({ notebook: before });
   });
+
+  test('base === next: the field is left out of the patch entirely, not merged and not replaced', async () => {
+    // The interesting failure mode this guards isn't visible in config.get()
+    // afterwards: Config.update() runs clampConfig() over its *whole* merged
+    // object on every call, patched key or not (src/config.js), so
+    // notebook/customInstructions always come back re-serialised regardless
+    // of whether this route touches them — a blank separator line, for
+    // instance, never survives any config.update() call, with or without
+    // this fix. What this fix actually controls, and what's worth pinning,
+    // is upstream of that: whether the route hands the field to
+    // config.update() at all when the panel never touched it. Spying on
+    // config.update() is what makes that checkable — asserting on the
+    // persisted value afterwards would pass or fail for the wrong reason.
+    const real = config.update.bind(config);
+    let seenPatch = null;
+    config.update = (patch) => {
+      seenPatch = patch;
+      return real(patch);
+    };
+
+    const before = config.get('bufferSeconds');
+    try {
+      const res = await post('/api/config', {
+        headers: sameOrigin(),
+        body: {
+          // Unedited relative to base — a blank line included, the shape
+          // that would be silently stripped if this field were run through
+          // mergeLines() (or any other rewrite) for no reason.
+          notebook: 'Nico is the DM.\n\nPato plays the healer.',
+          base: { notebook: 'Nico is the DM.\n\nPato plays the healer.' },
+          bufferSeconds: 123, // the setting actually being changed on this save
+        },
+      });
+      assert.equal(res.status, 200);
+    } finally {
+      config.update = real;
+      config.update({ bufferSeconds: before });
+    }
+
+    assert.ok(seenPatch && !('notebook' in seenPatch), 'an untouched field must never reach config.update at all');
+    assert.ok(!('base' in seenPatch), 'base is bookkeeping for the route, never a config key');
+    assert.equal(seenPatch.bufferSeconds, 123, 'the field that actually changed is still saved');
+  });
 });
 
 describe('the state the panel renders itself from', () => {

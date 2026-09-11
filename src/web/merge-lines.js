@@ -16,8 +16,13 @@
  * bot repeat back survives a save that was never shown it.
  */
 
-/** One line per entry, trimmed, blanks dropped — same shape parseInstructions() reads. */
-function lines(text) {
+/**
+ * One line per entry, trimmed, blanks dropped — same shape parseInstructions()
+ * reads. Exported so the route can tell "identical once normalised" from
+ * "different" without duplicating this rule — that distinction decides
+ * whether a field is touched at all, not just how it is merged.
+ */
+export function lines(text) {
   return String(text ?? '')
     .split('\n')
     .map((line) => line.trim())
