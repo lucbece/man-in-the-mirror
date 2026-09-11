@@ -30,19 +30,27 @@ async function withConfig(seed, fn) {
   }
 }
 
-/** A fake `messages.stream` that records the request and answers with nothing. */
-function fakeAnthropicClient(finalMessage = { content: [], stop_reason: 'end_turn' }) {
+/**
+ * A fake `messages.stream` that records the request and answers with
+ * nothing, unless `textDeltas` is given: then each one is delivered to the
+ * `text` listener right before `finalMessage()` resolves, the same order the
+ * real client fires them in relative to registration in `#runFastAnthropic`.
+ */
+function fakeAnthropicClient({ textDeltas = [], finalMessage = { content: [], stop_reason: 'end_turn' } } = {}) {
   const calls = [];
   return {
     calls,
     messages: {
       stream(body, opts) {
         calls.push({ body, opts });
+        const handlers = {};
         return {
-          on() {
+          on(event, cb) {
+            handlers[event] = cb;
             return this;
           },
           async finalMessage() {
+            for (const delta of textDeltas) handlers.text?.(delta);
             return finalMessage;
           },
         };
@@ -96,5 +104,30 @@ describe('the Anthropic fast leg — prompt caching', () => {
     assert.equal(client.calls.length, 2);
     const [first, second] = client.calls.map((c) => c.body.system[0].text);
     assert.equal(first, second, 'the system prefix must be byte-identical turn to turn for the cache to hit');
+  });
+});
+
+describe('the Anthropic fast leg — handing over silently', () => {
+  beforeEach(resetCascade);
+
+  test('a bare parenthetical stage direction is never spoken on the way to the agent', async () => {
+    // Heard escalating a music request: the fast leg wrote "(reproduciendo)"
+    // instead of staying silent, and it went out over the voice call — the
+    // third way the "no words on a handover" rule failed by prompt alone.
+    const client = fakeAnthropicClient({
+      textDeltas: ['(reproduciendo)'],
+      finalMessage: {
+        content: [{ type: 'tool_use', name: 'escalate', input: { reason: 'needs the music tool' } }],
+        stop_reason: 'tool_use',
+      },
+    });
+    const spoken = [];
+
+    await withConfig({ fastModel: 'claude-haiku-4-5', anthropicApiKey: 'sk-ant-test', openaiApiKey: '' }, () => {
+      const b = new CascadeBrain({ guildId: 'g', deps: { agent: fakeAgent(), anthropicClient: client } });
+      return b.answer(ask('de qué color es el cielo?'), { onSentence: (s) => spoken.push(s) });
+    });
+
+    assert.deepEqual(spoken, [], 'nothing should have been spoken by the fast leg');
   });
 });

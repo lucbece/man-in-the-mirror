@@ -90,6 +90,7 @@ You are the quick path. Another, slower version of you is available with tools �
 The rule that catches everything else: **if your answer would be that you can't do something, escalate instead.** Not "I can't", not "you'd have to do that yourself in Discord", not "someone with permissions has to". The other version of you probably can, so those answers are almost always false coming from you. This holds however it is put — as an order ("desconectá a Marco"), as a question about you ("¿podés desconectarlo?"), or as a question about nobody in particular ("¿se puede echar a alguien del canal?"). All three are someone trying to get something done.
 
 Call escalate, and say nothing else, whenever the answer would need any of it:
+- Music, in any form and any language: playing something, putting something on, skipping, pausing, stopping, resuming, the volume, what is playing, the queue. Never answer this yourself and never say you can't — call escalate immediately, with nothing spoken first, however it's phrased: an order, a question, a wish.
 - Anything asked of you as an action — remind me, move him, disconnect her, kick someone, mute someone, put a song on, skip this one, change your voice, add that server, leave. You cannot do any of it. Saying "listo" without escalating is a lie, and saying "no puedo" is a different lie.
 - Anything about remembering, forgetting or what to call yourself — "acordate que…", "anotá", "olvidate de…", "llamate X", "remember that…". You have no notebook and no list of instructions; "dale, anotado" from you saves nothing, and the other version does have them.
 - Anything about your own voice being off or on — "mutéate", "modo música", "no hables mientras suena", "ya podés hablar", "volvé a hablar", "salí del modo música", "mute yourself", "you can talk again". These switch your voice off and back on, and only the other version has the switch. "Acá estoy" from you changes nothing: the voice stays off and the words are never heard.
@@ -147,38 +148,112 @@ export const ESCALATE_TOOL_OPENAI = {
  * routing signal that costs nothing and is worth having.
  */
 /**
- * Requests that are plainly a music command, routed straight to the agent.
+ * Requests that are plainly about playing, skipping, stopping or controlling
+ * music, routed straight to the agent, which has the music tools.
  *
  * The fast leg has no music tools, so it always ends up handing these over —
  * but it says something on the way, and for a command the whole point is that
  * nothing is said. Three attempts at instructing it not to produced "I can't
- * put music on", two holding lines, and a spoken "(reproduciendo)".
+ * put music on", two holding lines, and a spoken "(reproduciendo)" — see the
+ * AUDIT entry this list closes for the detail.
  *
- * A word list is a blunt instrument and this one will miss phrasings. That is
- * the right way round for it to fail: a miss leaves the old behaviour, and a
- * false positive sends an ordinary question to the agent, which answers it
- * correctly and a little slower. Neither outcome is wrong, only slower or
- * chattier.
+ * A word list is a blunt instrument and this one will still miss phrasings.
+ * That is not the safe direction to fail in: a miss is not "the old
+ * behaviour", it is the fast leg answering "no puedo poner música" or worse,
+ * exactly the failure this list exists to prevent. A false positive costs
+ * far less — an ordinary question goes to the agent instead of the fast leg,
+ * and comes back correct, just a little slower. That asymmetry is the whole
+ * design: when in doubt, match. Spanish, Brazilian Portuguese and English,
+ * imperative or asked as a question — grammar was the wrong signal for "can
+ * you disconnect Fede" (see the file comment above); it is the wrong signal
+ * here too.
  */
 const MUSIC_COMMAND = [
+  // Skip / next track. Spanish, Portuguese, English.
   // Trailing boundaries are a lookahead rather than \b: in JavaScript \b is
   // ASCII, so there is no word boundary after "salteá" or "pará" and the
   // obvious pattern silently never matches.
-  /(^|\s)(skip|saltea|salteá|salta|saltá|pasá de (tema|canción)|siguiente (tema|canción))(?=\s|$|[,.!?¡¿])/i,
-  /(^|\s)(pará|para|pare|frená|frena|detené|detene|stop|corta|cortá)\s+(la\s+)?(música|musica|canción|cancion|tema)(?=\s|$|[,.!?])/i,
-  /(^|\s)(poné|pone|poner|pon|reproducí|reproduci|reproducir|play)\s.{0,60}(música|musica|canción|cancion|tema|playlist|lista|disco|álbum|album)/i,
-  /(^|\s)(poné|pone|pon|play)\s+\S+.{0,40}\sde\s+\S+/i,
-  /(^|\s)(bajá|baja|bajame|bajale|subí|subi|subime|subile)\b.{0,30}(volumen|música|musica)/i,
+  /(^|\s)(skip|next\s+(song|track)|saltea|salteá|salta|saltá|pula|pr[oó]xima|pasá de (tema|canción)|pasa de (tema|cancion)|siguiente (tema|canción)|siguiente (tema|cancion))(?=\s|$|[,.!?¡¿])/i,
+
+  // Stop/pause/resume, naming the music explicitly. Spanish "para" and
+  // Portuguese "para" are the same word, so this one line covers both.
+  /(^|\s)(pará|para|pare|frená|frena|detené|detene|stop|corta|cortá|pause|paus[aá]|resume)\s+(the\s+|la\s+|a\s+)?(música|musica|canción|cancion|tema|song|music|canção)(?=\s|$|[,.!?])/i,
+
+  // Play/put on, naming the music explicitly: Spanish, Portuguese and
+  // English verbs, any of them near a word for music.
+  /(^|\s)(poné|pone|poner|pon|reproducí|reproduci|reproducir|play|put\s+on|toca|coloca|bota)\s.{0,60}(música|musica|canción|cancion|tema|playlist|lista|disco|álbum|album|song|music|queue|canção|som)/i,
+
+  // "<title> de <artist>" — the object is a proper name, so this doesn't
+  // need a music word nearby. "de" is the same preposition in Spanish and
+  // Portuguese.
+  /(^|\s)(poné|pone|pon|play|toca|coloca|bota)\s+\S+.{0,40}\sde\s+\S+/i,
+
+  // "put some X on" — the object sits between the verb and "on".
+  /(^|\s)put\s+some\s+.{0,40}\son(?=\s|$|[,.!?])/i,
+
+  // Play, unqualified: "play", "toca", "coloca" and "bota" opening a
+  // request are rare enough outside music that the false positives are
+  // worth it — the whole point of this list.
+  /(^|\s)(play|toca|coloca|bota)\s+\S/i,
+
+  // Volume, naming it or the music. Spanish, English.
+  /(^|\s)(bajá|baja|bajame|bajale|subí|subi|subime|subile)(?=\s).{0,30}(volumen|música|musica)/i,
   /\bvolumen\b.{0,20}(más|mas|un poco|abajo|arriba)|\b(más|mas)\s+(fuerte|bajo|alto)\b/i,
+  /(^|\s)turn\s+(it|the\s+music)\s+(up|down)(?=\s|$|[,.!?])/i,
+  /(^|\s)(louder|quieter)(?=\s|$|[,.!?])/i,
+  /(^|\s)volume\s+(up|down)(?=\s|$|[,.!?])/i,
+
+  // Volume, Portuguese.
+  /(^|\s)(aumenta|abaixa)\b.{0,30}(volume|som)/i,
+
+  // The queue: remove from it (Spanish), or add to it (English).
   // Lookaheads, not \b: JavaScript's \b is ASCII, so there is no boundary
   // after "sacá", "pausá" or "seguí" and the obvious pattern never fires.
   // Second time this bit; the accented imperative is the normal case here.
   /(^|\s)(saca|sacá|quita|quitá|borra|borrá|elimina|eliminá)(?=\s).{0,40}(cola|queue|lista)/i,
-  /(^|\s)(pausa|pausá|pausalo|pausala|paus[aá]la|reanuda|reanudá|segu[ií]|continua|continuá)(?=\s|$|[,.!?])/i,
+  /(^|\s)queue\s+\S/i,
+  /(^|\s)add\s+.{0,40}\sto\s+the\s+queue(?=\s|$|[,.!?])/i,
+
+  // Pause/resume, unqualified — Spanish only. English "pause"/"resume" said
+  // bare are common enough outside music that they're left to the line
+  // above, which requires "the music"/"the song" alongside them.
+  /(^|\s)(pausa|pausá|pausalo|pausala|paus[aá]la|reanuda|reanudá|segu[ií]|continua|continuá|dale\s+play)(?=\s|$|[,.!?])/i,
+
+  // A whole album/disc.
   /\b(disco|álbum|album)\b.{0,40}(entero|completo|todo)|\b(poné|pone|pon)\b.{0,20}\b(disco|álbum|album)\b/i,
+
+  // What's playing right now. Spanish, Portuguese, English.
+  /(^|\s|[¿¡])(qué|que)\s+(está|esta)\s+sonando(?=\s|$|[,.!?])/i,
+  /(^|\s|[¿¡])(qué|que)\s+(tema|canción|cancion)\s+es\s+(este|esta)(?=\s|$|[,.!?])/i,
+  /(^|\s)o\s+que\s+(está|esta)\s+tocando(?=\s|$|[,.!?])/i,
+  /(^|\s)what('s|\s+is)\s+playing(?=\s|$|[,.!?])/i,
+  /(^|\s)what\s+song\s+is\s+this(?=\s|$|[,.!?])/i,
+
+  // Non-imperative Spanish: a request phrased as a question or a wish, not
+  // an order.
+  /(^|\s|[¿¡])(podés|podes|podrías|podrias|me\s+podés|me\s+podes)\s+poner(?=\s|$|[,.!?])/i,
+  /(^|\s|[¿¡])quiero\s+escuchar(?=\s|$|[,.!?])/i,
+  /(^|\s|[¿¡])me\s+(gustaría|gustaria)\s+escuchar(?=\s|$|[,.!?])/i,
+  /(^|\s|[¿¡])ponemos(?=\s|$|[,.!?])/i,
+
+  // Change or drop the song, or cut the music altogether.
+  /(^|\s)(cambiá|cambia)\s+de\s+tema(?=\s|$|[,.!?])/i,
+  /(^|\s)otra\s+(canción|cancion)(?=\s|$|[,.!?])/i,
+  /(^|\s)(sacá|saca|apagá|apaga)\s+la\s+(música|musica)(?=\s|$|[,.!?])/i,
+  /(^|\s)silencio(?=\s|$|[,.!?¡¿])/i,
 ];
 
-const looksLikeMusicCommand = (text) => MUSIC_COMMAND.some((re) => re.test(String(text ?? '')));
+/** Exported for the table test; also used by `answer()` to route. */
+export const looksLikeMusicCommand = (text) =>
+  MUSIC_COMMAND.some((re) => re.test(String(text ?? '')));
+
+/**
+ * A rough check on the *reason* an escalation gives, not on the question
+ * itself — used only to log when the fast leg caught a music request the
+ * list above missed, never to route. See the `[music] missed by the list`
+ * log line in `answer()`.
+ */
+const MUSIC_REASON = /(music|m[uú]sica|song|canci[oó]n|track|tema|volume|volumen|queue|cola|playlist|álbum|album|disco)/i;
 
 /**
  * The live session for a guild, imported when first needed: voice/manager.js
@@ -230,6 +305,21 @@ const looksLikeMusicModeCommand = (text) =>
 const LEAKED_TOOL_NAME = /^\s*escalate\b[\s.:,!¡—-]*/i;
 
 export const withoutToolName = (text) => String(text ?? '').replace(LEAKED_TOOL_NAME, '').trim();
+
+/**
+ * A stage direction rather than a line, such as "(reproduciendo)".
+ *
+ * Heard escalating a music request: the fast model wrote a parenthetical
+ * narrating what was about to happen instead of staying silent, and nothing
+ * about it looked like the tool name `withoutToolName` above already strips,
+ * so it went out over the voice call — the third way the "no words on a
+ * handover" rule failed by prompt alone (see the AUDIT entry this file
+ * closes). A whole sentence that is nothing but its own parentheses is a
+ * note to itself, never something meant for the room.
+ */
+const BARE_PARENTHETICAL = /^\s*[([].*[)\]][\s.!?]*$/;
+
+export const isBareParenthetical = (text) => BARE_PARENTHETICAL.test(String(text ?? ''));
 
 const state = new Map();
 
@@ -349,6 +439,10 @@ export class CascadeBrain {
     if (looksLikeMusicCommand(context.question)) {
       this.escalated = true;
       this.reason = 'a music command, which the fast leg has no tools for';
+      // How the list gets tuned from production logs later: every phrase it
+      // catches here, and every one it doesn't (below, once the model catches
+      // what this missed).
+      console.log(`[music] routed by phrase: "${context.question}"`);
       return this.#runAgent(context, memory, { onSearchStart, onSentence, onToolUse });
     }
 
@@ -393,8 +487,16 @@ export class CascadeBrain {
 
     const runFast = this.deps.runFast ?? ((...args) => this.#runFast(...args));
     const { said, escalate, reason } = await runFast(context, memory, { onSentence });
-    if (escalate) trace('ROUTE', 'escalated to agent', reason + (said ? `\n(after saying: "${said}")` : ''));
-    else trace('OUTPUT', 'fast leg says', said);
+    if (escalate) {
+      trace('ROUTE', 'escalated to agent', reason + (said ? `\n(after saying: "${said}")` : ''));
+      // The list above didn't catch this one — it only ever sees requests
+      // that reach here, i.e. that it missed — but the model's own reason
+      // for escalating names music anyway. Logged so the list can be widened
+      // with the actual phrasing that got past it, not a guess.
+      if (MUSIC_REASON.test(reason ?? '')) {
+        console.log(`[music] missed by the list, escalated by the model: "${context.question}"`);
+      }
+    } else trace('OUTPUT', 'fast leg says', said);
     if (!escalate) {
       memory.lastUsedTools = false;
       remember(memory, context.question, said, { byAgent: false });
@@ -564,7 +666,7 @@ export class CascadeBrain {
       stream.on('text', (delta) => {
         for (const chunk of splitter.push(delta)) {
           const clean = withoutToolName(chunk);
-          if (!clean) continue; // the tool name and nothing else
+          if (!clean || isBareParenthetical(clean)) continue; // the tool name, or a stage direction
           said += (said ? ' ' : '') + clean;
           onSentence(clean);
         }
@@ -583,7 +685,7 @@ export class CascadeBrain {
     }
 
     const rest = withoutToolName(splitter.flush());
-    if (rest) {
+    if (rest && !isBareParenthetical(rest)) {
       said += (said ? ' ' : '') + rest;
       onSentence?.(rest);
     }
@@ -667,7 +769,7 @@ export class CascadeBrain {
             if (onSentence) {
               for (const chunk of splitter.push(event.delta ?? '')) {
                 const clean = withoutToolName(chunk);
-                if (!clean) continue; // the tool name and nothing else
+                if (!clean || isBareParenthetical(clean)) continue; // the tool name, or a stage direction
                 said += (said ? ' ' : '') + clean;
                 onSentence(clean);
               }
@@ -693,7 +795,7 @@ export class CascadeBrain {
     }
 
     const rest = withoutToolName(splitter.flush());
-    if (rest) {
+    if (rest && !isBareParenthetical(rest)) {
       said += (said ? ' ' : '') + rest;
       onSentence?.(rest);
     }

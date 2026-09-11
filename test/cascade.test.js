@@ -6,6 +6,8 @@ import {
   FAST_PROMPT_EXTRA,
   NO_CREDIT_NOTICE,
   NO_CREDIT_NOTICE_INTERVAL_MS,
+  isBareParenthetical,
+  looksLikeMusicCommand,
   resetCascade,
   withoutToolName,
 } from '../src/agent/cascade.js';
@@ -301,6 +303,103 @@ describe('music commands never reach the fast leg', () => {
   });
 });
 
+describe('looksLikeMusicCommand, in the phrasings people actually use', () => {
+  // Every one of these must be recognised as a music request, whatever the
+  // language or the grammar — an order, a question, a wish. A miss here is
+  // not a safe direction to fail in: it is the fast leg answering "no puedo
+  // poner música", which is the whole reason this list exists (see the
+  // AUDIT entry this file closes, and the comment above MUSIC_COMMAND).
+  const mustMatch = [
+    // English
+    'play some jazz',
+    'put on some jazz',
+    'put some rock on',
+    'skip this one',
+    'next song please',
+    'next track',
+    'pause the music',
+    'stop the music',
+    'resume the music',
+    'turn it up',
+    'turn the music down',
+    'louder please',
+    'quieter please',
+    "what's playing",
+    'what song is this',
+    'queue some blues',
+    'add this to the queue',
+    // Brazilian Portuguese
+    'toca uma música',
+    'coloca uma playlist',
+    'bota um samba',
+    'pula essa',
+    'próxima música',
+    'pausa a música',
+    'para a música',
+    'aumenta o volume',
+    'abaixa o volume',
+    'o que está tocando',
+    // Non-imperative Spanish
+    '¿podés poner algo de rock?',
+    '¿podrías poner una canción?',
+    'quiero escuchar algo tranqui',
+    'me gustaría escuchar jazz',
+    '¿ponemos algo de rock?',
+    '¿qué está sonando?',
+    '¿qué tema es este?',
+    '¿qué canción es esta?',
+    'cambiá de tema',
+    'otra canción',
+    'sacá la música',
+    'apagá la música',
+    'silencio',
+    // Imperative Spanish (the original list, still covered)
+    'poné bohemian rhapsody de queen',
+    'bajá el volumen',
+    'subí la música',
+    'más fuerte',
+    'saltá el tema',
+    'pasá de canción',
+    'siguiente tema',
+    'pará la música',
+    'poné una playlist de rock',
+    'sacá esta canción de la cola',
+    'poné el disco entero',
+    'pausá',
+    'seguí',
+    'dale play',
+    'reanudá',
+  ];
+
+  for (const phrase of mustMatch) {
+    test(`matches: "${phrase}"`, () => {
+      assert.equal(looksLikeMusicCommand(`espejo, ${phrase}`), true);
+    });
+  }
+
+  // Plain talk about music, with no request in it. A word list that swallowed
+  // these would undo cascade entirely for anyone who mentions music at all.
+  const mustNotMatch = [
+    '¿qué opinás de la música de los 80?',
+    'me gusta esa canción',
+    'ayer fui a un recital',
+    'anoche fuimos a un show buenísimo',
+    'el recital estuvo espectacular',
+    "I love that band's new record",
+    'she used to be a professional dancer',
+    'esa banda es buenísima en vivo',
+    'aquele show foi incrível',
+    'what a great song that was',
+    'turn that frown upside down',
+  ];
+
+  for (const phrase of mustNotMatch) {
+    test(`does not match: "${phrase}"`, () => {
+      assert.equal(looksLikeMusicCommand(`espejo, ${phrase}`), false);
+    });
+  }
+});
+
 describe('music mode never reaches the fast leg', () => {
   beforeEach(resetCascade);
 
@@ -395,6 +494,23 @@ describe('the tool name never reaches the room', () => {
   });
 });
 
+describe('a stage direction never reaches the room', () => {
+  test('a sentence that is only a parenthetical is recognised as one', () => {
+    // Heard escalating a music request: the fast leg wrote "(reproduciendo)"
+    // instead of staying silent, and it went out over the voice call.
+    assert.equal(isBareParenthetical('(reproduciendo)'), true);
+    assert.equal(isBareParenthetical('(reproduciendo)  '), true);
+    assert.equal(isBareParenthetical('  (Reproduciendo la canción.)'), true);
+    assert.equal(isBareParenthetical('[reproduciendo]'), true);
+  });
+
+  test('a real sentence that happens to use parentheses survives', () => {
+    assert.equal(isBareParenthetical('Dame un segundo.'), false);
+    assert.equal(isBareParenthetical('Che (posta) qué buena esa.'), false);
+    assert.equal(isBareParenthetical(''), false);
+  });
+});
+
 describe('commands carried out without a model', () => {
   beforeEach(resetCascade);
 
@@ -455,8 +571,14 @@ describe('commands carried out without a model', () => {
     assert.equal(agent.calls.length, 1);
   });
 
-  test('a question about the music is not a command', async () => {
-    const agent = fakeAgent();
+  test('a question about what is playing goes to the agent too, not just an order', async () => {
+    // Old behaviour: a question rather than an order, so it fell through to
+    // the fast leg, which had no idea what was actually playing either — it
+    // would have had to make something up, its own version of the "I can't"
+    // the rest of this list exists to prevent. Grammar was never the right
+    // test (see the file comment above); this phrasing just took longer to
+    // catch.
+    const agent = fakeAgent({ text: 'Es Track 1.' });
     let fastRan = false;
     const b = brain({
       agent,
@@ -467,7 +589,8 @@ describe('commands carried out without a model', () => {
       },
     });
     await b.answer(ask('espejo, qué tema es este'));
-    assert.equal(fastRan, true);
+    assert.equal(fastRan, false, 'the fast leg must not have been asked');
+    assert.equal(agent.calls.length, 1);
   });
 });
 
