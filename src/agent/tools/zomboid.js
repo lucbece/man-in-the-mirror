@@ -279,6 +279,29 @@ export function sshArgs({ destination, keyPath, act }) {
   ];
 }
 
+/**
+ * What travels with every question, after the asker's own words.
+ *
+ * Measured on the real door (2026-09-11): an investigation question — "some
+ * players lost their explored map a few days ago, find out why" — burned
+ * eleven turns and 351 thousand tokens of input without reaching an answer,
+ * because each read the operator made came back as a mountain: hours of
+ * container log, unbounded journal. The turn cap was not the limit; the
+ * volume per call was. The far side's own rules say the same, but a rule
+ * that also arrives with the question is one the operator cannot miss, and
+ * it costs nothing. Labelled as the bot's note so it is never mistaken for
+ * something the person said.
+ */
+export const DOOR_BRIEF_FOOTER =
+  '\n\n(Nota del bot, no de quien pregunta: lecturas acotadas siempre — docker compose logs --tail 200, ' +
+  'journalctl --no-pager -n 200, y --since solo en minutos u horas, nunca días sin --tail. ' +
+  'Si es una investigación, primero nombres y tamaños — ls -l, find -size 0, stat sobre data/ — ' +
+  'y recién después el log del minuto que esos archivos señalen. Contestá en una o dos frases.)';
+
+export function doorBrief(question) {
+  return String(question ?? '').trim() + DOOR_BRIEF_FOOTER;
+}
+
 export function askOverSsh({ destination, keyPath, question, act, timeoutMs = ASK_TIMEOUT_MS, spawnImpl = spawn }) {
   return new Promise((resolve, reject) => {
     const child = spawnImpl('ssh', sshArgs({ destination, keyPath, act }), {
@@ -340,7 +363,7 @@ export function askOverSsh({ destination, keyPath, question, act, timeoutMs = AS
       );
     });
 
-    child.stdin.end(String(question ?? ''));
+    child.stdin.end(doorBrief(question));
   });
 }
 
