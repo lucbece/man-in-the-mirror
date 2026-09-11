@@ -9,13 +9,27 @@
 import { config } from '../config.js';
 import { detectAddress } from './wake.js';
 import { decodeToMono16k, pcmToWav } from './audio.js';
-import { withDeadline, sttDeadlineMs } from './deadline.js';
+import { withDeadline, sttDeadlineMs, DeadlineError } from './deadline.js';
 import { measureEnergy, tooQuiet } from './energy.js';
 import { ClipLog } from './clip-log.js';
 import { MODELS, ensureModel, ensureWhisper, transcribeWav } from './whisper.js';
 
 /** Below this an "utterance" is a cough or a mic bump. Not worth a request. */
 const MIN_UTTERANCE_MS = 300;
+
+/**
+ * The deadline for the whisper-1 confirmation of a lone name, independent of
+ * the primary model's own deadline.
+ *
+ * This used to inherit `sttDeadlineMs`, retries included — a confirmation
+ * that hung cost two full ~4.2s deadlines in series, on the critical path of
+ * the very utterance that wakes the bot (8-11s wakes in production, traced to
+ * `[stt] second opinion failed: stt gave no answer in 4.2s`). A confirmation
+ * must never cost more than the utterance it confirms: on timeout the primary
+ * transcript is trusted as-is, so there is nothing to gain from waiting as
+ * long as the real request gets.
+ */
+export const SECOND_OPINION_MS = 2000;
 
 /**
  * Whisper invents these when handed near-silence — a well-known artefact of
@@ -140,17 +154,26 @@ class SttError extends Error {
 }
 
 class OpenAiWhisper {
-  constructor({ apiKey, model }) {
+  constructor({ apiKey, model, fetch = globalThis.fetch }) {
     if (!apiKey) throw new SttError('No OpenAI API key configured.');
     this.apiKey = apiKey;
     this.model = model || 'whisper-1';
+    /** Injectable so a hung request can be tested without a real deadline. */
+    this.fetch = fetch;
   }
 
   get label() {
     return `OpenAI ${this.model}`;
   }
 
-  async transcribe(wav, { language, prompt } = {}) {
+  /**
+   * `deadlineMs`, `retries` and `stage` default to the size-based deadline,
+   * one retry, and the 'stt' tally — the shape every existing call already
+   * has. A caller that needs a shorter, single-shot deadline under its own
+   * stage name (the whisper-1 confirmation call, see `SECOND_OPINION_MS`)
+   * passes them explicitly.
+   */
+  async transcribe(wav, { language, prompt, deadlineMs, retries, stage = 'stt' } = {}) {
     const form = new FormData();
     form.append('file', new Blob([wav], { type: 'audio/wav' }), 'audio.wav');
     form.append('model', this.model);
@@ -167,17 +190,21 @@ class OpenAiWhisper {
     // The whole request has to finish in time: a transcript arrives in one
     // piece, so there is no first byte to wait for. One request hanging here
     // once held the channel for 50 s.
-    const res = await withDeadline('stt', sttDeadlineMs(wav), (signal) =>
-      fetch('https://api.openai.com/v1/audio/transcriptions', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${this.apiKey}` },
-        body: form,
-        signal,
-      }).then(async (r) => {
-        // Read inside the deadline too: the body is the transcript.
-        if (r.ok) r.parsed = await r.json();
-        return r;
-      }),
+    const res = await withDeadline(
+      stage,
+      deadlineMs ?? sttDeadlineMs(wav),
+      (signal) =>
+        this.fetch('https://api.openai.com/v1/audio/transcriptions', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${this.apiKey}` },
+          body: form,
+          signal,
+        }).then(async (r) => {
+          // Read inside the deadline too: the body is the transcript.
+          if (r.ok) r.parsed = await r.json();
+          return r;
+        }),
+      { retries },
     );
 
     if (!res.ok) {
@@ -542,7 +569,16 @@ async function runTranscription(utterance, stt) {
       const second = (utterance.secondOpinion ?? secondOpinionFor)(stt);
       if (second) {
         try {
-          const heard = await second.transcribe(pcmToWav(pcm), { prompt });
+          const heard = await second.transcribe(pcmToWav(pcm), {
+            prompt,
+            // A confirmation must never cost more than the utterance it
+            // confirms, and never inherit the primary's own retry — see
+            // SECOND_OPINION_MS. Tallied under its own stage so a slow
+            // whisper-1 never reads as a primary stt failure.
+            deadlineMs: utterance.secondOpinionDeadlineMs ?? SECOND_OPINION_MS,
+            retries: 0,
+            stage: 'stt-confirm',
+          });
           if (!hearsAName(heard, config.get('agentNames'))) {
             junk = true;
             console.log(`[stt] lone "${text.trim()}" not confirmed by whisper-1 (it heard "${String(heard).trim().slice(0, 60)}") → treated as noise`);
@@ -550,7 +586,11 @@ async function runTranscription(utterance, stt) {
         } catch (err) {
           // Unconfirmed either way: the first opinion stands rather than a
           // network hiccup costing a real call.
-          console.warn(`[stt] second opinion failed: ${err.message}`);
+          if (err instanceof DeadlineError) {
+            console.warn(`[stt] second opinion gave no answer in ${(err.ms / 1000).toFixed(1)}s — trusting "${text.trim()}"`);
+          } else {
+            console.warn(`[stt] second opinion failed: ${err.message}`);
+          }
         }
       }
     }
@@ -652,4 +692,4 @@ export function formatTranscript(utterances) {
     .join('\n');
 }
 
-export { SttError, MIN_UTTERANCE_MS, looksHallucinated };
+export { SttError, MIN_UTTERANCE_MS, looksHallucinated, OpenAiWhisper };

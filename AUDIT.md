@@ -36,17 +36,6 @@ Nothing open.
 
 ## Medium
 
-### Transcription can lag by tens of seconds during music
-
-Seen 2026-09-04 while an album played: `heard 27.0s` on a turn, against the
-usual 1–3 s. Whether the eager queue was starved by the resolve of the next
-track, by the API, or by the clip gate's decode is not known; the `[stt]`
-lines (each sent clip, and the per-minute tally of dropped ones) carry the
-timings needed to tell.
-
-Package: WP2
-
-
 ### One live config object is imported by eighteen modules
 
 `config` is one object built at import time (`src/config.js:297-301`), and
@@ -157,7 +146,6 @@ that week.
 
 Package: WP2
 
-
 - **`docker compose up` on the server warns that the volumes "already exist
   but were not created by Docker Compose".** Cosmetic: cloud-init creates
   `mirror_data` and `mirror_runtime` before the first `up` so `config.json`
@@ -218,7 +206,6 @@ confirmation names the old model — and that line exists only so people can tel
 whether a setting took.
 
 Package: WP3
-
 
 ### The wake chain is measured now, but not yet tuned
 
