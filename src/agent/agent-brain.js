@@ -270,11 +270,20 @@ export class AgentSession {
             }
           }
         } else if (message.type === 'result') {
+          // `usage.cache_read_input_tokens` / `cache_creation_input_tokens`
+          // are the only visible sign the SDK's own prompt caching is doing
+          // anything — nothing else about it shows up in a result message.
+          // Item 15 (docs/plans/performance.md) asked to check the SDK's
+          // caching against these; they get logged here rather than asserted
+          // about, because the CLI manages that prefix itself.
+          const read = message.usage?.cache_read_input_tokens ?? 0;
+          const wrote = message.usage?.cache_creation_input_tokens ?? 0;
           trace(
             'TURN',
             message.subtype,
             `${message.num_turns} round(s) · ${((message.duration_ms ?? 0) / 1000).toFixed(1)}s · ` +
-              `$${(message.total_cost_usd ?? 0).toFixed(4)} so far this session`,
+              `$${(message.total_cost_usd ?? 0).toFixed(4)} so far this session · ` +
+              `cache read ${read} / wrote ${wrote}`,
           );
           // Captured before the update below, so a turn's own cost delta —
           // what the dead-turn check needs — is "what this result added",

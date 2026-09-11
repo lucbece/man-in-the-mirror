@@ -425,6 +425,16 @@ gpt-4.1 one may land within a few hundred ms of each other.
     the TTS (LiveKit keeps that off too). After item 8 has shown how often
     the grace restarts, and after item 8's residual says what is left to
     win.
+    Status: measured 2026-09-11 and not built. Over 821 production answers
+    (2026-09-06..10, after item 8 shipped) the gap between the transcript
+    landing and the question reaching the model is 0.40 s median, 1.10 s
+    p75, 3.80 s p90; the grace adds time in 60 percent of answers but only
+    0.30 s median, the settle in 25 percent at 0.80 s median. Speculating
+    during the grace would win those 0.3-0.4 s at the price of one wasted
+    model call whenever the speaker continues (the p90 tail) and of a
+    second concurrent path through `ask()`, the closure AUDIT.md already
+    lists as the tangled one. Not worth it at this residual; revisit only
+    if the grace itself is lengthened.
 12. **An early acknowledgement sound.** A 300 ms "mm" from the filler
     cache, once per turn, when a tool that will speak has started
     (`onToolUse` for anything not in `SILENT_TOOLS`) or the fast leg has
@@ -469,6 +479,21 @@ Together with L1: about 3.3 s median from the last word (8a 0.25, 8 0.7,
     prefix is not visible in its result messages and needs checking
     against the API's usage fields. Not applicable to Haiku at this prompt
     size.
+    Status: built 2026-09-11. `cache_control: { type: 'ephemeral' }` added
+    to the one system block on both direct Anthropic calls — the fast
+    leg's `#runFastAnthropic` and the chat brain's `ClaudeBrain.answer` in
+    `brain.js`. Nothing moved out of the prefix: `promptWithInstructions`
+    and both callers already put everything that varies turn to turn — the
+    transcript, the question, what was already answered — into the user
+    message, never `system`, so the prefix was already byte-identical
+    between turns for a given guild. The Agent SDK path (`agent-brain.js`)
+    is untouched beyond logging — the CLI manages its own caching — but
+    the `TURN` trace line now reports `usage.cache_read_input_tokens` and
+    `cache_creation_input_tokens` from the result message, so production
+    logs show whether that prefix is landing in cache. The fast leg on the
+    production server currently runs `fastModel: gpt-4.1` (OpenAI), so
+    this item's saving applies once that is switched to an Anthropic
+    model; the chat brain and the trace line apply regardless.
 
 ### Out of scope, considered
 

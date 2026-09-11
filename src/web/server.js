@@ -21,6 +21,7 @@ import { answerStats } from '../agent/answers.js';
 import { MODELS } from '../agent/models.js';
 import { createTts } from '../agent/tts.js';
 import { isPiperInstalled } from '../agent/piper.js';
+import { lines, mergeLines } from './merge-lines.js';
 import { sameOriginOnly } from './same-origin.js';
 
 const HOST = process.env.WEB_HOST || '127.0.0.1';
@@ -142,6 +143,35 @@ export function createApp(deps = {}) {
 
     const guildChanged =
       typeof body.guildId === 'string' && body.guildId.trim() !== config.get('guildId');
+
+    // customInstructions and notebook can also be written by voice
+    // (remember_instruction, remember_fact) while the panel's Instructions
+    // tab sits open with an older copy loaded. `base` is that older copy —
+    // sent only by a panel new enough to track it — and merging against it
+    // is what lets a voice line survive a save that never saw it. No `base`
+    // (an older page, a script, curl, a test) means keep today's plain
+    // replace, so nothing else here changes.
+    for (const field of ['customInstructions', 'notebook']) {
+      if (typeof body[field] !== 'string' || typeof body.base?.[field] !== 'string') continue;
+
+      // Identical once normalised means the panel never touched this field —
+      // saving some other setting on the same card must not rewrite it.
+      // Calling mergeLines here regardless would be harmless today (it just
+      // re-derives the same normalised text config already holds), but it
+      // is the wrong instruction to give: "nothing changed" should mean
+      // config.update() is never told about this field at all, not "rewrite
+      // it with what turns out to be the same value".
+      const baseLines = lines(body.base[field]);
+      const nextLines = lines(body[field]);
+      const unchanged =
+        baseLines.length === nextLines.length && baseLines.every((line, i) => line === nextLines[i]);
+
+      if (unchanged) delete body[field];
+      else body[field] = mergeLines(body.base[field], body[field], config.get(field));
+    }
+    // Never a real config key; config.update() would ignore it today, but a
+    // future DEFAULTS entry named "base" is not a risk worth taking.
+    delete body.base;
 
     config.update(body);
 

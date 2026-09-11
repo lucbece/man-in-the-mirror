@@ -140,11 +140,13 @@ function claudeSupports(model) {
 }
 
 class ClaudeBrain {
-  constructor({ apiKey, model, webSearch, guildId }) {
+  constructor({ apiKey, model, webSearch, guildId, client }) {
     if (!apiKey) throw new BrainError('No Anthropic API key configured.');
     // Only ever used to look people up by id when the prompt is built.
     this.guildId = guildId ?? 'default';
-    this.client = new Anthropic({ apiKey });
+    // `client` is a test seam — a fake with a `beta.messages.stream` to
+    // assert the request shape against, never wired up by `createBrain`.
+    this.client = client ?? new Anthropic({ apiKey });
     this.model = model || DEFAULT_CLAUDE_MODEL;
     this.can = claudeSupports(this.model);
     this.webSearch = webSearch && this.can.webSearch;
@@ -158,7 +160,20 @@ class ClaudeBrain {
     const stream = this.client.beta.messages.stream({
       model: this.model,
       max_tokens: MAX_TOKENS,
-      system: promptWithInstructions(this.guildId),
+      // `cache_control` on the one system block, with nothing turn-varying
+      // sharing this array: `promptWithInstructions` is the fixed rules plus
+      // this room's standing instructions and notebook, none of which change
+      // between one question and the next in the same guild — the transcript
+      // and the question itself go into `buildUserMessage` below, after the
+      // breakpoint. Measured on claude-sonnet-5 with this prompt cached:
+      // 430ms off time to first token (item 15, docs/plans/performance.md).
+      system: [
+        {
+          type: 'text',
+          text: promptWithInstructions(this.guildId),
+          cache_control: { type: 'ephemeral' },
+        },
+      ],
       // Low effort keeps latency down; a voice reply that lands four seconds
       // late has already lost the moment. Not every model accepts it.
       ...(this.can.effort ? { output_config: { effort: 'low' } } : {}),
@@ -396,4 +411,4 @@ export function clampForSpeech(text, limit = MAX_SPOKEN_CHARS) {
   return `${clean.slice(0, Math.max(0, limit - 1)).trimEnd()}…`;
 }
 
-export { BrainError, MAX_SPOKEN_CHARS, SYSTEM_PROMPT };
+export { BrainError, MAX_SPOKEN_CHARS, SYSTEM_PROMPT, ClaudeBrain };
