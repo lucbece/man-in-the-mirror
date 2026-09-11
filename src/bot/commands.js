@@ -286,11 +286,17 @@ async function cmdAsk(interaction) {
     return interaction.editReply(`Couldn't answer: ${err.message}`);
   }
 
+  // `t.speakMs` does not exist — ask() never sets it, only transcribeMs,
+  // firstAudioMs, thinkMs and totalMs (see the very similar [agent] log
+  // line). firstAudioMs itself is only set once something is actually
+  // spoken, so a written or silent answer needs its own words here too.
   const t = result.timings;
   const detail =
     `heard ${(t.transcribeMs / 1000).toFixed(1)}s · ` +
     `thought ${(t.thinkMs / 1000).toFixed(1)}s · ` +
-    `voiced ${(t.speakMs / 1000).toFixed(1)}s · ` +
+    (t.firstAudioMs === undefined
+      ? 'never spoke · '
+      : `first words ${(t.firstAudioMs / 1000).toFixed(1)}s · `) +
     `${(t.totalMs / 1000).toFixed(1)}s total`;
 
   // In music mode nothing was said, so quoting it as speech would be a lie
