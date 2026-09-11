@@ -141,6 +141,14 @@ export function mentionsLanguageSwitch(text) {
  * actually asked in English is left alone entirely, because then an English
  * answer is the right one.
  *
+ * The check runs for every resolved language except English — Spanish,
+ * Portuguese, German, whatever `guessLanguage` returns, `null` included. It
+ * used to run only when the question looked Spanish, which meant a German or
+ * Portuguese speaker got no guard at all: `guessLanguage` could only ever
+ * answer 'es' or 'en', so anything that wasn't Spanish was silently treated
+ * as English and the check turned itself off. An answer in English is only
+ * ever *not* a leak when the question was actually in English.
+ *
  * Except it wasn't conservative enough. Measured over five days of
  * production logs (2026-09-06..10): 19 dropped in five days, all legitimate,
  * zero real leaks — every one of the 19 was an answer given after someone in
@@ -163,7 +171,7 @@ export function looksLikeLeakedReasoning(text, question, { room, languageRequest
   // Without one, a short question is taken at face value, as before.
   const asked = words(question);
   const language = asked.length < FEW_WORDS && room ? room : guessLanguage(question);
-  if (language !== 'es') return false;
+  if (language === 'en') return false;
 
   const said = words(text);
   if (said.length < 6) return false; // too short to tell, and too short to be a monologue

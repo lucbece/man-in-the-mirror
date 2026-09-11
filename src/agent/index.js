@@ -173,6 +173,7 @@ function outlasts(promise, ms) {
 export const COULD_NOT_LINES = {
   es: 'Perdón, me trabé. ¿Me lo repetís?',
   en: 'Sorry, I got stuck. Say that again?',
+  pt: 'Desculpa, travei. Repete pra mim?',
 };
 
 export async function ask(session, { question, askedBy, askedById, stoppedAt, marks, viaFollowUp }, deps = {}) {

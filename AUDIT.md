@@ -100,18 +100,6 @@ same place, which is why it is the length it is.
 
 Package: WP3
 
-### A language it does not recognise gets Spanish
-
-`pickLine` falls back to `table.es` for any language with no clips
-(`src/agent/filler.js:77`) and `takeFiller` defaults its parameter to `'es'`
-(`src/agent/filler.js:138`), while `guessLanguage` can only ever answer `'es'`
-or `'en'` (`src/agent/filler.js:168-179`) because the only word list it has is
-Spanish. A German call therefore gets "Dame un segundo." over its silences,
-and `looksLikeLeakedReasoning` (`src/agent/spoken-guards.js:83`) switches
-itself off entirely, since it only runs when the question looks Spanish.
-
-Package: WP2
-
 ### Three brains keep three copies of the streaming rules
 
 `ClaudeBrain`, `OpenAiBrain`, `AgentSession` and `CascadeBrain` each run their
