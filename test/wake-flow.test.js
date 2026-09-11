@@ -2,7 +2,13 @@ import assert from 'node:assert/strict';
 import test, { before, describe } from 'node:test';
 import { EventEmitter } from 'node:events';
 
-import { VoiceSession, WAKE_TIMING, endsWithQuestion, looksLikeFollowUp } from '../src/voice/session.js';
+import {
+  VoiceSession,
+  WAKE_TIMING,
+  endsWithQuestion,
+  isReturnQuestion,
+  looksLikeFollowUp,
+} from '../src/voice/session.js';
 import { config } from '../src/config.js';
 
 /**
@@ -218,6 +224,45 @@ describe('answering the question the bot asked', () => {
     assert.equal(s.fired.length, 0);
   });
 
+  test('a return question does not open the wide window either', async () => {
+    // "¿vos cómo andás?" is small talk, not something the bot needs answered
+    // — the 121 reply-window hits measured 2026-09-06..10 were mostly this.
+    const s = stubSession();
+    assert.equal(s.expectReply('u1', 'Todo tranqui, Fede. ¿Vos?'), false);
+
+    s.checkForWake(said('u1', 'Vero', 'jaja todo bien'));
+    await wait(GRACE * 3);
+    assert.equal(s.fired.length, 0, 'not follow-up shaped, so it does not fire');
+
+    s.checkForWake(said('u1', 'Vero', 'pero contame de nuevo'));
+    await wait(GRACE * 3);
+    assert.equal(s.fired.length, 1, 'the narrower follow-up window is still open, not gone entirely');
+  });
+
+  test('a return question after a return question closer still gets no wide window', async () => {
+    const s = stubSession();
+    assert.equal(s.expectReply('u1', 'Acá estoy, ¿qué pasa?'), false);
+  });
+
+  test('a real question the bot needs answered still opens the wide window', async () => {
+    const s = stubSession();
+    assert.equal(s.expectReply('u1', '¿Desde qué ciudad lo calculo?'), true);
+  });
+
+  test('a laugh inside an open reply window neither answers nor spends it', async () => {
+    const s = stubSession();
+    s.expectReply('u1', '¿Desde qué ciudad lo calculo?');
+
+    s.checkForWake(said('u1', 'Vero', 'Jajaja'));
+    await wait(GRACE * 3);
+    assert.equal(s.fired.length, 0, 'a laugh is not an answer');
+
+    s.checkForWake(said('u1', 'Vero', 'desde Córdoba'));
+    await wait(GRACE * 3);
+    assert.equal(s.fired.length, 1, 'the window was still open for the real reply');
+    assert.equal(s.fired[0].question, 'desde Córdoba');
+  });
+
   test('it belongs to the person who was asked, not to the room', async () => {
     // Two other people resuming their own conversation is not an answer.
     const s = stubSession();
@@ -321,11 +366,14 @@ describe('following up without the name', () => {
     const s = stubSession();
     assert.equal(s.expectReply('u1', 'Son unas dieciocho horas de ruta.'), false, 'not a question, so no log-worthy window');
 
-    s.checkForWake(said('u1', 'Vero', 'y en avión cuánto es'));
+    // "y" is no longer a follow-up opener on its own — see FOLLOW_UP_OPENERS —
+    // so this only opens the window because it ends in a question mark, same
+    // as it would starting from any other word.
+    s.checkForWake(said('u1', 'Vero', 'y en avión cuánto es?'));
     await wait(GRACE * 3);
 
     assert.equal(s.fired.length, 1);
-    assert.equal(s.fired[0].question, 'y en avión cuánto es');
+    assert.equal(s.fired[0].question, 'y en avión cuánto es?');
     assert.equal(s.fired[0].viaFollowUp, true);
   });
 
@@ -356,12 +404,87 @@ describe('following up without the name', () => {
     assert.equal(s.fired.length, 0, 'expired');
   });
 
-  test('looksLikeFollowUp: openers and question marks, nothing else', () => {
-    for (const yes of ['y por qué', 'pero cuándo fue', 'entonces conviene el sábado', 'cuánto sale?', 'Why though', 'en serio?']) {
+  test('looksLikeFollowUp: three words minimum, a narrow set of openers, "?" otherwise', () => {
+    for (const yes of [
+      'pero cuándo fue', 'entonces conviene el sábado', 'osea que hacemos',
+      'aunque capaz no', 'but why though', 'so what now',
+      // Dropped as bare openers, but a real question built on one still gets
+      // through on the trailing "?".
+      'y por qué tanto?', 'cuánto sale eso?', 'por qué tanto tiempo?',
+    ]) {
       assert.equal(looksLikeFollowUp(yes), true, yes);
     }
-    for (const no of ['qué largo che', 'bueno me voy a comer', 'jaja', 'dale', '']) {
+    for (const no of [
+      'qué largo che', 'bueno me voy a comer', 'jaja', 'dale', '',
+      // Real false positives measured in production (77 hits, ~70 false):
+      // one or two words, however they end, were never a follow-up.
+      '¿Vale?', '¿Qué?', '¿Cómo?', '¿Sí?', '¿Ve?', '¿no?', 'Por favor.', 'Por favor...',
+      // Dropped openers on a sentence that never turns into a question.
+      'Y nos vemos en el próximo vídeo, ¡hasta la próxima!', 'Y buenas tardes.',
+      'y se me va la baja.',
+      'y va a empezar a convencer a personas para que compren distintas cosas.',
+      'Y ahora elegí...',
+    ]) {
       assert.equal(looksLikeFollowUp(no), false, no);
+    }
+  });
+
+  test('looksLikeFollowUp: real follow-ups measured in production are kept', () => {
+    for (const yes of [
+      'Bueno, ¿y cómo está el server?',
+      'Ah bueno, ¿sabés lore?',
+      '¿Por qué tengo que ver con esto?',
+      'Pero en orden, por favor.',
+    ]) {
+      assert.equal(looksLikeFollowUp(yes), true, yes);
+    }
+  });
+
+  test('looksLikeFollowUp: a question mark and three words is not enough when it opens with someone else\'s name', () => {
+    // Addressed to Fede, not a follow-up to the bot — "otherNames" is the
+    // other people in the call, cheap to read off channel.members.
+    assert.equal(looksLikeFollowUp('Fede, ¿vos tenés Cooking 1?', ['Fede']), false);
+    // Without knowing who else is in the call it can't make that call, so it
+    // falls back to judging the shape alone.
+    assert.equal(looksLikeFollowUp('Fede, ¿vos tenés Cooking 1?'), true);
+  });
+});
+
+describe('isReturnQuestion', () => {
+  test('small-talk closers and tag questions, accent- and case-insensitive', () => {
+    for (const closer of [
+      '¿Y vos?', '¿Vos?',
+      '¿Vos cómo andás?', '¿Vos cómo venís?', '¿Vos cómo vas?', '¿Vos cómo estás?',
+      '¿Cómo va?', '¿CÓMO VAS?',
+      '¿Qué onda?', '¿Qué pasa?', '¿Qué tal?', '¿Qué se cuenta?', '¿Qué necesitás?',
+      '¿Todo bien?', '¿Todo en orden?', '¿Algo más?',
+      '¿No?', '¿Verdad?', '¿Viste?', '¿Eh?', '¿Dale?', '¿Ok?',
+      'What about you?', 'How about you?', 'You?',
+      "What's up?", "What's up with you?",
+      'How are you?', 'How are you doing?',
+      'Anything else?', 'Right?',
+    ]) {
+      assert.equal(isReturnQuestion(closer), true, closer);
+    }
+  });
+
+  test('the real question a return question is tacked onto', () => {
+    // "Todo bien, ¿vos cómo andás?" is judged on its last question, not the
+    // small talk in front of it.
+    assert.equal(isReturnQuestion('Todo bien, ¿vos cómo andás?'), true);
+    assert.equal(isReturnQuestion('Acá estoy, ¿qué pasa?'), true);
+    assert.equal(isReturnQuestion('All good, what about you?'), true);
+    assert.equal(isReturnQuestion('…ni el delivery mejora ese remix, ¿no?'), true);
+  });
+
+  test('a question the bot actually needs answered is not a return question', () => {
+    for (const real of [
+      '¿Desde qué ciudad lo calculo?',
+      '¿Cuál de las dos, la de Rada o la de Casero?',
+      '¿Probaste bajar y subir el volumen?',
+      '¿Por qué tengo que ver con esto?',
+    ]) {
+      assert.equal(isReturnQuestion(real), false, real);
     }
   });
 });
