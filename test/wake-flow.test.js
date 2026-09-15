@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test, { before, describe } from 'node:test';
+import test, { after, before, describe } from 'node:test';
 import { EventEmitter } from 'node:events';
 
 import {
@@ -24,6 +24,10 @@ const FOLLOW_UP = 150;
 
 before(() => {
   config.values.wakeEnabled = true;
+  // Strict wake is on by default in production; off here so the existing
+  // follow-up and reply-window coverage below still exercises those paths.
+  // See the 'strict wake' suite for the opt-in behaviour itself.
+  config.values.strictWake = false;
   config.values.agentNames = 'mirror';
   WAKE_TIMING.graceMs = GRACE;
   WAKE_TIMING.openMs = OPEN;
@@ -551,5 +555,82 @@ describe('cutting it off', () => {
     await wait(GRACE * 3);
     assert.equal(s.shushed, 0);
     assert.equal(s.fired.length, 1);
+  });
+});
+
+describe('strict wake', () => {
+  test('a follow-up within the window, with no name, does not wake when strict', async () => {
+    config.values.strictWake = true;
+    try {
+      const s = stubSession();
+      assert.equal(s.expectReply('u1', 'Son unas dieciocho horas de ruta.'), false);
+
+      // Same sentence that opens the narrow follow-up window when strict wake
+      // is off — see 'following up without the name' above.
+      s.checkForWake(said('u1', 'Vero', 'y en avión cuánto es?'));
+      await wait(GRACE * 3);
+
+      assert.equal(s.fired.length, 0, 'the name is the only way in under strict wake');
+    } finally {
+      config.values.strictWake = false;
+    }
+  });
+
+  test('an utterance after a return-question answer does not wake when strict', async () => {
+    config.values.strictWake = true;
+    try {
+      const s = stubSession();
+      assert.equal(s.expectReply('u1', 'Todo tranqui, Fede. ¿Vos?'), false);
+
+      s.checkForWake(said('u1', 'Vero', 'pero contame de nuevo'));
+      await wait(GRACE * 3);
+
+      assert.equal(s.fired.length, 0);
+    } finally {
+      config.values.strictWake = false;
+    }
+  });
+
+  test('a real question the bot asked does not open a reply window either, when strict', async () => {
+    config.values.strictWake = true;
+    try {
+      const s = stubSession();
+      assert.equal(s.expectReply('u1', '¿Desde qué ciudad lo calculo?'), false);
+
+      s.checkForWake(said('u1', 'Vero', 'desde Córdoba'));
+      await wait(GRACE * 3);
+
+      assert.equal(s.fired.length, 0, 'no window at all under strict wake');
+    } finally {
+      config.values.strictWake = false;
+    }
+  });
+
+  test('saying its name still wakes it under strict wake', async () => {
+    config.values.strictWake = true;
+    try {
+      const s = stubSession();
+      s.checkForWake(said('u1', 'Vero', 'mirror what do you think'));
+      await wait(GRACE * 3);
+      assert.equal(s.fired.length, 1);
+    } finally {
+      config.values.strictWake = false;
+    }
+  });
+
+  test('with strict wake off, both windows behave exactly as before', async () => {
+    config.values.strictWake = false;
+    const s = stubSession();
+    s.expectReply('u1', '¿Desde qué ciudad lo calculo?');
+
+    s.checkForWake(said('u1', 'Vero', 'desde Córdoba'));
+    await wait(GRACE * 3);
+
+    assert.equal(s.fired.length, 1);
+    assert.equal(s.fired[0].viaFollowUp, true);
+  });
+
+  after(() => {
+    config.values.strictWake = false;
   });
 });

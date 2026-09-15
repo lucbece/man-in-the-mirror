@@ -342,6 +342,35 @@ describe('reasoning read aloud is dropped for the rest of the turn', () => {
   });
 });
 
+describe('a question back at the end of an answer is dropped, not spoken', () => {
+  test('a return question that closes the answer is held and then dropped', async () => {
+    const d = deps({ sentences: ['Todo bien.', '¿Y vos cómo andás?'] });
+    const result = await ask(fakeSession(), { question: 'hola', askedBy: 'Vero' }, d);
+
+    assert.deepEqual(d.rendered, ['Todo bien.']);
+    assert.equal(result.spoken, 'Todo bien.');
+    assert.equal(result.timings.droppedQuestionBack, true);
+  });
+
+  test('a return question mid-answer is spoken, because something followed it', async () => {
+    const d = deps({ sentences: ['¿Y vos cómo andás?', 'Yo bien.'] });
+    const result = await ask(fakeSession(), { question: 'hola', askedBy: 'Vero' }, d);
+
+    assert.deepEqual(d.rendered, ['¿Y vos cómo andás?', 'Yo bien.']);
+    assert.equal(result.spoken, '¿Y vos cómo andás? Yo bien.');
+    assert.equal(result.timings.droppedQuestionBack, undefined);
+  });
+
+  test('a real question the bot needs answered is spoken, even alone', async () => {
+    const d = deps({ sentences: ['¿Qué canción querés?'] });
+    const result = await ask(fakeSession(), { question: 'poné algo', askedBy: 'Vero' }, d);
+
+    assert.deepEqual(d.rendered, ['¿Qué canción querés?']);
+    assert.equal(result.spoken, '¿Qué canción querés?');
+    assert.equal(result.timings.droppedQuestionBack, undefined);
+  });
+});
+
 describe('a language request is remembered for the rest of the call', () => {
   // The request and the English answer that follows it are rarely in the
   // same turn — in the logs behind this, both the ask and a reply given
