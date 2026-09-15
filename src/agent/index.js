@@ -22,6 +22,7 @@ import { guessLanguage, takeFiller } from './filler.js';
 import { formatTranscript, transcribeBuffer } from './stt.js';
 import { SILENCE_MS } from '../voice/receiver.js';
 import { takeTimeouts } from './deadline.js';
+import { endsWithQuestion, isReturnQuestion } from './return-question.js';
 
 /**
  * Longest a reply may spend playing before it is cut off.
@@ -391,6 +392,36 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, ma
         });
     };
 
+    // The prompt already asks the model not to close by asking something
+    // back, and the fast leg ignores that most reliably — logs show answers
+    // ending "¿Y vos cómo andás?" often enough to be a habit rather than a
+    // slip. Made deterministic here rather than trusted to the prompt: a
+    // sentence that reads as a question back at the asker is held rather than
+    // spoken, in case it turns out to be mid-answer rather than the closer.
+    let heldQuestion = null;
+    const flushHeld = () => {
+      if (heldQuestion === null) return;
+      const text = heldQuestion;
+      heldQuestion = null;
+      say(text);
+    };
+    const onSentence = (text) => {
+      // Whatever was held was not the closer after all — something followed
+      // it, so it was mid-answer and gets said like any other sentence.
+      flushHeld();
+      // Music mode never speaks a word of the answer anyway (see `say`'s own
+      // `session.quiet` branch), so there is nothing to hold back for it.
+      // `isReturnQuestion` only means anything for a sentence that actually
+      // is one — "Ok." reads as a tag-question closer on its own, which is
+      // why `endsWithQuestion` gates it here exactly like it does in
+      // `expectReply`.
+      if (!session.quiet && endsWithQuestion(text) && isReturnQuestion(text)) {
+        heldQuestion = text;
+        return;
+      }
+      say(text);
+    };
+
     try {
       // The return value is the whole reply, but everything sayable has
       // already gone out through onSentence by the time it resolves.
@@ -410,7 +441,7 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, ma
           mode,
         },
         {
-          onSentence: say,
+          onSentence,
           onToolUse: (name) => {
             if (!toolsUsed.includes(name)) toolsUsed.push(name);
             // A tool that will speak has started and nothing has been said:
@@ -462,6 +493,14 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, ma
     } finally {
       finishedThinking = true;
       clearTimeout(quietTimer);
+      // Nothing followed it, so it was the closer, not mid-answer — drop it
+      // rather than let the model's habit of asking something back slip
+      // through.
+      if (heldQuestion !== null) {
+        console.log(`[speech] dropped a question back: "${heldQuestion}"`);
+        timings.droppedQuestionBack = true;
+        heldQuestion = null;
+      }
       // Whatever was already said still has to finish playing, even if the
       // model failed partway — a half answer beats a sentence cut in two.
       await rendering;
@@ -513,6 +552,7 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, ma
       tools: toolsUsed,
       escalated: Boolean(brain.escalated),
       followUp: Boolean(viaFollowUp),
+      droppedQuestionBack: Boolean(timings.droppedQuestionBack),
       timings,
     });
 
