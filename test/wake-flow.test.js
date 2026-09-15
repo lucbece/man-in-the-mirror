@@ -8,6 +8,7 @@ import {
   endsWithQuestion,
   isReturnQuestion,
   looksLikeFollowUp,
+  looksAddressed,
 } from '../src/voice/session.js';
 import { config } from '../src/config.js';
 
@@ -145,6 +146,77 @@ describe('hearing out a question', () => {
     s.checkForWake(said('u1', 'Vero', 'the servers were down all weekend'));
     await wait(GRACE * 3);
     assert.equal(s.fired.length, 0);
+  });
+});
+
+describe('a bare name followed by talk to the room', () => {
+  // The transcriber's own hallucination of the name looks exactly like this
+  // shape from here: "mirror" as its own clip, then a beat, then whatever the
+  // room was actually saying. Someone genuinely calling it and then asking
+  // something is the same shape, so only the text of what follows tells them
+  // apart — see `looksAddressed`.
+
+  test('name, then a sentence with nothing addressed in it, stays quiet', async () => {
+    const s = stubSession();
+    s.checkForWake(said('u1', 'Vero', 'mirror'));
+    await wait(GRACE * 1.5);
+    s.checkForWake(said('u1', 'Vero', 'empezamos a limpiar el hospital'));
+    await wait(GRACE * 3);
+    assert.equal(s.fired.length, 0);
+  });
+
+  test('name, then a question, wakes', async () => {
+    const s = stubSession();
+    s.checkForWake(said('u1', 'Vero', 'mirror'));
+    await wait(GRACE * 1.5);
+    s.checkForWake(said('u1', 'Vero', '¿podés repetir?'));
+    await wait(GRACE * 3);
+    assert.equal(s.fired.length, 1);
+    assert.equal(s.fired[0].question, 'mirror ¿podés repetir?');
+  });
+
+  test('name, then a music command, wakes', async () => {
+    const s = stubSession();
+    s.checkForWake(said('u1', 'Vero', 'mirror'));
+    await wait(GRACE * 1.5);
+    s.checkForWake(said('u1', 'Vero', 'poné música'));
+    await wait(GRACE * 3);
+    assert.equal(s.fired.length, 1);
+  });
+
+  test('name, then the name again with the real question, wakes', async () => {
+    const s = stubSession();
+    s.checkForWake(said('u1', 'Vero', 'mirror'));
+    await wait(GRACE * 1.5);
+    s.checkForWake(said('u1', 'Vero', 'mirror, ¿qué hora es?'));
+    await wait(GRACE * 3);
+    assert.equal(s.fired.length, 1);
+  });
+});
+
+describe('looksAddressed', () => {
+  test('the name repeated in the continuation counts', () => {
+    assert.equal(looksAddressed('mirror, ¿qué hora es?', 'mirror'), true);
+  });
+
+  test('a question, by punctuation or by opener in Spanish, English or Portuguese', () => {
+    assert.equal(looksAddressed('¿podés repetir?', 'mirror'), true);
+    assert.equal(looksAddressed('what do you think', 'mirror'), true);
+    assert.equal(looksAddressed('quando isso aconteceu', 'mirror'), true);
+    assert.equal(looksAddressed('onde fica isso', 'mirror'), true);
+  });
+
+  test('spoken to someone directly', () => {
+    assert.equal(looksAddressed('vos qué opinás de esto', 'mirror'), true);
+  });
+
+  test('a music or mode command', () => {
+    assert.equal(looksAddressed('poné música', 'mirror'), true);
+  });
+
+  test('plain talk to the room is not addressed', () => {
+    assert.equal(looksAddressed('empezamos a limpiar el hospital', 'mirror'), false);
+    assert.equal(looksAddressed('', 'mirror'), false);
   });
 });
 
