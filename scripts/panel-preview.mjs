@@ -46,6 +46,7 @@ function fakeConfig(overrides = {}) {
     bufferSeconds: 90,
     agentNames: 'mirror, espejo',
     wakeEnabled: true,
+    strictWake: true,
     eagerTranscription: true,
     sttProvider: 'openai',
     sttLocalModel: 'ggml-base',

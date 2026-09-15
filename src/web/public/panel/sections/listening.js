@@ -23,6 +23,11 @@ export function mount(root) {
   });
 
   const wake = switchRow({ name: 'wakeEnabled', label: t('listening.wake'), help: t('listening.wake.help') });
+  const strictWake = switchRow({
+    name: 'strictWake',
+    label: t('listening.strictWake'),
+    help: t('listening.strictWake.help'),
+  });
 
   const buffer = h('select.select', { name: 'bufferSeconds' });
   const bufferField = field({ label: t('listening.buffer'), control: buffer, help: t('listening.buffer.help') });
@@ -30,7 +35,7 @@ export function mount(root) {
   const eager = switchRow({ name: 'eagerTranscription', label: t('listening.eager'), help: t('listening.eager.help') });
   const advanced = h('details.advanced', h('summary', t('listening.advanced')), eager);
 
-  const card = h('div.card', namesField, wake, bufferField, advanced);
+  const card = h('div.card', namesField, wake, strictWake, bufferField, advanced);
   root.append(h('header', h('p', t('listening.intro'))), card);
 
   function fillBuffer(value) {
@@ -42,6 +47,7 @@ export function mount(root) {
     return {
       agentNames: names.read().join(', '),
       wakeEnabled: wake.querySelector('input').checked,
+      strictWake: strictWake.querySelector('input').checked,
       bufferSeconds: Number(buffer.value),
       eagerTranscription: eager.querySelector('input').checked,
     };
@@ -55,6 +61,7 @@ export function mount(root) {
         .filter(Boolean),
     );
     wake.querySelector('input').checked = Boolean(cfg.wakeEnabled);
+    strictWake.querySelector('input').checked = Boolean(cfg.strictWake);
     fillBuffer(Number(cfg.bufferSeconds));
     eager.querySelector('input').checked = Boolean(cfg.eagerTranscription);
   }

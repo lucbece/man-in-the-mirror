@@ -37,6 +37,14 @@ const DEFAULTS = {
   // spoken survives that.
   agentNames: 'mirror, espejo',
   wakeEnabled: true, // answer when addressed, not only on /mj ask
+  // The follow-up window (someone can keep talking to it for a few seconds
+  // without the name) and the reply window (its own question stays open for
+  // the person it asked) are both real conveniences and both ways to speak
+  // when nobody addressed it — measured over four days of production logs,
+  // together they were most of that complaint. On by default: the name is
+  // the only way in, plus the held-question replay and the mode/hush
+  // commands. See `expectReply` in voice/session.js for what this turns off.
+  strictWake: true,
 
   // Transcribe each utterance moments after it's spoken, rather than doing the
   // whole buffer at the moment someone asks. Costs more (you pay for all
@@ -197,6 +205,7 @@ const BOOLEAN_KEYS = new Set([
   'agentEnabled',
   'eagerTranscription',
   'wakeEnabled',
+  'strictWake',
   'webSearch',
 ]);
 

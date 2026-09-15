@@ -213,6 +213,8 @@ export default {
   'listening.names.remove': 'Remove {name}',
   'listening.wake': 'Answer when called by name',
   'listening.wake.help': 'Off, it keeps listening but answers only /mj ask and the Ask box on Now.',
+  'listening.strictWake': 'Only answers when named',
+  'listening.strictWake.help': 'Off, it also keeps listening for a few seconds after speaking, in case that was a follow-up or the answer to its own question.',
   'listening.buffer': 'How much conversation it keeps',
   'listening.buffer.help': 'Held in memory only. 90 s covers the thread of a conversation.',
   'listening.advanced': 'Advanced',

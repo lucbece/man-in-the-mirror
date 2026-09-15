@@ -27,10 +27,15 @@ import { warmFillers } from '../agent/filler.js';
  * be the bot suddenly answering a question from two topics ago, which is a
  * stranger experience than the silence it replaces.
  *
+ * 8s rather than the 15s it started at: measured over four days, 17 held
+ * questions were replayed up to 15s after they were asked, and by then the
+ * room had moved on — the answer landed as the bot butting in on another
+ * topic rather than finishing the one it was asked about.
+ *
  * Exported (and, on the manager, overridable via the constructor) so a test
- * can prove the drop without actually waiting fifteen seconds for it.
+ * can prove the drop without actually waiting eight seconds for it.
  */
-export const HELD_WAKE_MAX_AGE_MS = 15_000;
+export const HELD_WAKE_MAX_AGE_MS = 8_000;
 
 /**
  * Tracks one VoiceSession per guild.
@@ -522,6 +527,9 @@ export function describeChanges(values, previous) {
   }
   if (values.agentNames !== previous.agentNames) {
     console.log(`[config] answers to → ${values.agentNames}`);
+  }
+  if (values.strictWake !== previous.strictWake) {
+    console.log(`[config] strict wake → ${values.strictWake ? 'on, name only' : 'off, follow-ups and reply windows allowed'}`);
   }
 }
 

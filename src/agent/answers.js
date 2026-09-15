@@ -27,7 +27,15 @@ const records = [];
  * fact rather than an inference — a turn that used nothing could have been
  * answered by anything.
  */
-export function recordAnswer({ brain, model, tools = [], escalated = false, followUp = false, timings = {} }) {
+export function recordAnswer({
+  brain,
+  model,
+  tools = [],
+  escalated = false,
+  followUp = false,
+  droppedQuestionBack = false,
+  timings = {},
+}) {
   records.push({
     at: Date.now(),
     brain,
@@ -36,6 +44,7 @@ export function recordAnswer({ brain, model, tools = [], escalated = false, foll
     usedTools: tools.length > 0,
     escalated,
     followUp,
+    droppedQuestionBack,
     firstAudioMs: timings.firstAudioMs ?? null,
     beforeAskMs: timings.beforeAskMs ?? null,
     thinkMs: timings.thinkMs ?? null,
@@ -79,12 +88,17 @@ export function answerStats() {
   // Worth a number rather than a feeling: this is the path that can make it
   // speak when nobody addressed it.
   const followUps = records.filter((r) => r.followUp);
+  // Answers where a sentence asking something back at the asker was held and
+  // dropped rather than spoken — see agent/index.js. Worth a number because
+  // it is the fast leg ignoring the prompt, made visible.
+  const droppedQuestionBacks = records.filter((r) => r.droppedQuestionBack);
 
   return {
     count: records.length,
     toolRate: withTools.length / records.length,
     escalationRate: escalated.length / records.length,
     followUpRate: followUps.length / records.length,
+    droppedQuestionBackRate: droppedQuestionBacks.length / records.length,
     firstAudioMs: median(records.map((r) => r.firstAudioMs)),
     // The wake chain: silence detection, transcription, the grace wait. Only
     // present for answers that came from someone speaking — a question typed

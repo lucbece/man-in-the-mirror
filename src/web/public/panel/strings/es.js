@@ -213,6 +213,8 @@ export default {
   'listening.names.remove': 'Quitar {name}',
   'listening.wake': 'Responder cuando lo llaman por su nombre',
   'listening.wake.help': 'Apagado, sigue escuchando pero solo responde a /mj ask y al cuadro Preguntar de Ahora.',
+  'listening.strictWake': 'Solo contesta cuando lo nombran',
+  'listening.strictWake.help': 'Apagado, también sigue escuchando unos segundos después de hablar, por si era una continuación o la respuesta a su propia pregunta.',
   'listening.buffer': 'Cuánta conversación recuerda',
   'listening.buffer.help': 'Se guarda solo en memoria. 90 s alcanza para seguir el hilo de una charla.',
   'listening.advanced': 'Avanzado',
