@@ -554,34 +554,59 @@ async function runTranscription(utterance, stt) {
   const pcm = utterance.pcm ?? decodeToMono16k(utterance.packets);
   utterance.pcm = null;
   try {
-    const text = await stt.transcribe(pcmToWav(pcm), {
-      prompt,
-    });
+    const wav = pcmToWav(pcm);
+
+    // Started alongside the primary call, not after it: that is what makes
+    // this free. Whether the primary text turns out to have a name in it is
+    // not known yet, so every utterance from a name-hallucinating model gets
+    // a whisper-1 request in flight, and it is only awaited below when the
+    // primary text turns out to need one. A rejection that nobody ends up
+    // awaiting (no name heard) must not become an unhandled one.
+    const second = namesNoise(stt.model) ? (utterance.secondOpinion ?? secondOpinionFor)(stt) : null;
+    const secondOpinion = second
+      ? second.transcribe(wav, {
+          prompt,
+          // A confirmation must never cost more than the utterance it
+          // confirms, and never inherit the primary's own retry — see
+          // SECOND_OPINION_MS. Tallied under its own stage so a slow
+          // whisper-1 never reads as a primary stt failure.
+          deadlineMs: utterance.secondOpinionDeadlineMs ?? SECOND_OPINION_MS,
+          retries: 0,
+          stage: 'stt-confirm',
+        })
+      : null;
+    if (secondOpinion) secondOpinion.catch(() => {});
+
+    const text = await stt.transcribe(wav, { prompt });
     // The prompt echo has to go before anything else reads the text: it
     // contains the bot's names, so it reads as someone calling the bot.
     let junk =
       echoesPrompt(text, prompt) ||
       (namesNoise(stt.model) && namedByNoise(text, prompt, energy)) ||
       looksHallucinated(text, utterance.durationMs);
-    // A lone name from a GPT-4o model: real, or noise it dressed up? Ask the
-    // other model before waking the bot on it.
-    if (!junk && namesNoise(stt.model) && onlyTheNames(text, prompt)) {
-      const second = (utterance.secondOpinion ?? secondOpinionFor)(stt);
-      if (second) {
+
+    let finalText = text;
+    // Any mention of the name gets a second opinion now, not only a lone
+    // one — a hallucinated name in front of or inside a real sentence wakes
+    // the bot on a conversation it was never part of, and whisper-1 never
+    // hallucinates the name, so it is the check that tells the two apart.
+    if (!junk && secondOpinion) {
+      const names = config.get('agentNames');
+      const lone = onlyTheNames(text, prompt);
+      const address = lone ? null : detectAddress(text, names);
+      if (lone || address.matched) {
         try {
-          const heard = await second.transcribe(pcmToWav(pcm), {
-            prompt,
-            // A confirmation must never cost more than the utterance it
-            // confirms, and never inherit the primary's own retry — see
-            // SECOND_OPINION_MS. Tallied under its own stage so a slow
-            // whisper-1 never reads as a primary stt failure.
-            deadlineMs: utterance.secondOpinionDeadlineMs ?? SECOND_OPINION_MS,
-            retries: 0,
-            stage: 'stt-confirm',
-          });
-          if (!hearsAName(heard, config.get('agentNames'))) {
-            junk = true;
-            console.log(`[stt] lone "${text.trim()}" not confirmed by whisper-1 (it heard "${String(heard).trim().slice(0, 60)}") → treated as noise`);
+          const heard = await secondOpinion;
+          if (!hearsAName(heard, names)) {
+            if (lone) {
+              junk = true;
+              console.log(`[stt] lone "${text.trim()}" not confirmed by whisper-1 (it heard "${String(heard).trim().slice(0, 60)}") → treated as noise`);
+            } else {
+              const whisperText = String(heard ?? '').trim();
+              console.log(`[stt] "${address.name}" not confirmed by whisper-1 in "${text.trim()}" → using "${whisperText}"`);
+              if (whisperText) finalText = whisperText;
+              else junk = true;
+            }
           }
         } catch (err) {
           // Unconfirmed either way: the first opinion stands rather than a
@@ -594,9 +619,9 @@ async function runTranscription(utterance, stt) {
         }
       }
     }
-    if (junk && text.trim()) clipLog.discarded(energy, text);
-    else if (text.trim()) clipLog.kept(energy);
-    utterance.text = junk ? '' : text;
+    if (junk && finalText.trim()) clipLog.discarded(energy, finalText);
+    else if (finalText.trim()) clipLog.kept(energy);
+    utterance.text = junk ? '' : finalText;
     return { spoken: Boolean(utterance.text), failed: false };
   } catch (err) {
     if (err.fatal) throw err; // leave text null; the audio is still usable later

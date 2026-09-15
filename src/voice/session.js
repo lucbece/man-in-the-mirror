@@ -14,7 +14,9 @@ import { MusicPlayer } from './music.js';
 import { VoiceReceiver } from './receiver.js';
 import { EagerTranscriber, CONCURRENCY_WITH_MUSIC } from '../agent/eager.js';
 import { matchHush } from '../agent/commands.js';
-import { detectAddress, normalise, onlyTheName } from '../agent/wake.js';
+import { detectAddress, normalise, onlyTheName, SECOND_PERSON } from '../agent/wake.js';
+import { looksLikeMusicCommand } from '../agent/cascade.js';
+import { looksLikeModeCommand } from '../agent/modes.js';
 
 const READY_TIMEOUT_MS = 20_000;
 
@@ -255,6 +257,39 @@ export function isReturnQuestion(sentence) {
   const clause = normalise(closingClause(sentence));
   if (!clause || VALUE_ASKING_WORDS.test(clause)) return false;
   return RETURN_QUESTION_PATTERNS.some((pattern) => pattern.test(clause));
+}
+
+/**
+ * Interrogative openers in Spanish, English and Portuguese, over normalised
+ * (accent-stripped) text — "qué" and "que" are the same word here, as are
+ * "cuándo"/"cuando" and the rest.
+ */
+const INTERROGATIVE_OPENERS =
+  /^(que|como|cuando|donde|por que|cuanto|quien|cual|what|how|when|where|why|who|which|can|could|o que|quando|onde)\b/;
+
+/**
+ * After a bare name, does what comes next read as talking to the bot, or just
+ * talking near it?
+ *
+ * Only used for the shape "espejo" then more speech in the same breath (see
+ * `fireWake`) — a real call-and-question doesn't always repeat the name or
+ * end with a question mark, so this errs toward "yes, addressed": the name
+ * said again anywhere in it, a question by punctuation or by opener in any of
+ * the three languages this channel code-switches between, a sentence spoken
+ * to someone directly (`SECOND_PERSON`), or a command the bot already knows
+ * how to route (music, a mode switch).
+ */
+export function looksAddressed(text, names) {
+  const said = String(text ?? '').trim();
+  if (!said) return false;
+  if (detectAddress(said, names).matched) return true;
+  const bare = normalise(said);
+  if (endsWithQuestion(said)) return true;
+  if (INTERROGATIVE_OPENERS.test(bare)) return true;
+  if (SECOND_PERSON.test(bare)) return true;
+  if (looksLikeMusicCommand(said)) return true;
+  if (looksLikeModeCommand(said)) return true;
+  return false;
 }
 
 /**
@@ -645,6 +680,21 @@ export class VoiceSession extends EventEmitter {
     if (!question || onlyTheName(question, config.get('agentNames'))) {
       console.log(`[wake] ${pending.askedBy} said only the name and nothing followed — staying quiet`);
       return;
+    }
+
+    // A bare name, then more speech: the transcriber's own hallucination of
+    // the name in front of a sentence nobody addressed to the bot looks
+    // exactly like this shape from here — "espejo" as its own utterance,
+    // followed by "What's up" or "Empezamos a limpiar el hospital" a beat
+    // later. Someone actually calling it and then asking something is the
+    // same shape too, so only stay quiet when what follows doesn't read as
+    // addressed at all — see `looksAddressed`.
+    if (pending.parts.length > 1 && onlyTheName(pending.parts[0], config.get('agentNames'))) {
+      const rest = pending.parts.slice(1).join(' ').trim();
+      if (rest && !looksAddressed(rest, config.get('agentNames'))) {
+        console.log(`[wake] ${pending.askedBy} said the name, then talked to the room — staying quiet: "${question}"`);
+        return;
+      }
     }
 
     this.emit('wake', {

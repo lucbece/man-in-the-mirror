@@ -152,13 +152,67 @@ describe('a lone name from a GPT-4o transcriber is confirmed by whisper-1', () =
     assert.equal(u2.text, '');
   });
 
-  test('a sentence with the name in it needs no second opinion', async () => {
-    const second = whisper('x');
+  test('a name inside a sentence is confirmed by whisper-1 too, and kept when it agrees', async () => {
+    const second = whisper('Espejo, ¿qué hora es?');
     const u = utteranceOf(9000);
     u.secondOpinion = () => second;
     const r = await transcribeUtterance(u, gpt4o('Espejo, ¿qué hora es?'));
     assert.equal(r.spoken, true);
-    assert.equal(second.calls, 0);
+    assert.equal(u.text, 'Espejo, ¿qué hora es?', 'the primary text stands once whisper-1 agrees');
+    assert.equal(second.calls, 1, 'every name mention is checked now, not only a lone one');
+  });
+
+  test('a hallucinated name in front of a real sentence is replaced by whisper-1\'s text', async () => {
+    const second = whisper('Empezamos a limpiar el hospital');
+    const u = utteranceOf(9000);
+    u.secondOpinion = () => second;
+    const r = await transcribeUtterance(u, gpt4o('Espejo, empezamos a limpiar el hospital'));
+    assert.equal(r.spoken, true);
+    assert.equal(u.text, 'Empezamos a limpiar el hospital', 'whisper-1 did not hear the name, so its text wins');
+  });
+
+  test('a hallucinated name is treated as junk when whisper-1 has nothing usable to offer', async () => {
+    const second = whisper('   ');
+    const u = utteranceOf(9000);
+    u.secondOpinion = () => second;
+    const r = await transcribeUtterance(u, gpt4o('Espejo, empezamos a limpiar el hospital'));
+    assert.equal(r.spoken, false);
+    assert.equal(u.text, '');
+  });
+
+  test('no name in the primary text never awaits the second opinion', async () => {
+    let resolved = false;
+    const second = {
+      calls: 0,
+      async transcribe() {
+        this.calls += 1;
+        // Resolves after transcribeUtterance has already returned, so if the
+        // result below depended on awaiting this, it would not have it yet.
+        await new Promise((resolve) => { setTimeout(resolve, 30); });
+        resolved = true;
+        return 'espejo';
+      },
+    };
+    const u = utteranceOf(9000);
+    u.secondOpinion = () => second;
+    const r = await transcribeUtterance(u, gpt4o('the servers were down all weekend'));
+    assert.equal(r.spoken, true);
+    assert.equal(u.text, 'the servers were down all weekend');
+    assert.equal(resolved, false, 'must not have waited for the second opinion to settle');
+  });
+
+  test('a second opinion timeout with a name inside a sentence keeps the primary text', async (t) => {
+    const names = config.values.agentNames;
+    config.values.agentNames = 'mirror, espejo';
+    t.after(() => { config.values.agentNames = names; });
+
+    const u = utteranceOf(9000);
+    u.secondOpinionDeadlineMs = 20;
+    u.secondOpinion = () => neverAnswers();
+
+    const r = await transcribeUtterance(u, gpt4o('Espejo, ¿qué hora es?'));
+    assert.equal(r.spoken, true);
+    assert.equal(u.text, 'Espejo, ¿qué hora es?', 'trusts the primary rather than waiting further');
   });
 
   test('whisper-1 as the first opinion asks nobody', async () => {
