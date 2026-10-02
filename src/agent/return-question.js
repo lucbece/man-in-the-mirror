@@ -116,6 +116,26 @@ export function withoutReturnQuestion(text) {
   return /[.!?…]$/.test(head) ? head : `${head}.`;
 }
 
+/** Words that open a reply without saying anything: on their own they are not an answer. */
+const INTERJECTIONS = new Set([
+  'che', 'dale', 'bueno', 'ok', 'okay', 'eh', 'ah', 'uh', 'ey', 'mira', 'jaja', 'jajaja', 'hey', 'well', 'so',
+]);
+
+/**
+ * Is what was left in front of a question back only the asker's name or an
+ * interjection — "Vero, ¿qué onda?", "Che, ¿qué necesitás?"?
+ *
+ * Cutting the question from those leaves the bot saying "Vero." into the
+ * room, which is odder than the question it was avoiding. The caller treats
+ * such a remainder as nothing and decides on the whole piece instead.
+ */
+export function isOnlyVocative(text, name = '') {
+  const words = normalise(text).split(' ').filter(Boolean);
+  if (words.length === 0 || words.length > 3) return false;
+  const nameWords = new Set(normalise(name).split(' ').filter(Boolean));
+  return words.every((word) => INTERJECTIONS.has(word) || nameWords.has(word));
+}
+
 export function isReturnQuestion(sentence) {
   const clause = normalise(closingClause(sentence));
   if (!clause || VALUE_ASKING_WORDS.test(clause)) return false;
