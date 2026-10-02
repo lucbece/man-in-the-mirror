@@ -22,7 +22,7 @@ import { guessLanguage, takeFiller } from './filler.js';
 import { formatTranscript, transcribeBuffer } from './stt.js';
 import { SILENCE_MS } from '../voice/receiver.js';
 import { takeTimeouts } from './deadline.js';
-import { endsWithQuestion, isReturnQuestion } from './return-question.js';
+import { endsWithQuestion, isReturnQuestion, withoutReturnQuestion } from './return-question.js';
 
 /**
  * Longest a reply may spend playing before it is cut off.
@@ -497,9 +497,23 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, ma
       // rather than let the model's habit of asking something back slip
       // through.
       if (heldQuestion !== null) {
-        console.log(`[speech] dropped a question back: "${heldQuestion}"`);
-        timings.droppedQuestionBack = true;
+        const held = heldQuestion;
         heldQuestion = null;
+        // Only the question goes. What the same piece said before it is the
+        // answer, and an answer that was nothing but the question is still
+        // better said than a silence followed by "I got stuck".
+        const kept = withoutReturnQuestion(held);
+        if (kept) {
+          console.log(`[speech] dropped a question back from "${held}" — said "${kept}"`);
+          timings.droppedQuestionBack = true;
+          say(kept);
+        } else if (at.firstSentence === undefined) {
+          console.log(`[speech] a question back was the whole answer — saying it: "${held}"`);
+          say(held);
+        } else {
+          console.log(`[speech] dropped a question back: "${held}"`);
+          timings.droppedQuestionBack = true;
+        }
       }
       // Whatever was already said still has to finish playing, even if the
       // model failed partway — a half answer beats a sentence cut in two.

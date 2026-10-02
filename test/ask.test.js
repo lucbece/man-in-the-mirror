@@ -342,6 +342,28 @@ describe('reasoning read aloud is dropped for the rest of the turn', () => {
   });
 });
 
+describe('a question back that arrives glued to the answer', () => {
+  test('only the question is cut: what came before it in the same piece is spoken', async () => {
+    const d = deps({ sentences: ['Acá estoy, Vero. ¿Qué onda?'] });
+    const result = await ask(fakeSession(), { question: 'hola espejo, ¿estás por ahí?', askedBy: 'Vero' }, d);
+    assert.deepEqual(d.rendered, ['Acá estoy, Vero.']);
+    assert.equal(result.timings.droppedQuestionBack, true);
+  });
+
+  test('a clause before the question, joined by a comma, is kept and closed with a full stop', async () => {
+    const d = deps({ sentences: ['Todo bien, ¿y vos?'] });
+    await ask(fakeSession(), { question: 'espejo, ¿cómo andás?', askedBy: 'Vero' }, d);
+    assert.deepEqual(d.rendered, ['Todo bien.']);
+  });
+
+  test('a question back that is the whole answer is said, not swallowed into a silence', async () => {
+    const d = deps({ sentences: ['¿Qué onda?'] });
+    const result = await ask(fakeSession(), { question: 'espejo', askedBy: 'Vero' }, d);
+    assert.deepEqual(d.rendered, ['¿Qué onda?']);
+    assert.equal(result.timings.droppedQuestionBack, undefined);
+  });
+});
+
 describe('a question back at the end of an answer is dropped, not spoken', () => {
   test('a return question that closes the answer is held and then dropped', async () => {
     const d = deps({ sentences: ['Todo bien.', '¿Y vos cómo andás?'] });

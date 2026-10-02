@@ -90,6 +90,32 @@ export const RETURN_QUESTION_PATTERNS = [
  * "¿Cuál de las dos, la de Rada o la de Casero?" — which a value-asking word
  * rules out regardless of shape.
  */
+/**
+ * What a chunk says before its closing question back, or '' when the chunk is
+ * nothing but that question.
+ *
+ * The sentence splitter does not always hand the question over on its own:
+ * "Acá estoy, Vero. ¿Qué onda?" arrived as one piece, and dropping the piece
+ * dropped the answer with it — the bot heard a greeting and said nothing
+ * (seen in a real call, 2026-10-02). The cut is where `closingClause` starts:
+ * at the last "¿", or after the last separator when there is none.
+ */
+export function withoutReturnQuestion(text) {
+  const trimmed = String(text ?? '').trim();
+  const invertedAt = trimmed.lastIndexOf('¿');
+  let head;
+  if (invertedAt !== -1) {
+    head = trimmed.slice(0, invertedAt);
+  } else {
+    const body = trimmed.replace(/[?!.…\s]+$/, '');
+    const cut = Math.max(...[',', '.', ';', ':', '!', '?'].map((mark) => body.lastIndexOf(mark)));
+    head = cut === -1 ? '' : trimmed.slice(0, cut + 1);
+  }
+  head = head.replace(/[,;:\s]+$/, '').trim();
+  if (!head) return '';
+  return /[.!?…]$/.test(head) ? head : `${head}.`;
+}
+
 export function isReturnQuestion(sentence) {
   const clause = normalise(closingClause(sentence));
   if (!clause || VALUE_ASKING_WORDS.test(clause)) return false;
