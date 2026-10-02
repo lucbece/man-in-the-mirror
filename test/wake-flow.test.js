@@ -706,3 +706,25 @@ describe('strict wake', () => {
     config.values.strictWake = false;
   });
 });
+
+describe('withoutReturnQuestion: what a piece says before its closing question back', () => {
+  test('cuts at the last inverted mark and keeps the answer in front of it', async () => {
+    const { withoutReturnQuestion } = await import('../src/agent/return-question.js');
+    assert.equal(withoutReturnQuestion('Acá estoy, Vero. ¿Qué onda?'), 'Acá estoy, Vero.');
+    assert.equal(withoutReturnQuestion('Todo bien, ¿y vos?'), 'Todo bien.');
+    assert.equal(withoutReturnQuestion('¡Buenísimo! ¿Y vos cómo andás?'), '¡Buenísimo!');
+  });
+
+  test('without an inverted mark, cuts after the last separator', async () => {
+    const { withoutReturnQuestion } = await import('../src/agent/return-question.js');
+    assert.equal(withoutReturnQuestion('All good. How about you?'), 'All good.');
+    assert.equal(withoutReturnQuestion('All good, and you?'), 'All good.');
+  });
+
+  test('a piece that is only the question leaves nothing', async () => {
+    const { withoutReturnQuestion } = await import('../src/agent/return-question.js');
+    assert.equal(withoutReturnQuestion('¿Qué onda?'), '');
+    assert.equal(withoutReturnQuestion('How about you?'), '');
+    assert.equal(withoutReturnQuestion(''), '');
+  });
+});
