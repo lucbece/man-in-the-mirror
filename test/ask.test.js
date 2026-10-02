@@ -356,6 +356,19 @@ describe('a question back that arrives glued to the answer', () => {
     assert.deepEqual(d.rendered, ['Todo bien.']);
   });
 
+  test('a name or an interjection in front of the question is not an answer: the whole piece is said', async () => {
+    const d = deps({ sentences: ['Vero, ¿qué onda?'] });
+    const result = await ask(fakeSession(), { question: 'espejo', askedBy: 'Vero' }, d);
+    assert.deepEqual(d.rendered, ['Vero, ¿qué onda?'], 'never just "Vero."');
+    assert.equal(result.timings.droppedQuestionBack, undefined);
+  });
+
+  test('and after something was already said, that remainder is dropped with its question', async () => {
+    const d = deps({ sentences: ['Acá ando.', 'Che, ¿y vos?'] });
+    await ask(fakeSession(), { question: 'espejo, ¿cómo andás?', askedBy: 'Vero' }, d);
+    assert.deepEqual(d.rendered, ['Acá ando.']);
+  });
+
   test('a question back that is the whole answer is said, not swallowed into a silence', async () => {
     const d = deps({ sentences: ['¿Qué onda?'] });
     const result = await ask(fakeSession(), { question: 'espejo', askedBy: 'Vero' }, d);

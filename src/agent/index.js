@@ -22,7 +22,7 @@ import { guessLanguage, takeFiller } from './filler.js';
 import { formatTranscript, transcribeBuffer } from './stt.js';
 import { SILENCE_MS } from '../voice/receiver.js';
 import { takeTimeouts } from './deadline.js';
-import { endsWithQuestion, isReturnQuestion, withoutReturnQuestion } from './return-question.js';
+import { endsWithQuestion, isOnlyVocative, isReturnQuestion, withoutReturnQuestion } from './return-question.js';
 
 /**
  * Longest a reply may spend playing before it is cut off.
@@ -502,7 +502,10 @@ export async function ask(session, { question, askedBy, askedById, stoppedAt, ma
         // Only the question goes. What the same piece said before it is the
         // answer, and an answer that was nothing but the question is still
         // better said than a silence followed by "I got stuck".
-        const kept = withoutReturnQuestion(held);
+        const before = withoutReturnQuestion(held);
+        // "Vero, ¿qué onda?" minus its question is "Vero.", which is not an
+        // answer either: a name or an interjection alone counts as nothing.
+        const kept = isOnlyVocative(before, askedBy) ? '' : before;
         if (kept) {
           console.log(`[speech] dropped a question back from "${held}" — said "${kept}"`);
           timings.droppedQuestionBack = true;
